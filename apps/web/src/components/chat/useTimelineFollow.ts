@@ -30,6 +30,7 @@ import {
 } from "./timelineViewport";
 import { resolveTimelineIsAtEnd, type MessagesTimelineRow } from "./MessagesTimeline.logic";
 import { measuredEndOffset, settleListScroll } from "./useTimelinePositionRestore";
+import { sendKeepsReaderPlace } from "./sendKeepsPlace.logic";
 import {
   releaseChatTimelineAnchor,
   shouldReleaseTimelineAnchorForToolActivity,
@@ -524,10 +525,14 @@ export function useTimelineFollow(input: TimelineFollowInput) {
 
   /** Arms the anchor for a message the user just sent, before its run exists. */
   const anchorNewTurn = (threadKey: string, messageId: MessageId) => {
+    if (sendKeepsReaderPlace(readFollow())) return;
     followStore.dispatch(visit, { type: "followEnd" });
     visitScroll().showScrollDebouncer.cancel();
     setShowScrollToBottom(false);
     setTimelineAnchor({ threadKey, messageId });
+  };
+  const scrollOnSend = (animated?: boolean) => {
+    if (!sendKeepsReaderPlace(readFollow())) scrollToEnd(animated);
   };
 
   return {
@@ -542,6 +547,7 @@ export function useTimelineFollow(input: TimelineFollowInput) {
     onTimelineFooterGrowStable,
     onIsAtEndChangeStable,
     anchorNewTurn,
+    scrollOnSend,
     attachTimelineViewport,
     attachComposerOverlay: followStore.attachComposerOverlay,
   };

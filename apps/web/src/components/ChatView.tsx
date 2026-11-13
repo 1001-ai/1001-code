@@ -2120,6 +2120,7 @@ export default function ChatView(props: ChatViewProps) {
     onTimelineFooterGrowStable,
     onIsAtEndChangeStable,
     anchorNewTurn,
+    scrollOnSend,
     attachTimelineViewport,
     attachComposerOverlay: attachFollowComposerOverlay,
   } = useTimelineFollow({
@@ -2448,7 +2449,7 @@ export default function ChatView(props: ChatViewProps) {
     clearUsageLimitsFor,
     beginLocalDispatch,
     resetLocalDispatch,
-    scrollToEnd,
+    scrollToEnd: scrollOnSend,
     persistThreadSettingsForNextTurn,
   });
   const activeThreadHasCompactableConversation = serverVisibleTurnItems.some(
@@ -2891,7 +2892,7 @@ export default function ChatView(props: ChatViewProps) {
     composerRef,
     persistThreadSettingsForNextTurn,
     clearUsageLimitsFor,
-    scrollToEnd,
+    scrollToEnd: scrollOnSend,
     setThreadError,
   });
   const { onSend } = useComposerSend({
