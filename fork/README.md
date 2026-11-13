@@ -40,3 +40,17 @@ One entry for each place this fork changes a file upstream owns, or replaces som
 - **Why:** the script is run by path, which knip cannot trace, so it would be reported as an unused file.
 - **On conflict:** take upstream's list and add the entry back.
 - **Check:** `vp run knip:check:files`
+
+### CI runs on GitHub's runners
+
+- **Where:** `.github/workflows/ci.yml`, every `runs-on:` line. Upstream uses Blacksmith runners, which this repository does not have, so its jobs queued forever. Linux jobs run on `ubuntu-24.04`, the macOS lint on `macos-26`. Both are free for public repositories.
+- **Why:** without this, nothing checks a pull request here, including a sync.
+- **On conflict:** take upstream's file and put the runner labels back. A new job upstream adds needs the same change.
+- **Check:** `grep -n "runs-on:" .github/workflows/ci.yml | grep -v -E "ubuntu-24.04|macos-26"` prints nothing.
+
+### Only CI workflows are enabled on GitHub
+
+- **Where:** the repository's Actions settings, not a file. Only `CI` and `Agent Context Budget` are enabled; every other upstream workflow is disabled with `gh workflow disable -R 1001-ai/1001-code <name>`.
+- **Why:** the rest publish upstream's releases and previews or moderate upstream's contributors (closing pull requests, labelling, commenting). Several run on `pull_request_target` with a write token, which a public repository should not run for pull requests it does not control.
+- **On conflict:** none, but GitHub enables a new workflow file as soon as a sync brings it in.
+- **Check:** `gh workflow list -R 1001-ai/1001-code` lists only `CI` and `Agent Context Budget`. Disable anything else unless it is a check this fork wants, and add it here if so.

@@ -47,7 +47,7 @@ Never resolve with `-X ours`, `-X theirs`, `git checkout --ours .`, or by droppi
 
 ## 3. Verify
 
-CI does not run on this fork, so the checks run here.
+Run the checks here before pushing; CI runs them again on the pull request.
 
 ```sh
 vp i
@@ -57,6 +57,7 @@ vp run check:changed origin/main
 Then:
 
 - Run the **Check** of every divergence in `fork/README.md`.
+- If the sync added a file under `.github/workflows/`, it is already enabled on GitHub once merged. Say so in the report so it is disabled after merge, as the divergence "Only CI workflows are enabled on GitHub" describes.
 - For every commit under "Upstream commits that touch files the fork has changed" in `status`, read the upstream change and confirm the fork's change still does its job. These merged without a conflict, and that proves nothing.
 
 Fix what the sync broke in ordinary commits on the sync branch, one per problem, with normal messages. If a fix is large or changes what a fork feature does, stop and report instead.
