@@ -150,6 +150,14 @@ row to see when it resets and your pace. Turn on **Context window** to also show
 context use against the model's limit. A tick on the bar marks where the provider compacts
 automatically, when it reports that point.
 
+On web and desktop, a status line under the composer keeps the thread's numbers in view as they
+change: room left in the current limit windows, context use, running subagents, and the thread's
+estimated API-equivalent cost. Hover an item for details, such as when a window resets or how old
+its reading is. Cost appears only for providers that report tokens per turn, includes the thread's
+subagents, and uses the same prices as **Usage**, including your custom prices. It is an estimate,
+not your subscription bill. To hide the line, right-click it and choose **Hide status line**. Turn
+**Status line under composer** back on in **Settings → Appearance → Thread details**.
+
 OpenCode Go reports its session, weekly, and monthly allowance when OpenCode runs locally in
 the environment. T3 cannot report limits for external OpenCode servers because their credentials
 belong to the remote server. Limits need an OpenCode Go API key, or an OpenCode Console connected
