@@ -143,20 +143,22 @@ current model's limits without leaving the conversation. The result opens above 
 closes when you dismiss it or send your next message. It uses the same snapshot as **Usage → Limits**, so it does not run the agent or refresh
 anything. The command is offered only for providers that appear under **Usage → Limits**.
 
-To keep them in view on web and desktop, turn on **Usage limits** in **Settings → Appearance → Thread details**, or right-click the thread details card.
+On web and desktop, a status line under the composer keeps the thread's numbers in view as they
+change: room left in the current limit windows, context use, running subagents, and the thread's
+estimated API-equivalent cost. Hover an item for details, such as when a window resets or how old
+its reading is. Cost appears only for providers that report tokens per turn and includes the
+thread's subagents. It uses the same price table and custom prices as **Usage**, at base rates
+without long-context or fast-mode surcharges, so it is an estimate, not your subscription bill.
+To price it, the server downloads public model prices at most once a day. To hide the line,
+right-click it and choose **Hide status line**. Turn **Status line under composer** back on in
+**Settings → Appearance → Thread details**.
+
+For a fuller view, turn on **Usage limits** in **Settings → Appearance → Thread details**, or right-click the thread details card.
 The bottom of the thread details card then shows how much is left in each limit window of the
 current provider account. Some windows, such as a weekly Opus limit, count only one model. Hover a
 row to see when it resets and your pace. Turn on **Context window** to also show the thread's
 context use against the model's limit. A tick on the bar marks where the provider compacts
 automatically, when it reports that point.
-
-On web and desktop, a status line under the composer keeps the thread's numbers in view as they
-change: room left in the current limit windows, context use, running subagents, and the thread's
-estimated API-equivalent cost. Hover an item for details, such as when a window resets or how old
-its reading is. Cost appears only for providers that report tokens per turn, includes the thread's
-subagents, and uses the same prices as **Usage**, including your custom prices. It is an estimate,
-not your subscription bill. To hide the line, right-click it and choose **Hide status line**. Turn
-**Status line under composer** back on in **Settings → Appearance → Thread details**.
 
 OpenCode Go reports its session, weekly, and monthly allowance when OpenCode runs locally in
 the environment. T3 cannot report limits for external OpenCode servers because their credentials
