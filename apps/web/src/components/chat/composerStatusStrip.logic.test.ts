@@ -100,19 +100,25 @@ describe("threadCostSignal", () => {
     outputTokens: 10,
   });
 
-  it("moves on a new token report or a settled subagent, not on running work", () => {
-    const base = {
-      providerTurns: [{ turnTokenUsage: usage(100) }, {}],
-      subagents: [{ status: "running" as const }],
-    };
+  it("moves on a finished turn's report or a settled subagent, not on running work", () => {
+    type Turn = Parameters<typeof threadCostSignal>[0]["providerTurns"][number];
+    const finished: Turn = { status: "completed", turnTokenUsage: usage(100) };
+    const base = { providerTurns: [finished], subagents: [{ status: "running" as const }] };
     const signal = threadCostSignal(base);
-    expect(threadCostSignal({ ...base, providerTurns: [...base.providerTurns, {}] })).toBe(signal);
+    const withTurn = (turn: Turn) => threadCostSignal({ ...base, providerTurns: [finished, turn] });
+
+    expect(withTurn({ status: "running" })).toBe(signal);
+    expect(withTurn({ status: "running", turnTokenUsage: usage(50) })).toBe(signal);
+    expect(withTurn({ status: "completed", turnTokenUsage: usage(50) })).not.toBe(signal);
     expect(
-      threadCostSignal({ ...base, providerTurns: [{ turnTokenUsage: usage(150) }, {}] }),
+      threadCostSignal({
+        ...base,
+        providerTurns: [{ status: "completed", turnTokenUsage: usage(150) }],
+      }),
     ).not.toBe(signal);
     expect(threadCostSignal({ ...base, subagents: [{ status: "completed" }] })).not.toBe(signal);
     expect(
       threadCostSignal({ ...base, subagents: [...base.subagents, { status: "running" }] }),
-    ).not.toBe(signal);
+    ).toBe(signal);
   });
 });

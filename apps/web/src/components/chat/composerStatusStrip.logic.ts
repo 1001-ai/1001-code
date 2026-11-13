@@ -1,11 +1,12 @@
-import type {
-  OrchestrationV2ProviderTurn,
-  OrchestrationV2Subagent,
-  ProviderInstanceId,
-  ServerProvider,
-  ServerProviderUsageLimits,
-  ServerProviderUsageWindow,
-  UsageLimitSourceSnapshots,
+import {
+  isOrchestrationV2WorkActive,
+  type OrchestrationV2ProviderTurn,
+  type OrchestrationV2Subagent,
+  type ProviderInstanceId,
+  type ServerProvider,
+  type ServerProviderUsageLimits,
+  type ServerProviderUsageWindow,
+  type UsageLimitSourceSnapshots,
 } from "@t3tools/contracts";
 import {
   collectProviderUsageLimits,
@@ -115,23 +116,25 @@ export function subagentTitle(subagent: Pick<OrchestrationV2Subagent, "title" | 
 }
 
 /**
- * Changes whenever the thread gains a token report or a subagent settles, the points where its
- * cost can move. Child threads' turns surface through their subagent's status.
+ * Changes when a finished turn's token report lands or a subagent settles, the points where the
+ * cost can move. Starts and mid-turn reports cannot change a settled figure, so they do not count.
  */
 export function threadCostSignal(projection: {
-  readonly providerTurns: ReadonlyArray<Pick<OrchestrationV2ProviderTurn, "turnTokenUsage">>;
+  readonly providerTurns: ReadonlyArray<
+    Pick<OrchestrationV2ProviderTurn, "status" | "turnTokenUsage">
+  >;
   readonly subagents: ReadonlyArray<Pick<OrchestrationV2Subagent, "status">>;
 }): string {
   let tokens = 0;
   let reports = 0;
-  for (const { turnTokenUsage } of projection.providerTurns) {
-    if (turnTokenUsage === undefined) continue;
+  for (const { status, turnTokenUsage } of projection.providerTurns) {
+    if (turnTokenUsage === undefined || status === "pending" || status === "running") continue;
     reports += 1;
     tokens += (turnTokenUsage.inputTokens ?? 0) + (turnTokenUsage.outputTokens ?? 0);
   }
   let settled = 0;
   for (const { status } of projection.subagents) {
-    if (status !== "pending" && status !== "running" && status !== "waiting") settled += 1;
+    if (!isOrchestrationV2WorkActive(status)) settled += 1;
   }
-  return `${reports}:${tokens}:${projection.subagents.length}:${settled}`;
+  return `${reports}:${tokens}:${settled}`;
 }

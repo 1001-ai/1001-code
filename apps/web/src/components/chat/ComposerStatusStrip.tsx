@@ -1,13 +1,14 @@
 import type { ContextWindowSnapshot } from "@t3tools/client-runtime/state/context-window";
-import type {
-  EnvironmentId,
-  ProviderInstanceId,
-  ServerProvider,
-  ServerProviderUsageLimits,
-  ServerProviderUsageWindow,
-  ThreadCostEstimate,
-  ThreadId,
-  UsageLimitSourceSnapshots,
+import {
+  type EnvironmentId,
+  isOrchestrationV2WorkActive,
+  type ProviderInstanceId,
+  type ServerProvider,
+  type ServerProviderUsageLimits,
+  type ServerProviderUsageWindow,
+  type ThreadCostEstimate,
+  type ThreadId,
+  type UsageLimitSourceSnapshots,
 } from "@t3tools/contracts";
 import type { ThreadTurnSubagents } from "@t3tools/client-runtime/state/thread-subagents";
 import {
@@ -102,9 +103,10 @@ export const ComposerStatusStrip = memo(function ComposerStatusStrip(
   if (limits === null && context === null && liveSubagents === 0 && costUsd === null) return null;
 
   return (
+    // Out of flow in the spacer under the composer, so its arrival never moves the composer.
     <div
       data-slot="composer-status-strip"
-      className="surface-glass flex h-6 w-full min-w-0 items-center gap-3 overflow-hidden px-3 text-2xs whitespace-nowrap text-muted-foreground tabular-nums"
+      className="absolute inset-x-0 top-full flex h-4 min-w-0 items-center gap-3 overflow-hidden px-3 text-2xs whitespace-nowrap text-muted-foreground tabular-nums sm:h-5"
       onContextMenu={(event) => {
         event.preventDefault();
         setMenuPosition({ x: event.clientX, y: event.clientY });
@@ -234,12 +236,12 @@ function StatusItem({
         render={
           <span
             tabIndex={0}
-            aria-label={label}
             className="min-w-0 shrink-0 cursor-default truncate rounded outline-none last:shrink focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
           />
         }
       >
-        {children}
+        <span className="sr-only">{label}</span>
+        <span aria-hidden>{children}</span>
       </TooltipTrigger>
       <TooltipPopup side="top">
         <div className="flex flex-col gap-0.5">{tooltip}</div>
@@ -317,12 +319,7 @@ function ContextTooltip({ usage }: { readonly usage: ContextWindowSnapshot }) {
 }
 
 function SubagentsTooltip({ turn }: { readonly turn: ThreadTurnSubagents }) {
-  const running = turn.subagents.filter(
-    (subagent) =>
-      subagent.status === "pending" ||
-      subagent.status === "running" ||
-      subagent.status === "waiting",
-  );
+  const running = turn.subagents.filter((subagent) => isOrchestrationV2WorkActive(subagent.status));
   const hidden = running.length - MAX_LISTED_SUBAGENTS;
   return (
     <>
@@ -347,9 +344,10 @@ function CostTooltip({
   const missing = estimate.unpricedTurns + estimate.unreportedTurns;
   return (
     <>
-      <span className="text-foreground">Estimated cost: ${costUsd.toFixed(2)}</span>
+      <span className="text-foreground">Estimated cost: {formatCostUsd(costUsd)}</span>
       <span className="text-muted-foreground">
-        At API prices, not your subscription bill.
+        At base API prices, not your subscription bill. Long-context and fast-mode surcharges are
+        not included.
         {estimate.subagentThreads > 0
           ? ` Includes ${estimate.subagentThreads} subagent ${estimate.subagentThreads === 1 ? "thread" : "threads"}.`
           : null}
@@ -357,7 +355,12 @@ function CostTooltip({
       {missing > 0 ? (
         <span className="text-muted-foreground">
           {missing} {missing === 1 ? "turn has" : "turns have"} no tokens or price, so the real
-          figure is higher.
+          figure may be higher.
+        </span>
+      ) : null}
+      {estimate.truncated ? (
+        <span className="text-muted-foreground">
+          Some subagent threads were left out, so the real figure may be higher.
         </span>
       ) : null}
     </>
