@@ -129,7 +129,7 @@ const MODEL_IDS: Record<number, string> = {
 };
 
 // Effort and routing variants share the base model's price.
-function withRateModel(record: UsageRecord): UsageRecord {
+export function withRateModel(record: UsageRecord): UsageRecord {
   const base = record.model.replace(
     /-(?:extra-low|low|medium|high|tiered|control|thinking|agent)$/,
     "",

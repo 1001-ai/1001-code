@@ -27,10 +27,13 @@ export class ThreadCost extends Context.Service<
 >()("t3/usage/ThreadCost") {}
 
 // Bounds a runaway workflow; a family this large is far past what the strip can summarize honestly.
-const MAX_FAMILY_THREADS = 500;
+export const MAX_FAMILY_THREADS = 500;
+const READ_CONCURRENCY = 8;
 
 export interface ThreadCostRecords extends ThreadCostSource {
-  readonly subagents: ReadonlyArray<Pick<OrchestrationV2Subagent, "childThreadId">>;
+  readonly subagents: ReadonlyArray<
+    Pick<OrchestrationV2Subagent, "childThreadId" | "origin" | "parentNodeId" | "model">
+  >;
 }
 
 /** The thread, then every subagent thread below it, each read once. Unreadable children are skipped. */
@@ -38,18 +41,28 @@ export const collectThreadFamily = Effect.fn("ThreadCost.collectThreadFamily")(f
   rootThreadId: ThreadId,
   read: (threadId: ThreadId) => Effect.Effect<ThreadCostRecords, E>,
 ) {
-  const root = yield* read(rootThreadId);
-  const family: ThreadCostRecords[] = [root];
+  const family: ThreadCostRecords[] = [yield* read(rootThreadId)];
   const seen = new Set<ThreadId>([rootThreadId]);
-  for (let index = 0; index < family.length && family.length < MAX_FAMILY_THREADS; index += 1) {
-    for (const { childThreadId } of family[index]!.subagents) {
+  let truncated = false;
+  let level: ReadonlyArray<ThreadCostRecords> = family;
+  while (level.length > 0) {
+    const next: ThreadId[] = [];
+    for (const { childThreadId } of level.flatMap((thread) => thread.subagents)) {
       if (childThreadId === null || seen.has(childThreadId)) continue;
+      if (seen.size >= MAX_FAMILY_THREADS) {
+        truncated = true;
+        break;
+      }
       seen.add(childThreadId);
-      const child = yield* read(childThreadId).pipe(Effect.option);
-      if (child._tag === "Some") family.push(child.value);
+      next.push(childThreadId);
     }
+    const children = yield* Effect.forEach(next, (threadId) => read(threadId).pipe(Effect.option), {
+      concurrency: READ_CONCURRENCY,
+    });
+    level = children.flatMap((child) => (child._tag === "Some" ? [child.value] : []));
+    family.push(...level);
   }
-  return family;
+  return { family, truncated };
 });
 
 const make = Effect.gen(function* () {
@@ -58,27 +71,37 @@ const make = Effect.gen(function* () {
   const settingsService = yield* ServerSettings.ServerSettingsService;
 
   const read = (threadId: ThreadId) =>
-    threads.getThreadRecords(threadId, ["providerTurns", "subagents"]).pipe(
-      Effect.map(({ thread, providerTurns, subagents }): ThreadCostRecords => ({
-        providerTurns,
-        subagents,
-        fallbackModel: thread.modelSelection.model,
-      })),
+    threads.getThreadRecords(threadId, ["providerTurns", "subagents", "providerThreads"]).pipe(
+      Effect.map(({ thread, providerTurns, subagents, providerThreads }): ThreadCostRecords => {
+        const drivers = new Map(providerThreads.map((entry) => [entry.id, entry.driver]));
+        return {
+          providerTurns: providerTurns.map((turn) => ({
+            ...turn,
+            driver: drivers.get(turn.providerThreadId) ?? null,
+          })),
+          subagents,
+          fallbackModel: thread.modelSelection.model,
+        };
+      }),
     );
 
   const estimate = Effect.fn("ThreadCost.estimate")(
     function* (input: ThreadCostEstimateInput) {
-      const family = yield* collectThreadFamily(input.threadId, read);
+      const { family, truncated } = yield* collectThreadFamily(input.threadId, read);
       const [rates, settings] = yield* Effect.all(
         [usage.readRates, settingsService.getSettings.pipe(Effect.option)],
         { concurrency: 2 },
       );
       const configured = settings._tag === "Some" ? settings.value : null;
-      return estimateThreadCost(family, {
-        rates,
-        overrides: createOverrideRateTable(configured?.usagePriceOverrides ?? {}),
-        aliases: resolveModelAliases(configured?.usageModelAliases ?? {}),
-      });
+      return estimateThreadCost(
+        family,
+        {
+          rates,
+          overrides: createOverrideRateTable(configured?.usagePriceOverrides ?? {}),
+          aliases: resolveModelAliases(configured?.usageModelAliases ?? {}),
+        },
+        truncated,
+      );
     },
     (effect, input) =>
       effect.pipe(

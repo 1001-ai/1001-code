@@ -3385,6 +3385,36 @@ describe("UsageService", () => {
       }).pipe(Effect.scoped),
   );
 
+  it.live("hands out the rate table without waiting on a price download", () =>
+    Effect.gen(function* () {
+      const { settings, home } = yield* setup;
+      const release = yield* Deferred.make<void>();
+      const service = yield* UsageService.make.pipe(
+        Effect.provide(
+          layerService({
+            prefix: "usage-service-read-rates-test",
+            home,
+            settings,
+            ratesResponse: () =>
+              Deferred.await(release).pipe(
+                Effect.as(
+                  Response.json({
+                    "claude-fable-5": { input_cost_per_token: 1e-5, output_cost_per_token: 5e-5 },
+                  }),
+                ),
+              ),
+          }),
+        ),
+      );
+
+      assert.strictEqual((yield* service.readRates).size, 0);
+      yield* Deferred.succeed(release, undefined);
+      // Waits on the lock the background download holds.
+      yield* service.refreshRates;
+      assert.strictEqual((yield* service.readRates).size, 1);
+    }).pipe(Effect.scoped),
+  );
+
   it.live("does not orphan an in-flight scan when its first caller is interrupted", () =>
     Effect.gen(function* () {
       const { settings, home } = yield* setup;

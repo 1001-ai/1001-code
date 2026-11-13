@@ -17,10 +17,12 @@ export const ThreadCostEstimate = Schema.Struct({
   pricedTurns: NonNegativeInt,
   /** Turns with tokens for a model that has no known or custom price. */
   unpricedTurns: NonNegativeInt,
-  /** Finished turns whose provider reported no tokens. */
+  /** Completed or interrupted turns whose provider reported no tokens. */
   unreportedTurns: NonNegativeInt,
   /** Subagent threads included, not counting this one. */
   subagentThreads: NonNegativeInt,
+  /** The family was larger than the server walks, so some subagent threads are missing. */
+  truncated: Schema.Boolean,
 });
 export type ThreadCostEstimate = typeof ThreadCostEstimate.Type;
 

@@ -983,7 +983,23 @@ export const make = Effect.gen(function* () {
     return yield* Deferred.await(deferred);
   });
 
-  const readRates = ensureRates(false).pipe(Effect.map(() => rates));
+  // Cost estimates never wait on the network: they get the table in hand while it refreshes behind.
+  const readRates = Effect.gen(function* () {
+    if (ratesFetchedAtMs === null) {
+      const fromDisk = yield* fileSystem.readFileString(ratesCachePath).pipe(
+        Effect.flatMap((raw) => decodeRatesCache(raw)),
+        Effect.catchCause(() => Effect.succeed(null)),
+      );
+      const parsed = fromDisk === null ? null : parseRateTable(fromDisk.document);
+      if (fromDisk !== null && parsed !== null && parsed.size > 0 && ratesFetchedAtMs === null) {
+        rates = parsed;
+        ratesFetchedAtMs = fromDisk.fetchedAtMs;
+        ratesStatus = "cached";
+      }
+    }
+    yield* ratesLock.withPermitsIfAvailable(1)(loadRates(false)).pipe(Effect.forkDetach);
+    return rates;
+  });
 
   return { readSummary, refreshRates, awaitPersisted, readRates } as const;
 });
