@@ -35,10 +35,17 @@ describe("live app checkout instructions", () => {
 
       assert.include(instructions, "<live_app_checkout>");
       assert.include(instructions, `runs in dev mode from the git checkout ${CHECKOUT}.`);
-      assert.include(instructions, `git -C ${CHECKOUT} status`);
-      assert.include(instructions, `| git -C ${CHECKOUT} apply`);
+      assert.include(instructions, `git -C '${CHECKOUT}' status`);
+      assert.include(instructions, `-- apps/web | git -C '${CHECKOUT}' apply`);
       assert.isTrue(instructions.endsWith("</live_app_checkout>"));
     }
+  });
+
+  it("quote a checkout path with spaces and quotes for the shell", () => {
+    const instructions = withCheckout("/Users/o'neil/My Apps/t3", () =>
+      buildRuntimeInstructions({ harness: "Codex" }),
+    );
+    assert.include(instructions, `git -C '/Users/o'\\''neil/My Apps/t3' status`);
   });
 
   it("leave the runtime entry to a caller that sends the text on its own", () => {
