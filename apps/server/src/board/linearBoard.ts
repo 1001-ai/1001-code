@@ -13,7 +13,7 @@ import {
 import { parseThreadLinkHref } from "@t3tools/shared/threadLinks";
 import * as Schema from "effect/Schema";
 
-/** Linear's GraphQL API, read with a personal API key. Queries checked against Linear's public schema. */
+/** Linear's GraphQL API, read with an OAuth access token. Queries checked against Linear's public schema. */
 export const LINEAR_API_URL = "https://api.linear.app/graphql";
 
 export const ISSUE_PAGE_SIZE = 50;
@@ -206,7 +206,7 @@ export function linearFailure(input: {
     codes.has("AUTHENTICATION_ERROR") ||
     types.has("authentication error")
   ) {
-    return new BoardError({ reason: "unauthorized", detail: "Linear rejected the API key." });
+    return new BoardError({ reason: "unauthorized", detail: "Linear rejected your sign-in." });
   }
   if (input.status >= 500) {
     return new BoardError({
