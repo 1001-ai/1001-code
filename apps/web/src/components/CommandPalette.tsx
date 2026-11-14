@@ -247,6 +247,7 @@ import {
   sourceControlHostIcon,
 } from "./CommandPaletteAddProject";
 import { useTeamProjectPaletteGroups } from "./teamProjects/useTeamProjectPaletteGroups";
+import { boardPaletteAction } from "./board/boardSurface";
 import { useCommandPaletteThreadItems } from "./CommandPaletteThreadItems";
 import { useCommandPaletteThemeItems } from "./CommandPaletteThemeItems";
 import {
@@ -1484,6 +1485,12 @@ function OpenCommandPaletteDialog(props: {
         useRightPanelStore.getState().open(threadRef, "pull-requests");
       },
     });
+  }
+
+  if (activeThread !== null) {
+    actionItems.push(
+      boardPaletteAction(scopeThreadRef(activeThread.environmentId, activeThread.id)),
+    );
   }
 
   if (activeThread !== null && canShareActiveThreadWithGuest) {

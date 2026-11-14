@@ -242,6 +242,7 @@ import type { TelemetryOwner } from "./telemetry/Identify.ts";
 import * as UsageService from "./usage/UsageService.ts";
 import * as ThreadCost from "./usage/ThreadCost.ts";
 import * as TeamCatalog from "./teamCatalog/TeamCatalog.ts";
+import * as Board from "./board/Board.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as TriageService from "./triage/TriageService.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
@@ -1520,6 +1521,7 @@ export const layerWsRpc = (
       const usage = yield* UsageService.UsageService;
       const threadCost = yield* ThreadCost.ThreadCost;
       const teamCatalog = yield* TeamCatalog.TeamCatalog;
+      const board = yield* Board.Board;
       const usageLimitSources = yield* UsageLimitSources.UsageLimitSources;
       const worktreeSetupTracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
       const projectCloneTracker = yield* ProjectCloneTracker.ProjectCloneTracker;
@@ -2705,6 +2707,11 @@ export const layerWsRpc = (
         [WS_METHODS.teamCatalogSubscribe]: () => teamCatalog.changes,
         [WS_METHODS.teamCatalogRefresh]: (input) => teamCatalog.refresh(input),
         [WS_METHODS.teamCatalogSetSource]: (input) => teamCatalog.setSource(input.source),
+        [WS_METHODS.boardSubscribe]: (input) => board.changes(input.projectId),
+        [WS_METHODS.boardRefresh]: (input) => board.refresh(input.projectId),
+        [WS_METHODS.boardSubscribeConnection]: () => board.connectionChanges,
+        [WS_METHODS.boardConnect]: (input) => board.connect(input.apiKey),
+        [WS_METHODS.boardDisconnect]: () => board.disconnect,
         [WS_METHODS.teamCatalogPropose]: (input) => teamCatalog.propose(input),
         [WS_METHODS.serverRetryResourceTelemetry]: (_input) => resourceTelemetry.retry,
         [WS_METHODS.serverCheckOtlpEndpoint]: (input) => otlpEndpointCheck.check(input),

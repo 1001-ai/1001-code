@@ -21,6 +21,7 @@ const web = {
     { project: "api", access: "read" },
     { project: "docs", access: "write" },
   ],
+  linear: { team: "WEB", project: "Web app" },
 };
 
 describe("decodeTeamCatalogFiles", () => {
@@ -48,6 +49,10 @@ describe("decodeTeamCatalogFiles", () => {
     ["an invalid owner", { ...web, owners: ["not a login"] }, /owners/],
     ["a key unlike the file", { ...web, key: "site" }, /file name/],
     ["itself as parent", { ...web, parent: "web" }, /own parent/],
+    ["a Linear team without a key", { ...web, linear: { project: "Web app" } }, /team/],
+    ["a lowercase Linear team key", { ...web, linear: { team: "web" } }, /team/],
+    ["an unknown Linear field", { ...web, linear: { team: "WEB", board: "x" } }, /board/],
+    ["a blank Linear project", { ...web, linear: { team: "WEB", project: " " } }, /project/],
     ["a link to itself", { ...web, links: [{ project: "web", access: "read" }] }, /itself/],
     [
       "a project linked twice",
