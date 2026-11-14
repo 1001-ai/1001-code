@@ -22,6 +22,7 @@ import {
   readDrawerLayout,
   resolveTerminalDrawerMaxHeight,
 } from "../ThreadTerminalDrawer";
+import { RelativeTime } from "../RelativeTime";
 import { Alert, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
 import { ScrollArea } from "../ui/scroll-area";
@@ -78,7 +79,7 @@ function SelectedProject(props: {
   const adding = actions.addingKey === entry.project.key;
   return (
     <div className="space-y-1">
-      <div className="space-y-2 px-3 pt-3">
+      <div className="space-y-2 px-3 pt-3 pe-10">
         <h2 className="text-sm font-semibold">{entry.project.name}</h2>
         <p className="break-all text-xs text-muted-foreground">{entry.project.repo}</p>
         {localProjectId !== null ? (
@@ -269,67 +270,27 @@ function TeamProjectsView(props: {
     environments.find((environment) => environment.environmentId === id)?.label ?? "Environment";
 
   const openSettings = () => void navigate({ to: "/settings/threads", hash: "team-catalog" });
+  const catalogReady = snapshot !== null && snapshot.source !== null;
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <header className="flex min-h-9 shrink-0 items-center gap-1 border-b ps-3 pe-1">
-        <h2 className="min-w-0 flex-1 truncate text-xs font-medium">Team projects</h2>
-        {environments.length > 1 ? (
-          <Select
-            value={environmentId ?? ""}
-            onValueChange={(value) => {
-              setSelectedKey(null);
-              setChosenEnvironmentId(
-                environments.find((environment) => environment.environmentId === value)
-                  ?.environmentId ?? null,
-              );
-            }}
-          >
-            <SelectTrigger size="xs" className="w-auto min-w-0" aria-label="Environment">
-              <SelectValue>{environmentLabel(environmentId)}</SelectValue>
-            </SelectTrigger>
-            <SelectPopup align="end" alignItemWithTrigger={false}>
-              {environments.map((environment) => (
-                <SelectItem
-                  hideIndicator
-                  key={environment.environmentId}
-                  value={environment.environmentId}
-                >
-                  {environment.label}
-                </SelectItem>
-              ))}
-            </SelectPopup>
-          </Select>
-        ) : null}
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Fetch team catalog"
-          disabled={environmentId === null || snapshot?.source == null || snapshot.refreshing}
-          onClick={() => {
-            if (environmentId !== null) void refresh({ environmentId, input: { force: true } });
-          }}
-        >
-          <RefreshCwIcon />
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Close team projects"
-          onClick={props.onClose}
-        >
-          <XIcon />
-        </Button>
-      </header>
+    <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-xs"
+        className="absolute end-1.5 top-1.5 z-10"
+        aria-label="Close team projects"
+        onClick={props.onClose}
+      >
+        <XIcon />
+      </Button>
 
       {environmentId === null || snapshot === null ? (
-        <p className="p-6 text-sm text-muted-foreground">
+        <p className="p-6 pe-12 text-sm text-muted-foreground">
           {environmentId === null ? "Connect an environment to see team projects." : "Loading…"}
         </p>
       ) : snapshot.source === null ? (
-        <div className="flex flex-col items-start gap-3 p-6">
+        <div className="flex flex-col items-start gap-3 p-6 pe-12">
           <p className="text-sm text-muted-foreground">
             No team catalog is set for {environmentLabel(environmentId)}. A team catalog is a git
             repository with one file per project.
@@ -342,8 +303,10 @@ function TeamProjectsView(props: {
       ) : (
         <div className="flex min-h-0 flex-1">
           <ScrollArea className="min-h-0 min-w-0 flex-1">
-            <div className="space-y-3 p-4">
-              <Legend />
+            <div className="space-y-3 p-4 pb-12">
+              <div className={selected === null ? "pe-8" : undefined}>
+                <Legend />
+              </div>
               {snapshot.error !== null ? (
                 <Alert variant="warning">
                   <AlertDescription>
@@ -379,7 +342,7 @@ function TeamProjectsView(props: {
             </div>
           </ScrollArea>
           {selected !== null ? (
-            <div className="w-80 max-w-[50%] shrink-0 overflow-y-auto border-l">
+            <div className="w-80 max-w-[50%] shrink-0 overflow-y-auto border-l pb-12">
               <SelectedProject
                 environmentId={environmentId}
                 snapshot={snapshot}
@@ -391,6 +354,63 @@ function TeamProjectsView(props: {
           ) : null}
         </div>
       )}
+
+      {environments.length > 1 || catalogReady ? (
+        <div className="absolute end-1.5 bottom-1.5 z-10 flex items-center gap-1.5 rounded-lg border bg-background py-0.5 ps-1 pe-0.5 text-xs text-muted-foreground shadow-xs">
+          {environments.length > 1 ? (
+            <Select
+              value={environmentId ?? ""}
+              onValueChange={(value) => {
+                setSelectedKey(null);
+                setChosenEnvironmentId(
+                  environments.find((environment) => environment.environmentId === value)
+                    ?.environmentId ?? null,
+                );
+              }}
+            >
+              <SelectTrigger size="xs" className="w-auto min-w-0" aria-label="Environment">
+                <SelectValue>{environmentLabel(environmentId)}</SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                {environments.map((environment) => (
+                  <SelectItem
+                    hideIndicator
+                    key={environment.environmentId}
+                    value={environment.environmentId}
+                  >
+                    {environment.label}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+          ) : null}
+          {catalogReady ? (
+            <>
+              <span className="ps-1.5">
+                {snapshot.refreshing ? (
+                  "Fetching…"
+                ) : snapshot.fetchedAt === null ? (
+                  "Not fetched yet"
+                ) : (
+                  <>
+                    Updated <RelativeTime timestamp={snapshot.fetchedAt} />
+                  </>
+                )}
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                aria-label="Refresh team catalog"
+                disabled={snapshot.refreshing}
+                onClick={() => void refresh({ environmentId, input: { force: true } })}
+              >
+                <RefreshCwIcon />
+              </Button>
+            </>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
