@@ -361,6 +361,13 @@ import {
   ThreadCostEstimateInput,
 } from "./threadCost.ts";
 import {
+  TeamCatalogError,
+  TeamCatalogRefreshInput,
+  TeamCatalogSetSourceInput,
+  TeamCatalogSnapshot,
+  TeamCatalogSubscribeInput,
+} from "./teamCatalog.ts";
+import {
   StorageCleanupReport,
   DatabaseReclaimError,
   DatabaseStorageStatus,
@@ -553,6 +560,9 @@ export const WS_METHODS = {
   serverGetUsageSummary: "server.getUsageSummary",
   serverRefreshUsageRates: "server.refreshUsageRates",
   serverGetThreadCost: "server.getThreadCost",
+  teamCatalogSubscribe: "teamCatalog.subscribe",
+  teamCatalogRefresh: "teamCatalog.refresh",
+  teamCatalogSetSource: "teamCatalog.setSource",
 
   scheduledTasksSubscribe: "scheduledTasks.subscribe",
   scheduledTasksUpsert: "scheduledTasks.upsert",
@@ -1026,6 +1036,25 @@ const WsServerGetThreadCostRpc = Rpc.make(WS_METHODS.serverGetThreadCost, {
   payload: ThreadCostEstimateInput,
   success: ThreadCostEstimate,
   error: Schema.Union([ThreadCostEstimateError, EnvironmentAuthorizationError]),
+});
+
+const WsTeamCatalogSubscribeRpc = Rpc.make(WS_METHODS.teamCatalogSubscribe, {
+  payload: TeamCatalogSubscribeInput,
+  success: TeamCatalogSnapshot,
+  error: EnvironmentAuthorizationError,
+  stream: true,
+});
+
+const WsTeamCatalogRefreshRpc = Rpc.make(WS_METHODS.teamCatalogRefresh, {
+  payload: TeamCatalogRefreshInput,
+  success: TeamCatalogSnapshot,
+  error: EnvironmentAuthorizationError,
+});
+
+const WsTeamCatalogSetSourceRpc = Rpc.make(WS_METHODS.teamCatalogSetSource, {
+  payload: TeamCatalogSetSourceInput,
+  success: TeamCatalogSnapshot,
+  error: Schema.Union([TeamCatalogError, EnvironmentAuthorizationError]),
 });
 
 const WsServerSignalProcessRpc = Rpc.make(WS_METHODS.serverSignalProcess, {
@@ -2153,6 +2182,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerGetUsageSummaryRpc,
   WsServerRefreshUsageRatesRpc,
   WsServerGetThreadCostRpc,
+  WsTeamCatalogSubscribeRpc,
+  WsTeamCatalogRefreshRpc,
+  WsTeamCatalogSetSourceRpc,
   WsServerSignalProcessRpc,
   WsScheduledTasksSubscribeRpc,
   WsScheduledTasksUpsertRpc,
