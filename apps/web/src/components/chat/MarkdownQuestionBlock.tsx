@@ -80,7 +80,8 @@ function QuestionCard({
   readonly askedInItemId: string;
 }) {
   const promptId = useId();
-  const [changing, setChanging] = useState(false);
+  // Holds the answer being changed, so a newer answer closes the controls without an effect.
+  const [changingFrom, setChangingFrom] = useState<string | null>(null);
   const [freeText, setFreeText] = useState("");
   const answer = useAtomValue(
     questionAnswerAtomFamily(
@@ -106,6 +107,7 @@ function QuestionCard({
   const options = questionOptions(question);
   const selectedMulti =
     question.kind === "multi" ? selectedMultiOptions(options, draftAnswer) : new Set<string>();
+  const changing = changingFrom !== null && changingFrom === answer;
   const showControls = answer === null || changing;
 
   return (
@@ -130,7 +132,12 @@ function QuestionCard({
             {answer}
           </span>
           {changing ? null : (
-            <Button type="button" variant="ghost-muted" size="xs" onClick={() => setChanging(true)}>
+            <Button
+              type="button"
+              variant="ghost-muted"
+              size="xs"
+              onClick={() => setChangingFrom(answer)}
+            >
               Change answer
             </Button>
           )}

@@ -42,6 +42,8 @@ export function questionOptions(question: QuestionBlock): ReadonlyArray<string> 
   return question.options ?? [];
 }
 
+const MULTI_SEPARATOR = ", ";
+
 /** The fence body as a question, or null when it should render as ordinary code. */
 export function parseQuestionBlock(code: string): QuestionBlock | null {
   if (code.length > 4_000) return null;
@@ -50,6 +52,13 @@ export function parseQuestionBlock(code: string): QuestionBlock | null {
   const hasOptions = question.options !== undefined;
   const needsOptions = question.kind === "choice" || question.kind === "multi";
   if (hasOptions !== needsOptions) return null;
+  // A multi answer joins options with the separator, so an option containing it can't round-trip.
+  if (
+    question.kind === "multi" &&
+    questionOptions(question).some((o) => o.includes(MULTI_SEPARATOR))
+  ) {
+    return null;
+  }
   if (
     question.recommended !== undefined &&
     (question.kind === "text" || !questionOptions(question).includes(question.recommended))
@@ -93,8 +102,6 @@ export function writeAnswerLine(prompt: string, id: string, answer: string | nul
   if (prompt.trim().length === 0) return line;
   return prompt.endsWith("\n") ? `${prompt}${line}` : `${prompt}\n${line}`;
 }
-
-const MULTI_SEPARATOR = ", ";
 
 /** The options a multi answer selects, read back from its draft line. */
 export function selectedMultiOptions(

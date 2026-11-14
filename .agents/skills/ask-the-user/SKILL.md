@@ -40,7 +40,7 @@ A block that breaks a rule renders as an ordinary code block, and the user gets 
 
 - Number questions `Q1`, `Q2` and up through the thread. Never reuse an id for a different question.
 - To ask the same question again, keep its id. The user's newest `<id>:` line is the answer.
-- Answers arrive as lines in the user's message: `Q1: Yes`. A `multi` answer lists options separated by `, `. Any other text is the user's own words.
+- Answers arrive as lines in the user's message: `Q1: Yes`. A `multi` answer lists options separated by `, `, so a `multi` option must not contain `, ` (the block shows as plain code if one does). Any other text is the user's own words.
 - Read the whole message, not only the answer lines. The user may have added comments.
 
 ## Example

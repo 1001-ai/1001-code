@@ -54,6 +54,10 @@ describe("parseQuestionBlock", () => {
       block({ id: "Q1", prompt: "P", kind: "choice", options: ["A\u202Eevil", "B"] }),
     ],
     ["a zero-width character in the prompt", block({ id: "Q1", prompt: "P\u200B", kind: "text" })],
+    [
+      "a multi option containing the answer separator",
+      block({ id: "Q1", prompt: "P", kind: "multi", options: ["New York, NY", "Boston"] }),
+    ],
     ["a JSON array", "[]"],
   ])("rejects %s", (_label, code) => {
     expect(parseQuestionBlock(code)).toBeNull();
