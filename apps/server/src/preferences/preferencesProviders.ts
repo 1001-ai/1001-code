@@ -1,4 +1,4 @@
-import type { ProjectId } from "@t3tools/contracts";
+import type { ProjectId, ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
@@ -9,11 +9,12 @@ import type { Preferences } from "./Preferences.ts";
 export const preferencesTurnInput = (
   service: Option.Option<Preferences["Service"]>,
   projectId: ProjectId,
+  threadId: ThreadId,
 ): Effect.Effect<{ readonly preferences?: string }> =>
   Option.isNone(service)
     ? Effect.succeed({})
     : service.value
-        .instructions(projectId)
+        .instructions(projectId, threadId)
         .pipe(Effect.map((block) => (block === undefined ? {} : { preferences: block })));
 
 const encoder = new TextEncoder();

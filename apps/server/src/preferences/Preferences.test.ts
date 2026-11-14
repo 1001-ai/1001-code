@@ -1,8 +1,10 @@
 import {
+  EnvironmentId,
   ProjectId,
   type RepositoryIdentity,
   type TeamCatalogProposal,
   type TeamCatalogSnapshot,
+  ThreadId,
 } from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
 import * as Context from "effect/Context";
@@ -13,12 +15,14 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as TestClock from "effect/testing/TestClock";
 
+import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
 import * as TeamCatalog from "../teamCatalog/TeamCatalog.ts";
 import * as Preferences from "./Preferences.ts";
 
 const PROJECT_ID = ProjectId.make("project-web");
+const THREAD_ID = ThreadId.make("thread-1");
 
 const webIdentity: RepositoryIdentity = {
   canonicalKey: "github.com/acme/web",
@@ -104,6 +108,9 @@ const makePreferences = (input: {
               workspaceRoot: "/projects/web",
             } as unknown as ProjectStore.ProjectRow),
         }),
+        Layer.mock(ServerEnvironment.ServerEnvironment)({
+          getEnvironmentId: Effect.succeed(EnvironmentId.make("env-1")),
+        }),
         Layer.mock(RepositoryIdentityResolver.RepositoryIdentityResolver)({
           resolve: () =>
             Effect.succeed(input.identity === undefined ? webIdentity : input.identity),
@@ -145,7 +152,7 @@ it.effect(
           unavailable: null,
         },
       ]);
-      const block = yield* preferences.instructions(PROJECT_ID);
+      const block = yield* preferences.instructions(PROJECT_ID, THREAD_ID);
       expect(block).toBe(view.block);
       expect(block).toContain("in github.com/acme/home");
       const team = block!.indexOf("Prefer small pull requests");
@@ -175,7 +182,36 @@ it.effect("says why a scope has no file, and sends nothing without a catalog", (
 
     const none = yield* makePreferences({ catalog: catalog({ source: null }) }).build;
     expect(yield* none.read(PROJECT_ID)).toMatchObject({ documents: [], block: null });
-    expect(yield* none.instructions(PROJECT_ID)).toBeUndefined();
+    expect(yield* none.instructions(PROJECT_ID, THREAD_ID)).toBeUndefined();
+  }).pipe(Effect.scoped),
+);
+
+it.effect("gives a thread on a Linear board its own link, even without preference files", () =>
+  Effect.gen(function* () {
+    const boardCatalog = (fields: Partial<TeamCatalogSnapshot> = {}) => {
+      const base = catalog(fields);
+      const entry = base.projects[0]!;
+      return {
+        ...base,
+        projects: [{ ...entry, project: { ...entry.project, linear: { team: "COD" } } }],
+      };
+    };
+    const threadLink = "<thread_link>\nThis thread's link is t3-thread://v2/env-1/thread-1.";
+
+    const preferences = yield* makePreferences({ catalog: boardCatalog() }).build;
+    const view = yield* preferences.read(PROJECT_ID);
+    const block = yield* preferences.instructions(PROJECT_ID, THREAD_ID);
+    expect(block).toContain(`${view.block}\n\n${threadLink}`);
+    expect(view.block).not.toContain("<thread_link>");
+
+    const empty = yield* makePreferences({
+      catalog: boardCatalog(),
+      readFile: () => Effect.succeed(null),
+    }).build;
+    expect((yield* empty.instructions(PROJECT_ID, THREAD_ID))?.startsWith(threadLink)).toBe(true);
+
+    const unmatched = yield* makePreferences({ catalog: boardCatalog(), identity: null }).build;
+    expect(yield* unmatched.instructions(PROJECT_ID, THREAD_ID)).not.toContain("<thread_link>");
   }).pipe(Effect.scoped),
 );
 
@@ -239,20 +275,22 @@ it.effect("refreshes a stale catalog in the background, and a failed read sends 
     const refreshed = yield* Deferred.make<void>();
     const preferences = yield* makePreferences({ catalog: catalog(), refreshed }).build;
     yield* TestClock.adjust("11 minutes");
-    expect(yield* preferences.instructions(PROJECT_ID)).toContain("Prefer small pull requests");
+    expect(yield* preferences.instructions(PROJECT_ID, THREAD_ID)).toContain(
+      "Prefer small pull requests",
+    );
     yield* Deferred.await(refreshed);
 
     const broken = yield* makePreferences({
       catalog: catalog(),
       readFile: () => Effect.die("disk gone"),
     }).build;
-    expect(yield* broken.instructions(PROJECT_ID)).toBeUndefined();
+    expect(yield* broken.instructions(PROJECT_ID, THREAD_ID)).toBeUndefined();
 
     const cancelled = yield* makePreferences({
       catalog: catalog(),
       readFile: () => Effect.interrupt,
     }).build;
-    const exit = yield* Effect.exit(cancelled.instructions(PROJECT_ID));
+    const exit = yield* Effect.exit(cancelled.instructions(PROJECT_ID, THREAD_ID));
     expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(true);
   }).pipe(Effect.scoped),
 );
