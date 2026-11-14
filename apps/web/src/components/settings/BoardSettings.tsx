@@ -7,7 +7,7 @@ import { readLocalApi } from "../../localApi";
 import { boardConnect, boardDisconnect, useBoardConnection } from "../../state/board";
 import { readPreparedConnection, useEnvironmentScope } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { Button } from "../ui/button";
+import { Button, InlineButton } from "../ui/button";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
 
@@ -24,9 +24,17 @@ function LinearConnectionRow(props: {
   const connect = useAtomCommand(boardConnect, { reportFailure: false });
   const disconnect = useAtomCommand(boardDisconnect);
   const [pending, setPending] = useState(false);
-  // The sign-in this row waits on, so an older attempt's timeout cannot end a newer wait.
-  const [waitingFor, setWaitingFor] = useState<number | null>(null);
+  // The sign-in this row waits on, so an older attempt's timeout cannot end a newer wait. `link`
+  // is set when the browser blocked the sign-in tab, for the person to open it themselves.
+  const [waiting, setWaiting] = useState<{
+    readonly attempt: number;
+    readonly link: string | null;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // A wait ends once the environment signs in, here or from anywhere else.
+  if (waiting !== null && connection !== null && connection.status !== "disconnected") {
+    setWaiting(null);
+  }
 
   const signIn = async () => {
     const callbackOrigin = readPreparedConnection(props.environmentId)?.httpBaseUrl;
@@ -48,15 +56,18 @@ function LinearConnectionRow(props: {
       return;
     }
     const { authorizeUrl } = result.value;
+    let link: string | null = null;
     if (tab !== null) {
       tab.location.replace(authorizeUrl);
-    } else {
+    } else if (isElectron) {
       await readLocalApi()?.shell.openExternal(authorizeUrl);
+    } else {
+      link = authorizeUrl;
     }
     const attempt = Date.now();
-    setWaitingFor(attempt);
+    setWaiting({ attempt, link });
     setTimeout(
-      () => setWaitingFor((current) => (current === attempt ? null : current)),
+      () => setWaiting((current) => (current?.attempt === attempt ? null : current)),
       SIGN_IN_WAIT_MS,
     );
   };
@@ -84,10 +95,7 @@ function LinearConnectionRow(props: {
             variant="outline"
             size="sm"
             disabled={!canWrite}
-            onClick={() => {
-              setWaitingFor(null);
-              void disconnect({ environmentId: props.environmentId, input: {} });
-            }}
+            onClick={() => void disconnect({ environmentId: props.environmentId, input: {} })}
           >
             Disconnect
           </Button>
@@ -105,9 +113,20 @@ function LinearConnectionRow(props: {
         (connection === null
           ? null
           : (connection.signInFailure ??
-            (waitingFor !== null
-              ? "Finish signing in to Linear in your browser."
-              : "Not signed in.")))
+            (waiting === null ? (
+              "Not signed in."
+            ) : waiting.link === null ? (
+              "Finish signing in to Linear in your browser."
+            ) : (
+              <>
+                The browser blocked the sign-in tab.{" "}
+                <InlineButton
+                  render={<a href={waiting.link} target="_blank" rel="noopener noreferrer" />}
+                >
+                  Open Linear sign-in
+                </InlineButton>
+              </>
+            ))))
       }
       control={
         <Button
