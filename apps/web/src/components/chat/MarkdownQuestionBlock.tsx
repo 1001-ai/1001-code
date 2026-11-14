@@ -2,15 +2,20 @@ import { parseScopedThreadKey, scopedThreadKey } from "@t3tools/client-runtime/e
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { Atom } from "effect/reactivity";
-import { CheckIcon } from "lucide-react";
-import { use, useId, type FormEvent, type ReactNode } from "react";
+import { CheckIcon, PencilLineIcon } from "lucide-react";
+import {
+  use,
+  useId,
+  useRef,
+  type ComponentProps,
+  type FormEvent,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 
 import { useComposerDraftStore } from "~/composerDraftStore";
+import { cn } from "~/lib/utils";
 import { environmentThreadDetails } from "../../state/threads";
-import { Badge } from "../ui/badge";
-import { Button } from "../ui/button";
-import { Input } from "../ui/input";
-import { Toggle } from "../ui/toggle";
 import {
   findQuestionAnswer,
   parseQuestionBlock,
@@ -77,7 +82,7 @@ export function MarkdownQuestionBlock({
     return (
       <div
         role="status"
-        className="my-[0.65rem] rounded-xl border border-border/70 bg-card/60 px-3 py-2.5 text-muted-foreground text-sm"
+        className="my-4 border-border border-l-2 py-1 ps-3 text-muted-foreground text-sm"
       >
         Writing a question…
       </div>
@@ -98,6 +103,8 @@ function QuestionCard({
   readonly askedInItemId: string;
 }) {
   const promptId = useId();
+  const freeTextHintId = useId();
+  const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const cardKey = `${scopedThreadKey(threadRef)}\u0000${askedInItemId}\u0000${question.id}`;
   // The message whose answer is being changed, so a newer answering message closes the controls.
   const changingFrom = useAtomValue(questionChangingFromAtomFamily(cardKey));
@@ -122,8 +129,35 @@ function QuestionCard({
   };
 
   const options = questionOptions(question);
-  const selectedMulti =
-    question.kind === "multi" ? selectedMultiOptions(options, draftAnswer) : new Set<string>();
+  const multi = question.kind === "multi";
+  const selectedMulti = multi ? selectedMultiOptions(options, draftAnswer) : new Set<string>();
+  const isSelected = (option: string) =>
+    multi ? selectedMulti.has(option) : draftAnswer === option;
+  const choose = (option: string) =>
+    writeDraftAnswer(multi ? toggleMultiOption(options, draftAnswer, option) : option);
+  // A radio group is one tab stop, on the checked option or else the first.
+  const radioTabStop = Math.max(options.indexOf(draftAnswer ?? ""), 0);
+  const moveFocus = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    const last = options.length - 1;
+    const next =
+      event.key === "ArrowDown" || event.key === "ArrowRight"
+        ? index === last
+          ? 0
+          : index + 1
+        : event.key === "ArrowUp" || event.key === "ArrowLeft"
+          ? index === 0
+            ? last
+            : index - 1
+          : event.key === "Home"
+            ? 0
+            : event.key === "End"
+              ? last
+              : null;
+    if (next === null) return;
+    event.preventDefault();
+    optionRefs.current[next]?.focus();
+    if (!multi) writeDraftAnswer(options[next] ?? null);
+  };
   const changing = answer !== null && changingFrom === answer.messageId;
   const showControls = answer === null || changing;
 
@@ -131,32 +165,30 @@ function QuestionCard({
     <section
       aria-labelledby={promptId}
       data-chat-markdown-question={question.id}
-      className="my-[0.65rem] flex w-full min-w-0 flex-col gap-2 rounded-xl border border-border/70 bg-card/60 px-3 py-2.5"
+      className="my-4 flex w-full min-w-0 flex-col gap-1 border-border border-l-2 ps-3"
     >
-      <div className="flex min-w-0 items-baseline gap-2">
-        <Badge variant="outline" size="sm">
-          {question.id}
-        </Badge>
-        <p id={promptId} className="min-w-0 font-medium text-sm [overflow-wrap:anywhere]">
+      <div className="min-w-0 text-sm [overflow-wrap:anywhere]">
+        <span className="me-2 font-mono text-2xs text-muted-foreground">{question.id}</span>
+        <span id={promptId} className="font-medium">
           {question.prompt}
-        </p>
+        </span>
       </div>
       {answer !== null ? (
-        <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
-          <CheckIcon aria-hidden className="size-3.5 text-success-foreground" />
+        <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-muted-foreground text-sm">
+          <CheckIcon aria-hidden className="size-3.5 shrink-0 text-success-foreground" />
           <span className="min-w-0 [overflow-wrap:anywhere]">
-            <span className="text-muted-foreground">Answered: </span>
-            {answer.answer}
+            Answered: <span className="text-foreground">{answer.answer}</span>
           </span>
           {changing ? null : (
-            <Button
-              type="button"
-              variant="ghost-muted"
-              size="xs"
-              onClick={() => setChangingFrom(answer.messageId)}
-            >
-              Change answer
-            </Button>
+            <>
+              <span aria-hidden>·</span>
+              <QuietAction
+                aria-label={`Change your answer to ${question.id}`}
+                onClick={() => setChangingFrom(answer.messageId)}
+              >
+                Change
+              </QuietAction>
+            </>
           )}
         </div>
       ) : null}
@@ -164,68 +196,122 @@ function QuestionCard({
         <>
           {options.length > 0 ? (
             <div
-              role="group"
-              aria-label={question.kind === "multi" ? "Choose any that apply" : "Choose one"}
-              className="flex flex-wrap gap-1.5"
+              role={multi ? "group" : "radiogroup"}
+              aria-labelledby={promptId}
+              className="flex min-w-0 flex-col"
             >
-              {options.map((option) => (
-                <Toggle
-                  key={option}
-                  variant="outline"
-                  size="sm"
-                  pressed={
-                    question.kind === "multi" ? selectedMulti.has(option) : draftAnswer === option
-                  }
-                  onPressedChange={(pressed) =>
-                    writeDraftAnswer(
-                      question.kind === "multi"
-                        ? toggleMultiOption(options, draftAnswer, option)
-                        : pressed
-                          ? option
-                          : null,
-                    )
-                  }
-                >
-                  {option}
-                  {option === question.recommended ? (
-                    <Badge variant="info" size="sm">
-                      Recommended
-                    </Badge>
-                  ) : null}
-                </Toggle>
-              ))}
+              {options.map((option, index) => {
+                const selected = isSelected(option);
+                return (
+                  <button
+                    key={option}
+                    ref={(element) => {
+                      optionRefs.current[index] = element;
+                    }}
+                    type="button"
+                    role={multi ? "checkbox" : "radio"}
+                    aria-checked={selected}
+                    tabIndex={multi || index === radioTabStop ? 0 : -1}
+                    onClick={() => choose(option)}
+                    onKeyDown={(event) => moveFocus(event, index)}
+                    className={cn(
+                      "-mx-2 flex min-w-0 items-start gap-2.5 rounded-md px-2 py-1 text-start text-sm outline-none hover:bg-accent/60 focus-visible:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-inset",
+                      selected ? "font-medium text-foreground" : "text-foreground/80",
+                    )}
+                  >
+                    <OptionMarker multi={multi} selected={selected} />
+                    <span className="min-w-0 [overflow-wrap:anywhere]">
+                      {option}
+                      {option === question.recommended ? (
+                        <span className="ms-2 font-normal text-muted-foreground text-xs">
+                          recommended
+                        </span>
+                      ) : null}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           ) : null}
-          <form className="flex min-w-0 items-center gap-1.5" onSubmit={submitFreeText}>
-            <Input
-              size="sm"
+          <form
+            className="-mx-2 flex min-w-0 items-center gap-2.5 rounded-md px-2 py-1 hover:bg-accent/60 has-focus-visible:bg-accent/60"
+            onSubmit={submitFreeText}
+          >
+            <span aria-hidden className="flex w-3.5 shrink-0 justify-center">
+              <PencilLineIcon className="size-3.5 text-muted-foreground/70" />
+            </span>
+            <input
               value={freeText}
               maxLength={500}
+              enterKeyHint="done"
               onChange={(event) => setFreeText(event.target.value)}
-              placeholder={
-                question.kind === "text" ? "Type your answer" : "Or answer in your own words"
-              }
+              placeholder={question.kind === "text" ? "Type an answer…" : "Or type an answer…"}
               aria-label={`Answer ${question.id} in your own words`}
+              aria-describedby={freeTextHintId}
+              className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/70"
             />
-            <Button type="submit" variant="outline" size="sm" disabled={freeText.trim() === ""}>
-              Add to draft
-            </Button>
+            <span id={freeTextHintId} className="sr-only">
+              Press Enter to add it to your draft.
+            </span>
+            {freeText.trim() === "" ? null : (
+              <span aria-hidden className="shrink-0 text-muted-foreground text-xs">
+                Enter to add
+              </span>
+            )}
           </form>
           {draftAnswer !== null ? (
-            <div className="flex min-w-0 flex-wrap items-center gap-2 text-muted-foreground text-xs">
+            <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-muted-foreground text-xs">
               <span className="min-w-0 [overflow-wrap:anywhere]">In your draft: {draftAnswer}</span>
-              <Button
-                type="button"
-                variant="ghost-muted"
-                size="xs"
+              <span aria-hidden>·</span>
+              <QuietAction
+                aria-label={`Remove ${question.id} from your draft`}
                 onClick={() => writeDraftAnswer(null)}
               >
                 Remove
-              </Button>
+              </QuietAction>
             </div>
           ) : null}
         </>
       ) : null}
     </section>
+  );
+}
+
+function OptionMarker({
+  multi,
+  selected,
+}: {
+  readonly multi: boolean;
+  readonly selected: boolean;
+}) {
+  return (
+    <span aria-hidden className="flex h-5 w-3.5 shrink-0 items-center justify-center">
+      {multi ? (
+        selected ? (
+          <CheckIcon strokeWidth={3} className="size-3.5 text-primary" />
+        ) : (
+          <span className="size-3 rounded-xs border border-foreground/25" />
+        )
+      ) : (
+        <span
+          className={cn(
+            "flex size-3 items-center justify-center rounded-full border",
+            selected ? "border-primary" : "border-foreground/25",
+          )}
+        >
+          {selected ? <span className="size-1.5 rounded-full bg-primary" /> : null}
+        </span>
+      )}
+    </span>
+  );
+}
+
+function QuietAction(props: Omit<ComponentProps<"button">, "type" | "className">) {
+  return (
+    <button
+      type="button"
+      className="rounded-sm text-muted-foreground underline-offset-2 outline-none hover:text-foreground hover:underline focus-visible:text-foreground focus-visible:underline"
+      {...props}
+    />
   );
 }
