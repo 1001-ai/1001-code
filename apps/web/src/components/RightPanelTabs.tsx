@@ -106,10 +106,10 @@ import { resolvePullRequestState } from "./pullRequest/pullRequestPresentation";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { BoardSurfaceIcon } from "~/components/board/boardSurface";
 import {
-  PreferencesSurfaceIcon,
+  MemorySurfaceIcon,
   type TeamSurfaceKind,
   teamSurfaceActions,
-} from "~/components/preferences/preferencesSurface";
+} from "~/components/memory/memorySurface";
 import { observeResize } from "~/lib/observeResize";
 import { surfaceShortcutKey } from "~/lib/surfaceShortcutKey";
 
@@ -609,8 +609,8 @@ function surfaceTitle(
       return "Side chat";
     case "board":
       return "Board";
-    case "preferences":
-      return "Preferences";
+    case "memory":
+      return "Memory";
     case "preview": {
       const snapshot = surface.resourceId ? sessions[surface.resourceId] : null;
       if (!snapshot || snapshot.navStatus._tag === "Idle") return "Browser";
@@ -701,8 +701,8 @@ function SurfaceIcon({
       return <PullRequestGlyph.link className="size-3 shrink-0" />;
     case "board":
       return <BoardSurfaceIcon />;
-    case "preferences":
-      return <PreferencesSurfaceIcon />;
+    case "memory":
+      return <MemorySurfaceIcon />;
     case "side-chat":
       return <SideChatTabIcon environmentId={environmentId} threadId={surface.threadId} />;
     case "device":

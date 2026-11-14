@@ -4,10 +4,10 @@ import {
   type ProjectId,
   type ScopedThreadRef,
   type TeamCatalogProposal,
-  PREFERENCES_MAX_BYTES,
-  type PreferencesDocument,
-  type PreferencesScope,
-  type PreferencesView,
+  MEMORY_MAX_BYTES,
+  type MemoryDocument,
+  type MemoryScope,
+  type MemoryView,
 } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import {
@@ -22,7 +22,7 @@ import { useState } from "react";
 import { useOpenLink } from "~/browser/useOpenLink";
 import { useEnvironmentScope } from "~/state/session";
 import { teamCatalogRefresh } from "~/state/teamCatalog";
-import { preferencesPropose, usePreferences } from "~/state/preferences";
+import { memoryPropose, useMemory } from "~/state/memory";
 import { useAtomCommand } from "~/state/use-atom-command";
 import ChatMarkdown from "../ChatMarkdown";
 import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
@@ -34,43 +34,43 @@ import { Textarea } from "../ui/textarea";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
-const SCOPE_LABEL: Record<PreferencesScope, string> = {
+const SCOPE_LABEL: Record<MemoryScope, string> = {
   team: "Team",
   project: "Project",
   personal: "Personal",
 };
 
 /** Revision, size and an approximate token count, at about four bytes a token. */
-function blockStatus(view: PreferencesView): string {
+function blockStatus(view: MemoryView): string {
   const revision =
     view.revision === null ? "not fetched yet" : `revision ${view.revision.slice(0, 7)}`;
   if (view.block === null) return `Nothing is sent yet · ${revision}`;
   const bytes = new TextEncoder().encode(view.block).length;
-  const size = `About ${Math.ceil(bytes / 4).toLocaleString()} tokens (${(bytes / 1024).toFixed(1)} of ${PREFERENCES_MAX_BYTES / 1024} KB)`;
+  const size = `About ${Math.ceil(bytes / 4).toLocaleString()} tokens (${(bytes / 1024).toFixed(1)} of ${MEMORY_MAX_BYTES / 1024} KB)`;
   return `${size} · ${revision}${view.truncated ? " · over the limit, so the end is left out" : ""}`;
 }
 
 interface Draft {
-  readonly scope: PreferencesScope;
+  readonly scope: MemoryScope;
   readonly baseRevision: string;
   readonly text: string;
 }
 
-/** The project's preferences in the right panel: markdown read in place, edited as a pull request. */
-export default function PreferencesPanel(props: {
+/** The project's memory in the right panel: markdown read in place, edited as a pull request. */
+export default function MemoryPanel(props: {
   readonly threadRef: ScopedThreadRef;
   readonly projectId: ProjectId | null;
 }) {
   const environmentId = props.threadRef.environmentId;
-  const view = usePreferences(environmentId, props.projectId);
+  const view = useMemory(environmentId, props.projectId);
   const refresh = useAtomCommand(teamCatalogRefresh);
   const navigate = useNavigate();
 
   if (props.projectId === null) {
     return (
-      <PreferencesMessage
+      <MemoryMessage
         title="No project"
-        description="Open a project to see the preferences its agents get."
+        description="Open a project to see the memory its agents get."
       />
     );
   }
@@ -83,9 +83,9 @@ export default function PreferencesPanel(props: {
   }
   if (view.source === null) {
     return (
-      <PreferencesMessage
+      <MemoryMessage
         title="No team catalog"
-        description="Preferences live in the team catalog repository, under preferences/. Set the catalog in Settings."
+        description="Memory live in the team catalog repository, under memory/. Set the catalog in Settings."
       >
         <Button
           size="sm"
@@ -95,11 +95,11 @@ export default function PreferencesPanel(props: {
           <Settings2Icon />
           Team projects settings
         </Button>
-      </PreferencesMessage>
+      </MemoryMessage>
     );
   }
   return (
-    <PreferencesDocuments
+    <MemoryDocuments
       threadRef={props.threadRef}
       projectId={props.projectId}
       view={view}
@@ -108,24 +108,22 @@ export default function PreferencesPanel(props: {
   );
 }
 
-function PreferencesDocuments(props: {
+function MemoryDocuments(props: {
   readonly threadRef: ScopedThreadRef;
   readonly projectId: ProjectId;
-  readonly view: PreferencesView;
+  readonly view: MemoryView;
   readonly onRefresh: () => void;
 }) {
   const { view } = props;
   const environmentId = props.threadRef.environmentId;
   const canPush = useEnvironmentScope(environmentId, AuthSourceControlWriteScope);
-  const propose = useAtomCommand(preferencesPropose, { reportFailure: false });
+  const propose = useAtomCommand(memoryPropose, { reportFailure: false });
   const openLink = useOpenLink(props.threadRef);
-  const [scope, setScope] = useState<PreferencesScope>("team");
+  const [scope, setScope] = useState<MemoryScope>("team");
   const [draft, setDraft] = useState<Draft | null>(null);
   const [saving, setSaving] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
-  const [proposals, setProposals] = useState<
-    Partial<Record<PreferencesScope, TeamCatalogProposal>>
-  >({});
+  const [proposals, setProposals] = useState<Partial<Record<MemoryScope, TeamCatalogProposal>>>({});
 
   const document = view.documents.find((candidate) => candidate.scope === scope);
   const editing = draft !== null && draft.scope === scope ? draft : null;
@@ -164,7 +162,7 @@ function PreferencesDocuments(props: {
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2">
         <ToggleGroup
-          aria-label="Preferences scope"
+          aria-label="Memory scope"
           value={[scope]}
           onValueChange={(next) => {
             const value = next[0];
@@ -187,7 +185,7 @@ function PreferencesDocuments(props: {
               <Button
                 size="icon-xs"
                 variant="ghost"
-                aria-label="Refresh preferences"
+                aria-label="Refresh memory"
                 disabled={view.refreshing}
                 aria-busy={view.refreshing}
                 onClick={props.onRefresh}
@@ -223,12 +221,12 @@ function PreferencesDocuments(props: {
             ) : editing !== null ? (
               <div className="space-y-2">
                 <Textarea
-                  aria-label={`${SCOPE_LABEL[scope]} preferences`}
+                  aria-label={`${SCOPE_LABEL[scope]} memory`}
                   rows={16}
                   value={editing.text}
-                  maxLength={PREFERENCES_MAX_BYTES}
+                  maxLength={MEMORY_MAX_BYTES}
                   onChange={(event) => setDraft({ ...editing, text: event.target.value })}
-                  placeholder={"- One preference per line, in plain words.\n- Another one."}
+                  placeholder={"- One memory per line, in plain words.\n- Another one."}
                 />
                 <p className="text-xs text-muted-foreground">
                   Saving opens a pull request on the team repository. The change is pending until it
@@ -261,7 +259,7 @@ function PreferencesDocuments(props: {
               </div>
             ) : document.text.trim() === "" ? (
               <p className="text-sm text-muted-foreground">
-                No {SCOPE_LABEL[scope].toLowerCase()} preferences yet.
+                No {SCOPE_LABEL[scope].toLowerCase()} memory yet.
               </p>
             ) : (
               <ChatMarkdown
@@ -323,7 +321,7 @@ function PreferencesDocuments(props: {
 }
 
 function DocumentHeading(props: {
-  readonly document: PreferencesDocument;
+  readonly document: MemoryDocument;
   readonly editing: boolean;
   readonly editBlocked: string | null;
   readonly onEdit: () => void;
@@ -367,7 +365,7 @@ function DocumentHeading(props: {
   );
 }
 
-function PreferencesMessage(props: {
+function MemoryMessage(props: {
   readonly title: string;
   readonly description: string;
   readonly children?: React.ReactNode;

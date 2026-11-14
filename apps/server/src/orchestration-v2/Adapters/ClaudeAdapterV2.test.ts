@@ -6585,9 +6585,9 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       ),
   );
 
-  // Fork: preferences; see fork/README.md.
+  // Fork: memory; see fork/README.md.
   it.effect(
-    "reopens with resume when preferences change between turns, but not over background work",
+    "reopens with resume when memory changes between turns, but not over background work",
     () =>
       Effect.scoped(
         Effect.gen(function* () {
@@ -6596,17 +6596,17 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             close: (queue) => Queue.shutdown(queue),
           });
           const now = yield* DateTime.now;
-          const turn = (ordinal: number, preferences: string) => ({
+          const turn = (ordinal: number, memory: string) => ({
             ...makeClaudeTestTurnInput({
               threadId: harness.threadId,
               providerThread: harness.providerThread,
               now,
-              attemptId: RunAttemptId.make(`attempt-preferences:${ordinal}`),
+              attemptId: RunAttemptId.make(`attempt-memory:${ordinal}`),
               text: `Request ${ordinal}`,
               attachments: [],
               providerTurnOrdinal: ordinal,
             }),
-            preferences,
+            memory,
           });
           const append = () =>
             (harness.getOpenedOptions()?.systemPrompt as { readonly append?: string } | undefined)
