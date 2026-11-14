@@ -1,3 +1,7 @@
+import type { ComposerContextId } from "@t3tools/contracts";
+import { formatComposerContextHref } from "@t3tools/shared/composerContextReferences";
+import type { PhrasingContent, Root, RootContent, Strong } from "mdast";
+
 const BOOLEAN_OPTIONS = ["Yes", "No"] as const;
 const MULTI_SEPARATOR = ", ";
 
@@ -186,4 +190,159 @@ export function findQuestionAnswer(
     if (answer !== null) return { answer, messageId };
   }
   return null;
+}
+
+// An id the way prose mentions it: `(Q40)`, `Q40,` or `Q40:`, but not `Q40a`, `FAQ40` or `Q0`.
+const QUESTION_REF = /(?<![\p{L}\p{N}_])Q[1-9][0-9]{0,5}(?![\p{L}\p{N}_])/gu;
+
+/** The question ids `text` mentions, in order. */
+export function findQuestionRefs(
+  text: string,
+): ReadonlyArray<{ readonly id: string; readonly start: number; readonly end: number }> {
+  return Array.from(text.matchAll(QUESTION_REF), (match) => ({
+    id: match[0],
+    start: match.index,
+    end: match.index + match[0].length,
+  }));
+}
+
+const CARD_HEADER_HINT = /^ {0,3}> ?\*\*Q[1-9]/m;
+const FENCE = /^ {0,3}(`{3,}|~{3,})/;
+
+/**
+ * The question cards in an assistant message's markdown: each run of quote lines that
+ * `parseQuestionQuote` accepts. Quotes in code fences, and quotes a lazy line continues, are not cards.
+ */
+export function questionCardsInMarkdown(text: string): ReadonlyArray<QuestionBlock> {
+  if (!CARD_HEADER_HINT.test(text)) return [];
+  const cards: QuestionBlock[] = [];
+  let quote: string[] = [];
+  let continued = false;
+  let fence: string | null = null;
+  const flush = () => {
+    const card = quote.length > 0 && !continued ? parseQuestionQuote(quote.join("\n")) : null;
+    if (card) cards.push(card);
+    quote = [];
+    continued = false;
+  };
+  for (const line of text.split(/\r\n|\r|\n/)) {
+    const marker = FENCE.exec(line)?.[1];
+    if (fence !== null) {
+      if (marker?.startsWith(fence) && line.trim() === marker) {
+        fence = null;
+      }
+      continue;
+    }
+    if (marker !== undefined) {
+      flush();
+      fence = marker;
+    } else if (QUOTE_LINE.test(line)) {
+      quote.push(line);
+    } else if (line.trim().length === 0) {
+      flush();
+    } else if (quote.length > 0) {
+      continued = true;
+    }
+  }
+  flush();
+  return cards;
+}
+
+interface MessageItemLike<M extends string> {
+  readonly item: {
+    readonly type: string;
+    readonly text?: unknown;
+    readonly messageId?: M;
+    readonly streaming?: unknown;
+  };
+}
+
+export interface QuestionCardTarget<M extends string = string> {
+  readonly messageId: M;
+  readonly prompt: string;
+}
+
+const cardsByItem = new WeakMap<object, ReadonlyArray<QuestionBlock>>();
+
+/**
+ * Each question id's newest card among finished assistant messages. A re-asked question keeps its
+ * id, so the newest card is the live one. Parses each message once.
+ */
+export function latestQuestionCards<M extends string>(
+  items: ReadonlyArray<MessageItemLike<M>>,
+): ReadonlyMap<string, QuestionCardTarget<M>> {
+  const latest = new Map<string, QuestionCardTarget<M>>();
+  for (const { item } of items) {
+    const { type, text, messageId, streaming } = item;
+    if (type !== "assistant_message" || typeof text !== "string" || messageId === undefined) {
+      continue;
+    }
+    // A streaming message shows its quotes as written, so it has no card to land on yet.
+    if (streaming === true) continue;
+    let cards = cardsByItem.get(item);
+    if (cards === undefined) {
+      cards = questionCardsInMarkdown(text);
+      cardsByItem.set(item, cards);
+    }
+    for (const card of cards) latest.set(card.id, { messageId, prompt: card.prompt });
+  }
+  return latest;
+}
+
+export function sameQuestionCardTargets(
+  left: ReadonlyMap<string, QuestionCardTarget>,
+  right: ReadonlyMap<string, QuestionCardTarget>,
+): boolean {
+  if (left.size !== right.size) return false;
+  for (const [id, target] of left) {
+    const other = right.get(id);
+    if (other?.messageId !== target.messageId || other.prompt !== target.prompt) return false;
+  }
+  return true;
+}
+
+/** The context kind a question mention renders through `renderContextReference`. */
+export const QUESTION_REF_KIND = "question";
+
+const QUESTION_HEADER_TEXT = /^Q[1-9][0-9]{0,5} · /;
+
+function isQuestionHeader(node: Strong): boolean {
+  const [first] = node.children;
+  return first?.type === "text" && QUESTION_HEADER_TEXT.test(first.value);
+}
+
+/**
+ * Turns each question id in prose into a `t3-context` link that `renderContextReference` renders.
+ * Code is not text, so it keeps its ids; links and a card's own `**Q4 · prompt**` line are skipped.
+ */
+export function remarkQuestionRefs() {
+  return (tree: Root) => {
+    const visit = (node: Root | RootContent) => {
+      if (!("children" in node) || node.type === "link" || node.type === "linkReference") return;
+      if (node.type === "strong" && isQuestionHeader(node)) return;
+      node.children = node.children.flatMap((child): typeof node.children => {
+        if (child.type !== "text") {
+          visit(child);
+          return [child];
+        }
+        const refs = findQuestionRefs(child.value);
+        if (refs.length === 0) return [child];
+        const parts: PhrasingContent[] = [];
+        let offset = 0;
+        for (const { id, start, end } of refs) {
+          if (start > offset) parts.push({ type: "text", value: child.value.slice(offset, start) });
+          parts.push({
+            type: "link",
+            url: formatComposerContextHref(QUESTION_REF_KIND, id as ComposerContextId),
+            children: [{ type: "text", value: id }],
+          });
+          offset = end;
+        }
+        if (offset < child.value.length)
+          parts.push({ type: "text", value: child.value.slice(offset) });
+        return parts;
+      });
+    };
+    visit(tree);
+  };
 }
