@@ -456,6 +456,17 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Board", (it) => 
       // The cancelled state is spent.
       expect(yield* failure({ ...first, error: null })).toBe(expired);
 
+      // Only the newest attempt's failure is shown, whatever order the callbacks arrive in.
+      const older = linear.authorize((yield* board.startSignIn(ORIGIN)).authorizeUrl, GOOD);
+      const newer = linear.authorize((yield* board.startSignIn(ORIGIN)).authorizeUrl, GOOD);
+      yield* failure({ state: older.state, code: null, error: "access_denied" });
+      expect(yield* board.connection).toEqual({ status: "disconnected" });
+      yield* failure({ state: newer.state, code: null, error: "server_error" });
+      expect(yield* board.connection).toEqual({
+        status: "disconnected",
+        signInFailure: "Linear did not complete the sign-in (server_error).",
+      });
+
       const late = linear.authorize((yield* board.startSignIn(ORIGIN)).authorizeUrl, GOOD);
       expect(yield* board.connection).toEqual({ status: "disconnected" });
       yield* TestClock.adjust("11 minutes");

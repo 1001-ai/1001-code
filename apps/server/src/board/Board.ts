@@ -200,6 +200,8 @@ const make = Effect.gen(function* () {
   // Every read or write of the stored sign-in, including a refresh, happens under this lock.
   const credentialLock = yield* Semaphore.make(1);
   const pendingSignIns = new Map<string, PendingSignIn>();
+  /** The state of the newest sign-in; only its failure is shown, not an older attempt's. */
+  let latestSignIn: string | null = null;
 
   const linearRequest = Effect.fn("Board.linearRequest")(function* <S extends Schema.Top>(
     accessToken: string,
@@ -546,6 +548,7 @@ const make = Effect.gen(function* () {
         pendingSignIns.delete(key);
       }
       pendingSignIns.set(state, { verifier, redirectUri, expiresAtMs: now + SIGN_IN_TTL_MS });
+      latestSignIn = state;
       yield* setSignInFailure(null);
       return {
         authorizeUrl: authorizeUrl({
@@ -658,7 +661,9 @@ const make = Effect.gen(function* () {
       const generation = credentialGeneration;
       // Uninterruptible: a browser closing its tab must not strand tokens Linear already issued.
       return yield* finishSignIn(clientId, pending, params, generation).pipe(
-        Effect.tapError((error) => setSignInFailure(error.message)),
+        Effect.tapError((error) =>
+          params.state === latestSignIn ? setSignInFailure(error.message) : Effect.void,
+        ),
         Effect.uninterruptible,
       );
     },
@@ -669,6 +674,7 @@ const make = Effect.gen(function* () {
       Effect.gen(function* () {
         // A Linear tab still open from an earlier sign-in cannot sign back in.
         pendingSignIns.clear();
+        latestSignIn = null;
         const credential = Option.getOrNull(
           Option.flatMap(yield* storedBytes, (value) =>
             decodeCredential(new TextDecoder().decode(value)),
