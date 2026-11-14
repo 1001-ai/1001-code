@@ -370,6 +370,7 @@ import { ThreadNow } from "./chat/ThreadNow";
 import type { ThreadStructure } from "@t3tools/client-runtime/state/shell";
 import { useDelayedStatus } from "../hooks/useDelayedStatus";
 import { useTimelineFollow } from "./chat/useTimelineFollow";
+import { useJumpBack } from "./chat/JumpBack";
 import {
   type EnvironmentUnavailableState,
   useSystemComposerBanners,
@@ -2138,6 +2139,13 @@ export default function ChatView(props: ChatViewProps) {
     timelineAnchorMessageId,
     setTimelineAnchor,
   });
+  const jumpBack = useJumpBack({
+    legendListRef,
+    threadKey: displayedTimelineKey,
+    thread: { environmentId, threadId },
+    attachTimelineViewport,
+    scrollToEnd,
+  });
 
   useFocusComposerOnThreadOpen(
     activeThread?.id,
@@ -3490,7 +3498,7 @@ export default function ChatView(props: ChatViewProps) {
                   contentInsetEndAdjustment={composerTimelineInset}
                   liveFollowEnabled={timelineLiveFollowEnabled}
                   onIsAtEndChange={onIsAtEndChangeStable}
-                  onViewportAttach={attachTimelineViewport}
+                  onViewportAttach={jumpBack.attachViewport}
                   onFooterGrow={onTimelineFooterGrowStable}
                   hideEmptyPlaceholder={isDraftHeroState || threadDetailLoading}
                   emptyPlaceholderInset={composerReservedHeight}
@@ -3506,6 +3514,7 @@ export default function ChatView(props: ChatViewProps) {
                   bottom={scrollToEndClearance + 4}
                   summary={scrollToEndSummary}
                   onScrollToEnd={() => scrollToEnd(true)}
+                  leading={jumpBack.backButton}
                 />
               )}
             </div>
