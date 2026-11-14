@@ -196,6 +196,9 @@ If that port is already in use, choose another with
 
 ### Hosted web app
 
+> In this fork, pairing links open a hosted app only when the build names one. Otherwise they open
+> your server directly.
+
 [app.t3.codes](https://app.t3.codes) needs an HTTPS endpoint. It connects directly
 to your server; a hosted pairing link does not make an unreachable backend
 reachable or convert HTTP to HTTPS.

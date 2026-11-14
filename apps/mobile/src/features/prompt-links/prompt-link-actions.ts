@@ -36,8 +36,12 @@ export async function applyLinkedPromptToThreadDraft(
   ]);
 }
 
-export async function copyPromptLink(prompt: string): Promise<void> {
-  if (!(await tryCopyTextWithHaptic(buildNewThreadLink({ prompt }), { target: "prompt link" }))) {
+/** Where a copied prompt link opens. A fork build names no hosted app for mobile, so none. */
+export const PROMPT_LINK_ORIGIN: string | undefined = undefined;
+
+export async function copyPromptLink(prompt: string, origin: string): Promise<void> {
+  const link = buildNewThreadLink({ prompt, origin });
+  if (!(await tryCopyTextWithHaptic(link, { target: "prompt link" }))) {
     Dialog.alert("Could not copy", "Try again.");
   }
 }

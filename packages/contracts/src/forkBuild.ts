@@ -1,6 +1,7 @@
 /**
  * Defaults for a build of this fork, which ships separately from upstream T3 Code: it sends no
- * product analytics to upstream and never offers, downloads, or installs upstream's releases.
+ * product analytics to upstream, never offers, downloads, or installs upstream's releases, and
+ * never links to upstream's hosted app.
  * Upstream's code reads these at the seams listed in fork/README.md.
  */
 
@@ -31,4 +32,19 @@ export function forkAnalyticsEnabled(config: {
 export function forkReleaseSource(named: string | null | undefined): string | undefined {
   const source = named?.trim();
   return source === undefined || source === "" ? undefined : source;
+}
+
+/**
+ * Where copied thread and prompt links point. Upstream falls back to its own hosted app; here a
+ * link goes through the hosted app the build names, else the web origin serving the client. The
+ * desktop and mobile apps have no web origin, so they get no web link.
+ */
+export function forkShareLinkOrigin(
+  hostedAppUrl: string | undefined,
+  servedFrom: string | undefined,
+): string | undefined {
+  if (hostedAppUrl) return hostedAppUrl;
+  if (servedFrom === undefined || !URL.canParse(servedFrom)) return undefined;
+  const url = new URL(servedFrom);
+  return url.protocol === "http:" || url.protocol === "https:" ? url.origin : undefined;
 }
