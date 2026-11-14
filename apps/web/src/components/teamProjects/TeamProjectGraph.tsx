@@ -177,7 +177,7 @@ function LinkEdge({ id, data }: EdgeProps<RoutedEdge>) {
 const NODE_TYPES: NodeTypes = { project: ProjectCard, projectBox: ProjectBox };
 const EDGE_TYPES: EdgeTypes = { routed: LinkEdge };
 
-function ZoomControls() {
+function ZoomControls(props: { readonly follow: (on: boolean) => void }) {
   const { zoomIn, zoomOut, fitView } = useReactFlow();
   return (
     <Panel position="top-left" style={{ margin: 6 }}>
@@ -188,7 +188,10 @@ function ZoomControls() {
           variant="ghost"
           size="icon-xs"
           aria-label="Zoom in"
-          onClick={() => void zoomIn()}
+          onClick={() => {
+            props.follow(false);
+            void zoomIn();
+          }}
         >
           <ZoomInIcon />
         </Button>
@@ -197,7 +200,10 @@ function ZoomControls() {
           variant="ghost"
           size="icon-xs"
           aria-label="Zoom out"
-          onClick={() => void zoomOut()}
+          onClick={() => {
+            props.follow(false);
+            void zoomOut();
+          }}
         >
           <ZoomOutIcon />
         </Button>
@@ -206,7 +212,10 @@ function ZoomControls() {
           variant="ghost"
           size="icon-xs"
           aria-label="Fit to view"
-          onClick={() => void fitView(FIT_VIEW)}
+          onClick={() => {
+            props.follow(true);
+            void fitView(FIT_VIEW);
+          }}
         >
           <ScanIcon />
         </Button>
@@ -245,6 +254,11 @@ function GraphCanvas(props: TeamProjectGraphProps) {
   const [flow, setFlow] = useState<TeamProjectFlow | null>(null);
   const [failed, setFailed] = useState(false);
   const fittedKeys = useRef<string | null>(null);
+  // The view refits as the canvas resizes (the drawer slides open) until the reader moves it.
+  const following = useRef(true);
+  const follow = (on: boolean) => {
+    following.current = on;
+  };
   const signature = JSON.stringify(teamProjectElkGraph(projects, links));
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- ELK lays the graph out in a worker, so the result arrives asynchronously.
@@ -268,12 +282,15 @@ function GraphCanvas(props: TeamProjectGraphProps) {
     };
   }, [signature]);
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- fits React Flow's viewport when the drawn projects change, and keeps the reader's viewport otherwise.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- fits React Flow's viewport to new projects and to the canvas size until the reader pans, zooms or selects.
   useEffect(() => {
-    if (flow === null || fittedKeys.current === flow.keys) return;
-    fittedKeys.current = flow.keys;
-    void fitView(FIT_VIEW);
-  }, [flow, fitView]);
+    if (flow === null || canvasWidth === 0 || canvasHeight === 0) return;
+    if (fittedKeys.current !== flow.keys) {
+      fittedKeys.current = flow.keys;
+      following.current = true;
+    }
+    if (following.current) void fitView(FIT_VIEW);
+  }, [flow, canvasWidth, canvasHeight, fitView]);
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- the side panel narrows the canvas after a selection; pan only if that hides the selected card.
   useEffect(() => {
@@ -309,7 +326,10 @@ function GraphCanvas(props: TeamProjectGraphProps) {
     links: new Map(drawnTeamProjectLinks(links, keys).map((drawn) => [drawn.id, drawn])),
     selectedKey,
     related,
-    toggle: (key) => onSelect(selectedKey === key ? null : key),
+    toggle: (key) => {
+      follow(false);
+      onSelect(selectedKey === key ? null : key);
+    },
   };
 
   return (
@@ -351,6 +371,9 @@ function GraphCanvas(props: TeamProjectGraphProps) {
           minZoom={0.2}
           maxZoom={2}
           onPaneClick={() => onSelect(null)}
+          onMoveStart={(event) => {
+            if (event !== null) follow(false);
+          }}
           proOptions={{ hideAttribution: true }}
         >
           <Background
@@ -359,7 +382,7 @@ function GraphCanvas(props: TeamProjectGraphProps) {
             size={2}
             color="color-mix(in srgb, var(--color-foreground) 14%, transparent)"
           />
-          <ZoomControls />
+          <ZoomControls follow={follow} />
         </ReactFlow>
         {failed ? (
           // Centred, so the panel's catalog alerts along the top never cover it.
