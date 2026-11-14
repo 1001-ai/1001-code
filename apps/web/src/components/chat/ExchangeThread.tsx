@@ -452,9 +452,11 @@ export function ExchangeThreadView({
     if (!viewport) return [];
     const duration = prefersReducedMotion() ? 0 : MOTION_MS;
     const timing = { duration, easing: MOTION_EASING };
-    // Making the list inert drops focus from the control that opened the view, so it moves here.
+    // Making the list inert would drop focus from the control that opened the view; move it first.
     const active = document.activeElement;
-    const focusInList = active === document.body || (active !== null && viewport.contains(active));
+    if (active === document.body || (active !== null && viewport.contains(active))) {
+      headerRef.current?.querySelector<HTMLElement>("button")?.focus({ preventScroll: true });
+    }
     layersRef.current = [...viewport.children].flatMap((child) => {
       if (child === overlay || !(child instanceof HTMLElement)) return [];
       child.setAttribute("inert", "");
@@ -467,9 +469,6 @@ export function ExchangeThreadView({
       );
       return [{ element: child, animation }];
     });
-    if (focusInList) {
-      headerRef.current?.querySelector<HTMLElement>("button")?.focus({ preventScroll: true });
-    }
     const moves: Animation[] = [];
     const header = headerRef.current?.animate(
       [

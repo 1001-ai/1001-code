@@ -124,11 +124,12 @@ describe("deriveExchangeMap", () => {
       ],
     },
     {
-      name: "a runless reply after a live turn pairs with that turn, not an older import",
+      name: "a runless reply after a live turn does not reach back to an older import",
       rows: [user("a", null), reply("ra", null), user("b", "r1"), reply("rb", null)],
       expected: [
         { key: "message:a", users: ["a"], reply: "ra", earlier: [] },
-        { key: "r1", users: ["b"], reply: "rb", earlier: [] },
+        { key: "r1", users: ["b"], reply: null, earlier: [] },
+        { key: "message:rb", users: [], reply: null, earlier: [] },
       ],
     },
     {
