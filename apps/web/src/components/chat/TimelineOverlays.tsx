@@ -1,4 +1,5 @@
 import { ChevronDownIcon, PaperclipIcon } from "lucide-react";
+import type { ReactNode } from "react";
 
 import { Button } from "../ui/button";
 
@@ -27,12 +28,14 @@ export function ScrollToEndButton(props: {
   readonly bottom: number;
   readonly summary: string | null;
   readonly onScrollToEnd: () => void;
+  readonly leading?: ReactNode;
 }) {
   return (
     <div
       className="chat-scroll-to-bottom pointer-events-none absolute z-30 flex justify-center py-1.5"
       style={{ bottom: props.bottom }}
     >
+      {props.leading}
       <Button
         data-scroll-to-end="true"
         onPointerDown={(event) => event.preventDefault()}
