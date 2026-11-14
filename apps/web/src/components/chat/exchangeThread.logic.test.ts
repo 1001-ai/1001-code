@@ -14,6 +14,7 @@ import {
   replyMarkersEnabled,
   sameExchangeStructure,
   setReplyMarkersEnabled,
+  shouldAttachThreadReply,
   threadExchangeKeys,
   threadLatestReplyRowId,
   threadRowIds,
@@ -163,6 +164,48 @@ describe("thread view", () => {
     expect(threadSummaryLabel(map, keys)).toBe("4 messages, 2 replies");
     expect(threadSummaryLabel(map, ["r2"])).toBe("1 message, 1 reply");
     expect(threadLatestReplyRowId(map, keys)).toBe("rd");
+  });
+});
+
+describe("shouldAttachThreadReply", () => {
+  it.each([
+    {
+      name: "opening over the user's own reply replaces it",
+      input: { candidateId: "r1", attachedId: null, draftReplyId: "mine", replacesDraft: true },
+      attach: true,
+    },
+    {
+      name: "a first attach the composer refused is tried again once it is free",
+      input: { candidateId: "r1", attachedId: null, draftReplyId: null, replacesDraft: true },
+      attach: true,
+    },
+    {
+      name: "a send consumed the reply, so the newest reply attaches",
+      input: { candidateId: "r2", attachedId: "r1", draftReplyId: null, replacesDraft: false },
+      attach: true,
+    },
+    {
+      name: "the view's own reply moves on to the newest reply",
+      input: { candidateId: "r2", attachedId: "r1", draftReplyId: "r1", replacesDraft: false },
+      attach: true,
+    },
+    {
+      name: "a reply the user picked after opening stays",
+      input: { candidateId: "r2", attachedId: "r1", draftReplyId: "mine", replacesDraft: false },
+      attach: false,
+    },
+    {
+      name: "the composer already replies to the newest reply",
+      input: { candidateId: "r1", attachedId: "r1", draftReplyId: "r1", replacesDraft: false },
+      attach: false,
+    },
+    {
+      name: "a thread whose reply has not settled has nothing to attach",
+      input: { candidateId: null, attachedId: null, draftReplyId: null, replacesDraft: true },
+      attach: false,
+    },
+  ])("$name", ({ input, attach }) => {
+    expect(shouldAttachThreadReply(input)).toBe(attach);
   });
 });
 

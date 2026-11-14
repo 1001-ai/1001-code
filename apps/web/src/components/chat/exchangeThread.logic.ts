@@ -207,6 +207,23 @@ export function threadLatestReplyRowId(
   return null;
 }
 
+/**
+ * Whether the open thread view should point the composer's reply at the thread's newest reply.
+ * A reply the user picked themselves stays, except when the view first opens over it.
+ */
+export function shouldAttachThreadReply(input: {
+  readonly candidateId: string | null;
+  /** The reply the view last attached and the composer accepted. */
+  readonly attachedId: string | null;
+  readonly draftReplyId: string | null;
+  readonly replacesDraft: boolean;
+}): boolean {
+  if (input.candidateId === null || input.draftReplyId === input.candidateId) return false;
+  return (
+    input.replacesDraft || input.draftReplyId === null || input.draftReplyId === input.attachedId
+  );
+}
+
 /** Everything the exchange map reads from a row, so streamed text keeps the previous map. */
 export function sameExchangeStructure(
   previous: ReadonlyArray<ExchangeRow>,

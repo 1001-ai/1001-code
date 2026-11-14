@@ -26,6 +26,7 @@ import {
   deriveExchangeMap,
   replyMarkersEnabled,
   sameExchangeStructure,
+  shouldAttachThreadReply,
   threadExchangeKeys,
   threadLatestReplyRowId,
   threadRowIds,
@@ -137,6 +138,8 @@ export function useExchangeThread(input: {
   readonly onReplyToResponse: ((response: ResponseContextRecord) => boolean) | undefined;
   /** Find reads and scrolls the list itself, so it closes the thread view. */
   readonly suspended: boolean;
+  /** What owns the composer instead of a new message; a change retries a refused reply. */
+  readonly awaitingUser: string | null;
 }): ExchangeThreadState {
   const { rows, identity, threadRef } = input;
   const [structure, setStructure] = useState(() => deriveStructure(identity, rows));
@@ -169,12 +172,37 @@ export function useExchangeThread(input: {
     target: ScopedThreadRef;
     attachedId: string | null;
     previous: ResponseContextRecord | null;
-    /** The composer refused the reply, as while a question waits for an answer. */
-    declined: boolean;
-    pending: boolean;
+    /** Until the first attach lands, it replaces a reply the composer already held. */
+    replacesDraft: boolean;
+    /** False while the open motion runs, since the reply banner moves the list. */
+    ready: boolean;
   } | null>(null);
   const readDraftReply = (target: ScopedThreadRef) =>
     useComposerDraftStore.getState().getComposerDraft(target)?.replyTo ?? null;
+
+  // Goes through the composer's own reply path, which refuses while a question or the
+  // project picker owns the composer; a refusal is retried when that changes.
+  const attachReply = useStableCallback((replyRowId: string | null, composerOwned: boolean) => {
+    const reply = replyRef.current;
+    // Asking while a question owns the composer would only warn that it is not ready.
+    if (!reply || !reply.ready || composerOwned || replyRowId === null) return;
+    const record = replyRecord(
+      reply.target,
+      rows.find((row) => row.id === replyRowId),
+    );
+    const attach = shouldAttachThreadReply({
+      candidateId: record?.contextId ?? null,
+      attachedId: reply.attachedId,
+      draftReplyId: readDraftReply(reply.target)?.contextId ?? null,
+      replacesDraft: reply.replacesDraft,
+    });
+    if (!record || !attach || input.onReplyToResponse?.(record) !== true) return;
+    reply.attachedId = record.contextId;
+    reply.replacesDraft = false;
+  });
+
+  const composerOwned = input.awaitingUser === "input";
+  const attachLatestReply = useStableCallback(() => attachReply(latestReplyReady, composerOwned));
 
   const open = useStableCallback((rowId: string, trigger: HTMLElement | null) => {
     const key = map.keyByRowId.get(rowId);
@@ -192,33 +220,22 @@ export function useExchangeThread(input: {
       }
     }
     if (threadRef) {
-      const latestRowId = threadLatestReplyRowId(map, threadExchangeKeys(map, key));
-      const record = replyRecord(
-        threadRef,
-        rows.find((row) => row.id === latestRowId),
-      );
       const reply = {
         target: threadRef,
-        attachedId: null as string | null,
+        attachedId: null,
         previous: readDraftReply(threadRef),
-        declined: false,
-        pending: record !== null,
+        replacesDraft: true,
+        ready: false,
       };
       replyRef.current = reply;
-      // The reply banner grows the composer, which moves the list; wait until it has faded out.
-      const onReplyToResponse = input.onReplyToResponse;
-      if (record !== null) {
-        window.setTimeout(
-          () => {
-            if (replyRef.current !== reply) return;
-            reply.pending = false;
-            const attached = onReplyToResponse?.(record) === true;
-            reply.attachedId = attached ? record.contextId : null;
-            reply.declined = !attached;
-          },
-          prefersReducedMotion() ? 0 : MOTION_MS,
-        );
-      }
+      window.setTimeout(
+        () => {
+          if (replyRef.current !== reply) return;
+          reply.ready = true;
+          attachLatestReply();
+        },
+        prefersReducedMotion() ? 0 : MOTION_MS,
+      );
     }
     setClosing(false);
     setOpened({
@@ -241,23 +258,10 @@ export function useExchangeThread(input: {
   });
 
   const isOpen = rootKey !== undefined;
-  const reattachReply = useEffectEvent((replyRowId: string) => {
-    const reply = replyRef.current;
-    if (!reply || reply.declined || reply.pending) return;
-    const draftReply = readDraftReply(reply.target);
-    if (draftReply !== null && draftReply.contextId !== reply.attachedId) return;
-    const record = replyRecord(
-      reply.target,
-      rows.find((row) => row.id === replyRowId),
-    );
-    if (!record || record.contextId === draftReply?.contextId) return;
-    useComposerDraftStore.getState().setReplyTo(reply.target, record);
-    reply.attachedId = record.contextId;
-  });
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- a send consumes the composer's reply; the next one from inside the thread must answer the thread's newest reply
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- a send consumes the composer's reply, and an answered question frees the composer; either way the next message from inside the thread must answer its newest reply
   useEffect(() => {
-    if (isOpen && latestReplyReady !== null) reattachReply(latestReplyReady);
-  }, [isOpen, latestReplyReady]);
+    if (isOpen) attachReply(latestReplyReady, composerOwned);
+  }, [isOpen, latestReplyReady, composerOwned, attachReply]);
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- a thread view that closes without its exit, such as on a thread switch, still hands the composer its reply back
   useEffect(() => {

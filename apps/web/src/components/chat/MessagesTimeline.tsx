@@ -833,6 +833,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     threadRef: citationThreadRef,
     onReplyToResponse,
     suspended: findActive,
+    awaitingUser,
   });
   const {
     target: readyCitationRequest,
