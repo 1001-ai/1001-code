@@ -207,31 +207,39 @@ describe("estimateThreadCost", () => {
   });
 
   it("prices the main agent's one-hour cache writes at twice input", () => {
+    // Each turn writes 1M: 2.5 at the five-minute rate, 4 at the one-hour rate.
     const writes = usage({ cacheCreationTokens: MILLION, outputTokens: 0 });
-    const cost = (promptCacheTtlMs: number | undefined) =>
-      estimateThreadCost(
-        [
-          thread([
-            turn(
-              writes,
-              "main-model",
-              promptCacheTtlMs === undefined
-                ? {}
-                : {
-                    tokenUsage: {
-                      usedTokens: 0,
-                      promptCacheTtlMs,
-                      updatedAt: "2026-01-01T00:00:00.000Z",
-                    },
-                  },
-            ),
-          ]),
-        ],
-        pricing(),
-      ).costUsd;
-    expect(cost(undefined)).toBeCloseTo(2.5, 6);
-    expect(cost(5 * 60_000)).toBeCloseTo(2.5, 6);
-    expect(cost(60 * 60_000)).toBeCloseTo(4, 6);
+    const HOUR = 60 * 60_000;
+    const MINUTES = 5 * 60_000;
+    const withTtl = (promptCacheTtlMs?: number, fields: Partial<ThreadCostTurn> = {}) =>
+      turn(writes, "main-model", {
+        ...fields,
+        ...(promptCacheTtlMs === undefined
+          ? {}
+          : {
+              tokenUsage: {
+                usedTokens: 0,
+                promptCacheTtlMs,
+                updatedAt: "2026-01-01T00:00:00.000Z",
+              },
+            }),
+      });
+    const cases: ReadonlyArray<[string, ReadonlyArray<ThreadCostTurn>, number]> = [
+      ["no TTL reported", [withTtl()], 2.5],
+      ["a five-minute snapshot", [withTtl(MINUTES)], 2.5],
+      ["a one-hour snapshot", [withTtl(HOUR)], 4],
+      // A last request that wrote nothing reports no TTL; the session's caching has not changed.
+      ["a turn without a snapshot keeps the session's TTL", [withTtl(HOUR), withTtl()], 8],
+      ["a later snapshot replaces it", [withTtl(HOUR), withTtl(MINUTES), withTtl()], 9],
+      [
+        "each provider thread keeps its own",
+        [withTtl(HOUR), withTtl(undefined, { providerThreadId: ProviderThreadId.make("other") })],
+        6.5,
+      ],
+    ];
+    for (const [name, turns, expected] of cases) {
+      expect(estimateThreadCost([thread(turns)], pricing()).costUsd, name).toBeCloseTo(expected, 6);
+    }
   });
 
   it("uses custom prices and aliases like the Usage page", () => {

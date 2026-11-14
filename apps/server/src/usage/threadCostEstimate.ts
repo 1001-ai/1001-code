@@ -195,6 +195,7 @@ export function estimateThreadCost(
   let unreportedTurns = 0;
   for (const thread of threads) {
     const recorded = new Map<string, LedgerUsage>();
+    const cacheTtlMs = new Map<string, number>();
     for (const turn of thread.providerTurns) {
       const usage = turn.turnTokenUsage;
       if (!hasCounts(usage)) {
@@ -215,6 +216,9 @@ export function estimateThreadCost(
           : turn.driver === "claudeAgent"
             ? withoutRestoredLedger(usage.otherUsage, before)
             : usage.otherUsage;
+      // The snapshot's TTL is the turn's last main request's; one that wrote nothing keeps the session's.
+      const ttlMs = turn.tokenUsage?.promptCacheTtlMs ?? cacheTtlMs.get(turn.providerThreadId);
+      if (ttlMs !== undefined) cacheTtlMs.set(turn.providerThreadId, ttlMs);
       recorded.set(turn.providerThreadId, {
         inputTokens: before.inputTokens + mainInput + (other?.inputTokens ?? 0),
         outputTokens: before.outputTokens + mainOutput + (other?.outputTokens ?? 0),
@@ -234,7 +238,7 @@ export function estimateThreadCost(
       const subagentModel = other ? nativeSubagentModel(thread, turn) : null;
       const otherRates =
         (subagentModel === null ? null : rateFor(pricing, turn.driver, subagentModel)) ?? rates;
-      const hourCacheWrites = (turn.tokenUsage?.promptCacheTtlMs ?? 0) >= HOUR_MS;
+      const hourCacheWrites = (ttlMs ?? 0) >= HOUR_MS;
       costUsd += turnCost(usage, other, rates, otherRates, hourCacheWrites);
       pricedTurns += 1;
     }

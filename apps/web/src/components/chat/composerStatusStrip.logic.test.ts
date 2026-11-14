@@ -103,7 +103,10 @@ describe("threadCostSignal", () => {
   it("moves on a finished turn's report or a settled subagent, not on running work", () => {
     type Turn = Parameters<typeof threadCostSignal>[0]["providerTurns"][number];
     const finished: Turn = { status: "completed", turnTokenUsage: usage(100) };
-    const base = { providerTurns: [finished], subagents: [{ status: "running" as const }] };
+    const base = {
+      providerTurns: [finished],
+      subagents: [{ status: "running" as const, model: null }],
+    };
     const signal = threadCostSignal(base);
     const withTurn = (turn: Turn) => threadCostSignal({ ...base, providerTurns: [finished, turn] });
 
@@ -116,9 +119,14 @@ describe("threadCostSignal", () => {
         providerTurns: [{ status: "completed", turnTokenUsage: usage(150) }],
       }),
     ).not.toBe(signal);
-    expect(threadCostSignal({ ...base, subagents: [{ status: "completed" }] })).not.toBe(signal);
     expect(
-      threadCostSignal({ ...base, subagents: [...base.subagents, { status: "running" }] }),
+      threadCostSignal({ ...base, subagents: [{ status: "completed", model: null }] }),
+    ).not.toBe(signal);
+    expect(
+      threadCostSignal({
+        ...base,
+        subagents: [...base.subagents, { status: "running", model: null }],
+      }),
     ).toBe(signal);
   });
 
@@ -136,5 +144,41 @@ describe("threadCostSignal", () => {
     expect(refined({ otherUsage: { inputTokens: 40, outputTokens: 5 } })).not.toBe(signal);
     expect(refined({ cachedInputTokens: 60 })).not.toBe(signal);
     expect(refined({ models: ["claude-haiku-5-5"] })).not.toBe(signal);
+    expect(
+      threadCostSignal({
+        providerTurns: [
+          {
+            status: "completed",
+            turnTokenUsage: usage(100),
+            tokenUsage: { usedTokens: 0, promptCacheTtlMs: 3_600_000, updatedAt: "" },
+          },
+        ],
+        subagents: [],
+      }),
+    ).not.toBe(signal);
+  });
+
+  it("moves when a settled subagent's or workflow agent's model changes", () => {
+    type Subagent = Parameters<typeof threadCostSignal>[0]["subagents"][number];
+    const signal = (subagent: Subagent) =>
+      threadCostSignal({
+        providerTurns: [{ status: "completed", turnTokenUsage: usage(100) }],
+        subagents: [subagent],
+      });
+    const workflow = (model: string) =>
+      ({
+        status: "completed",
+        model: null,
+        workflow: { agents: [{ model }] },
+      }) as unknown as Subagent;
+
+    expect(signal({ status: "completed", model: "claude-opus-5-5" })).not.toBe(
+      signal({ status: "completed", model: null }),
+    );
+    expect(signal(workflow("claude-opus-5-5"))).not.toBe(signal(workflow("claude-haiku-5-5")));
+    // Running work still waits for its turn to finish.
+    expect(signal({ status: "running", model: "claude-opus-5-5" })).toBe(
+      signal({ status: "running", model: null }),
+    );
   });
 });
