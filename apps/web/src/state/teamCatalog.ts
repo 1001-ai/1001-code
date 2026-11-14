@@ -37,3 +37,8 @@ export function useTeamCatalog(environmentId: EnvironmentId | null): TeamCatalog
   );
   return AsyncResult.getOrElse(result, () => null);
 }
+
+export const teamCatalogPropose = createEnvironmentRpcCommand(connectionAtomRuntime, {
+  label: "environment-data:team-catalog:propose",
+  tag: WS_METHODS.teamCatalogPropose,
+});

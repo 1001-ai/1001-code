@@ -96,6 +96,7 @@ const RPC_AGGREGATES = {
   [WS_METHODS.teamCatalogSubscribe]: "orchestration",
   [WS_METHODS.teamCatalogRefresh]: "orchestration",
   [WS_METHODS.teamCatalogSetSource]: "orchestration",
+  [WS_METHODS.teamCatalogPropose]: "orchestration",
   [WS_METHODS.serverSignalProcess]: "server",
   [WS_METHODS.serverReportClientActivity]: "server",
   [WS_METHODS.scheduledTasksSubscribe]: "scheduledTasks",

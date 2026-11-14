@@ -1,42 +1,20 @@
-import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import {
-  isAtomCommandInterrupted,
-  settlePromise,
-  squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
-import {
-  AuthOrchestrationOperateScope,
-  AuthSourceControlWriteScope,
   type EnvironmentId,
   matchTeamCatalogProjects,
+  type ProjectId,
   type TeamCatalogEntry,
 } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { FolderCheckIcon, FolderDownIcon, TriangleAlertIcon } from "lucide-react";
-import { useState } from "react";
 
-import { useHandleNewThread } from "../../hooks/useHandleNewThread";
-import { newProjectId } from "../../lib/utils";
-import { useProjects, waitForProject } from "../../state/entities";
-import { projectEnvironment } from "../../state/projects";
-import { readEnvironmentScope } from "../../state/session";
-import { sourceControlEnvironment } from "../../state/sourceControl";
-import { teamCatalogRefresh, useTeamCatalog } from "../../state/teamCatalog";
-import { useAtomCommand } from "../../state/use-atom-command";
+import { useProjects } from "../../state/entities";
+import { useTeamCatalog } from "../../state/teamCatalog";
 import {
   type CommandPaletteActionItem,
   type CommandPaletteGroup,
   ITEM_ICON_CLASS,
 } from "../CommandPalette.logic";
-import { stackedThreadToast, toastManager } from "../ui/toast";
-
-function failureText(error: unknown): string {
-  return error instanceof Error ? error.message : "An error occurred.";
-}
-
-function toastError(title: string, description: string): void {
-  toastManager.add(stackedThreadToast({ type: "error", title, description }));
-}
+import { useTeamProjectActions } from "./useTeamProjectActions";
 
 /**
  * The "Team projects" group of the add-project sources view: the environment's team catalog,
@@ -50,89 +28,16 @@ export function useTeamProjectPaletteGroups(input: {
   const catalog = useTeamCatalog(environmentId);
   const projects = useProjects();
   const navigate = useNavigate();
-  const { handleNewThread } = useHandleNewThread();
-  const refresh = useAtomCommand(teamCatalogRefresh, { reportFailure: false });
-  const createProject = useAtomCommand(projectEnvironment.create, { reportFailure: false });
-  const startProjectClone = useAtomCommand(sourceControlEnvironment.startProjectClone, {
-    reportFailure: false,
+  const { openProject, addProject, addingKey } = useTeamProjectActions({
+    environmentId,
+    beforeOpen: closePalette,
   });
-  const [addingKey, setAddingKey] = useState<string | null>(null);
 
   if (environmentId === null || catalog === null || catalog.source === null) return [];
 
-  const openProject = async (projectId: Parameters<typeof scopeProjectRef>[1]) => {
-    closePalette();
-    const ref = scopeProjectRef(environmentId, projectId);
-    await waitForProject(ref, 3_000).catch(() => null);
-    const opened = await settlePromise(() => handleNewThread(ref));
-    if (opened._tag === "Failure") {
-      toastError("Failed to open project", failureText(squashAtomCommandFailure(opened)));
-    }
-  };
-
-  const addProject = async (key: string) => {
-    if (!readEnvironmentScope(environmentId, AuthOrchestrationOperateScope)) {
-      toastError("Cannot add project", "This connection cannot add projects.");
-      return;
-    }
-    // Re-read the checkout first: what is on disk may have changed since the list arrived.
-    const refreshed = await refresh({ environmentId, input: {} });
-    if (refreshed._tag === "Failure") {
-      toastError("Team catalog unavailable", failureText(squashAtomCommandFailure(refreshed)));
-      return;
-    }
-    const entry = refreshed.value.projects.find((candidate) => candidate.project.key === key);
-    if (entry === undefined) {
-      toastError("Project not found", "It is no longer in the team catalog.");
-      return;
-    }
-    if (entry.checkout.state === "occupied") {
-      toastError("Cannot add project", `${entry.checkout.path} already holds another folder.`);
-      return;
-    }
-    if (
-      entry.checkout.state === "missing" &&
-      !readEnvironmentScope(environmentId, AuthSourceControlWriteScope)
-    ) {
-      toastError("Clone unavailable", "This connection cannot clone repositories.");
-      return;
-    }
-    const projectId = newProjectId();
-    const result =
-      entry.checkout.state === "present"
-        ? await createProject({
-            environmentId,
-            input: {
-              projectId,
-              title: entry.project.name,
-              workspaceRoot: entry.checkout.path,
-              createWorkspaceRootIfMissing: false,
-              defaultModelSelection: null,
-            },
-          })
-        : await startProjectClone({
-            environmentId,
-            input: {
-              projectId,
-              title: entry.project.name,
-              // oxlint-disable-next-line react/purity -- runs in an event handler (oxc#27309)
-              createdAt: new Date().toISOString(),
-              remoteUrl: entry.cloneUrl,
-              destinationPath: entry.checkout.path,
-            },
-          });
-    if (result._tag === "Failure") {
-      if (!isAtomCommandInterrupted(result)) {
-        toastError("Failed to add project", failureText(squashAtomCommandFailure(result)));
-      }
-      return;
-    }
-    await openProject(projectId);
-  };
-
   const entryItem = (
     entry: TeamCatalogEntry,
-    localProjectId: Parameters<typeof scopeProjectRef>[1] | null,
+    localProjectId: ProjectId | null,
   ): CommandPaletteActionItem => {
     const base = {
       kind: "action" as const,
@@ -168,11 +73,7 @@ export function useTeamProjectPaletteGroups(input: {
       disabled: addingKey !== null,
       icon: <FolderDownIcon className={ITEM_ICON_CLASS} />,
       keepOpen: true,
-      run: async () => {
-        setAddingKey(entry.project.key);
-        await addProject(entry.project.key);
-        setAddingKey(null);
-      },
+      run: () => addProject(entry.project.key),
     };
   };
 

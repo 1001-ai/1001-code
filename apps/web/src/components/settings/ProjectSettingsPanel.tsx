@@ -50,6 +50,7 @@ import {
 } from "./ProjectFaviconPickerDialog";
 import { ProjectActionsSettings } from "./ProjectActionsSettings";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
+import { TeamProjectSettings } from "../teamProjects/TeamProjectSettings";
 import {
   defaultProjectIcon,
   hasDefaultProjectIcon,
@@ -649,6 +650,7 @@ function ProjectDetail({
             </>
           ) : null}
         </SettingsSection>
+        <TeamProjectSettings members={allMembers} />
         <ProjectDefaultsSettings category="project" />
         <ProjectActionsSettings />
         {checkoutChoices}

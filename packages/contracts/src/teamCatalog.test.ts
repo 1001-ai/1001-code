@@ -12,6 +12,7 @@ const entry = (key: string, repo: string): TeamCatalogEntry => ({
   project: { key, name: key, repo, owners: [] },
   cloneUrl: `https://${repo}.git`,
   checkout: { path: `/projects/${key}`, state: "missing" },
+  reachable: null,
 });
 
 const identity = (canonicalKey: string, originKey?: string): RepositoryIdentity => ({
