@@ -3,7 +3,7 @@ import type { ComponentProps } from "react";
 import ChatMarkdown from "../ChatMarkdown";
 import { QuestionAskedInItemContext } from "./questionBlockScope";
 
-/** An assistant message's markdown, whose `question` fences can be answered in the composer. */
+/** An assistant message's markdown, whose questions can be answered in the composer. */
 export function AssistantQuestionMarkdown({
   askedInItemId,
   ...props

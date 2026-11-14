@@ -198,7 +198,7 @@ import { MarkdownCodeBlock, SuspenseShikiCodeBlock } from "./chat/MarkdownCodeBl
 import { createMarkdownRenderer } from "./chat/markdownRenderer";
 import { splitMarkdownBlocks } from "./chat/markdownStreamBlocks";
 import { MarkdownMermaidCodeBlock } from "./chat/MarkdownMermaidCodeBlock";
-import { MarkdownQuestionBlock } from "./chat/MarkdownQuestionBlock";
+import { MarkdownQuestionQuote } from "./chat/MarkdownQuestionBlock";
 import { MarkdownTable } from "./chat/MarkdownTable";
 import { MarkdownDetails } from "./chat/MarkdownDetails";
 import {
@@ -1055,11 +1055,25 @@ const CHAT_MARKDOWN_COMPONENTS = {
       </p>
     );
   },
-  blockquote: function MarkdownBlockquote({ node: _node, children, ...props }) {
+  blockquote: function MarkdownBlockquote({ node, children, ...props }) {
+    const { threadRef, isStreaming } = use(ChatMarkdownRendererContext);
+    const text = use(ChatMarkdownTextContext);
     const alert =
       GITHUB_ALERT_PRESENTATIONS[String((props as Record<string, unknown>)["data-alert"] ?? "")];
     if (!alert) {
-      return <blockquote {...props}>{children}</blockquote>;
+      const quote = <blockquote {...props}>{children}</blockquote>;
+      const start = node?.position?.start.offset;
+      const end = node?.position?.end.offset;
+      if (!threadRef || start === undefined || end === undefined) return quote;
+      return (
+        <MarkdownQuestionQuote
+          source={text.slice(start, end)}
+          threadRef={threadRef}
+          streaming={isStreaming}
+        >
+          {quote}
+        </MarkdownQuestionQuote>
+      );
     }
     return (
       <div
@@ -1656,7 +1670,6 @@ const CHAT_MARKDOWN_COMPONENTS = {
       onRunShellCommand,
       inline,
       mathEnabled,
-      threadRef,
     } = use(ChatMarkdownRendererContext);
     const text = use(ChatMarkdownTextContext);
     const codeBlock = extractCodeBlock(children);
@@ -1712,25 +1725,6 @@ const CHAT_MARKDOWN_COMPONENTS = {
         >
           {highlightedCode}
         </MarkdownMermaidCodeBlock>
-      );
-    }
-    if (language === "question" && threadRef) {
-      return (
-        <MarkdownQuestionBlock
-          code={codeBlock.code}
-          threadRef={threadRef}
-          streaming={isStreaming && !isClosedCodeFence(node, text, codeBlock.code)}
-        >
-          <MarkdownCodeBlock
-            code={codeBlock.code}
-            language={language}
-            fenceTitle={fenceTitle}
-            theme={resolvedTheme}
-            isStreaming={isStreaming}
-          >
-            {highlightedCode}
-          </MarkdownCodeBlock>
-        </MarkdownQuestionBlock>
       );
     }
     return (
