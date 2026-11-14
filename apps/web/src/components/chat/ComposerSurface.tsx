@@ -61,6 +61,8 @@ function Main({ className, ...props }: ComponentProps<"div">) {
         "group-has-data-[composer-banner-surface=attached]/composer-surface:shadow-composer dark:group-has-data-[composer-banner-surface=attached]/composer-surface:shadow-none",
         "not-supports-[((backdrop-filter:blur(1px))_or_(-webkit-backdrop-filter:blur(1px)))]:group-has-data-[composer-banner-surface=attached]/composer-surface:bg-(--chat-composer-glass-surface)",
         "group-has-data-[composer-banner-surface=attached]/composer-surface:**:data-[chat-composer-mobile-collapsed=true]:min-h-[calc(1rem+1px)]",
+        // The status box (fork) hangs at the card's full width, so the card squares off where they meet.
+        "group-has-data-[slot=composer-status-box]/composer-surface:rounded-b-none",
         className,
       )}
       {...props}
@@ -75,8 +77,8 @@ function ContextStrip({ className, ...props }: ComponentProps<"div">) {
       data-slot="composer-context-strip"
       className={cn(
         "group/composer-context surface-glass relative flex w-full items-center gap-2 overflow-x-clip px-2 pt-2 text-muted-foreground",
-        // In the status box (fork) the box paints the glass, and the row lines up with its inset.
-        "group-has-data-[slot=composer-status-box]/composer-surface:bg-transparent group-has-data-[slot=composer-status-box]/composer-surface:backdrop-filter-none group-has-data-[slot=composer-status-box]/composer-surface:px-(--chat-composer-drawer-inset)",
+        // In the status box (fork) the box paints the glass.
+        "group-has-data-[slot=composer-status-box]/composer-surface:bg-transparent group-has-data-[slot=composer-status-box]/composer-surface:backdrop-filter-none",
         className,
       )}
       {...props}

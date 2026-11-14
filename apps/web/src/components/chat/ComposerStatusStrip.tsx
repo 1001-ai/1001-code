@@ -118,7 +118,7 @@ export const ComposerStatusStrip = memo(function ComposerStatusStrip(
       }}
     >
       {/* Fixed height and wrapping: items that do not fit drop to a clipped second line, last first. */}
-      <div className="pointer-events-auto flex h-7 min-w-0 flex-wrap content-start items-center gap-x-4 overflow-hidden px-2 text-xs whitespace-nowrap tabular-nums @max-[29rem]/status:gap-x-3">
+      <div className="pointer-events-auto flex h-7 min-w-0 flex-wrap content-start items-center gap-x-4 overflow-hidden px-4 text-xs whitespace-nowrap tabular-nums @max-[29rem]/status:gap-x-3">
         {limits
           ? windows.map((window, index) => {
               const left = remainingPercent(window);
@@ -238,12 +238,13 @@ function sameStripProps(previous: ComposerStatusStripProps, next: ComposerStatus
   );
 }
 
-// Mirrors ComposerBanner's attached surface, flipped to hang from the composer's bottom edge. The
-// glass is a pseudo-element positioned against the wrapper this sits in (the context row's), with
-// its top 1rem tucked under the card and masked out so the card's own glass is not doubled.
+// Like ComposerBanner's attached surface, flipped to hang from the composer's bottom edge, but as
+// wide as the card, which squares its bottom corners. The glass is a pseudo-element positioned
+// against the wrapper this sits in (the context row's), with its top 1rem tucked under the card and
+// masked out so the card's own glass is not doubled.
 const BOX_CLASS = cn(
-  "@container/status px-(--chat-composer-drawer-inset) pb-1.5",
-  "before:pointer-events-none before:absolute before:inset-x-(--chat-composer-drawer-inset) before:-top-[calc(1rem+1px)] before:bottom-0 before:-z-1",
+  "@container/status pb-1.5",
+  "before:pointer-events-none before:absolute before:inset-x-0 before:-top-[calc(1rem+1px)] before:bottom-0 before:-z-1",
   "before:rounded-b-2xl before:border before:border-(--chat-composer-outline) before:mask-b-from-transparent before:mask-b-from-4 before:mask-b-to-black before:mask-b-to-4",
   "before:bg-(--chat-composer-glass-surface)/(--glass-opacity) before:backdrop-blur-(--glass-blur) before:backdrop-saturate-(--glass-saturation)",
   "before:shadow-composer dark:before:shadow-composer-dark",
