@@ -1,5 +1,10 @@
 # Prompt links
 
+> This build is a fork that never links to upstream's hosted app. Copied prompt and thread links
+> use the hosted app the build names. Without one, the web app links to its own address, and the
+> desktop and mobile apps copy thread links that open only inside T3 Code and offer no prompt
+> links. The rest of this page describes upstream T3 Code.
+
 A prompt link opens T3 Code with a prompt ready to send. Use one to share a prompt on social
 media, or to put a one-click fix in a pull request comment.
 
