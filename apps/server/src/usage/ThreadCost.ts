@@ -32,7 +32,10 @@ const READ_CONCURRENCY = 8;
 
 export interface ThreadCostRecords extends ThreadCostSource {
   readonly subagents: ReadonlyArray<
-    Pick<OrchestrationV2Subagent, "childThreadId" | "origin" | "parentNodeId" | "model">
+    Pick<
+      OrchestrationV2Subagent,
+      "childThreadId" | "origin" | "parentNodeId" | "model" | "workflow"
+    >
   >;
 }
 

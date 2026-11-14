@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { NodeId, ThreadId, type TurnTokenUsage } from "@t3tools/contracts";
+import { NodeId, ProviderThreadId, ThreadId, type TurnTokenUsage } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 
 import { collectThreadFamily, MAX_FAMILY_THREADS, type ThreadCostRecords } from "./ThreadCost.ts";
@@ -39,6 +39,7 @@ const usage = (fields: Partial<TurnTokenUsage> = {}): TurnTokenUsage =>
   }) as TurnTokenUsage;
 
 const ROOT_NODE = NodeId.make("root-node");
+const PROVIDER_THREAD = ProviderThreadId.make("provider-thread");
 
 const turn = (
   turnTokenUsage?: TurnTokenUsage,
@@ -47,6 +48,7 @@ const turn = (
 ): ThreadCostTurn => ({
   status: "completed",
   nodeId: ROOT_NODE,
+  providerThreadId: PROVIDER_THREAD,
   driver: null,
   ...(model === undefined ? {} : { model }),
   ...(turnTokenUsage === undefined ? {} : { turnTokenUsage }),
@@ -77,29 +79,167 @@ describe("estimateThreadCost", () => {
     expect(estimate).toMatchObject({ pricedTurns: 2, unpricedTurns: 0, subagentThreads: 1 });
   });
 
-  it("prices ledger extras with the turn's cache mix at its native subagents' model", () => {
+  it("prices ledger extras as subagent work at the model their native subagents share", () => {
+    // The main agent's mix (all cache writes here) says nothing about its subagents' work.
     const extras = usage({
       inputTokens: MILLION,
-      cachedInputTokens: MILLION,
+      cacheCreationTokens: MILLION,
       outputTokens: 0,
       otherUsage: { inputTokens: MILLION, outputTokens: MILLION },
     });
-    const native = (model: string | null, parentNodeId = ROOT_NODE) => ({
-      origin: "provider_native" as const,
+    const native = (
+      model: string | null,
+      parentNodeId = ROOT_NODE,
+      workflowModels?: ReadonlyArray<string>,
+    ): ThreadCostSource["subagents"][number] => ({
+      origin: "provider_native",
       parentNodeId,
       model,
+      ...(workflowModels === undefined
+        ? {}
+        : {
+            workflow: {
+              runHandles: {},
+              phases: [],
+              agents: workflowModels.map((agentModel, index) => ({
+                index,
+                label: `agent ${index}`,
+                state: "completed",
+                model: agentModel,
+              })),
+            } as unknown as NonNullable<ThreadCostSource["subagents"][number]["workflow"]>,
+          }),
     });
-    const cost = (subagents: ThreadCostSource["subagents"]) =>
-      estimateThreadCost([thread([turn(extras)], "main-model", subagents)], pricing()).costUsd;
+    const OTHER_NODE = NodeId.make("other-node");
+    const cases: ReadonlyArray<[string, ThreadCostSource["subagents"], number]> = [
+      // Main: 1M cache writes = 2.5. Extras at main-model: 0.975*0.2 + 0.025*2.5 + 10.
+      ["no subagents", [], 2.5 + 0.2575 + 10],
+      // small-model has no cache prices, so 1M input at 1 + 1M output at 5.
+      ["one shared model", [native("small-model"), native("small-model")], 2.5 + 1 + 5],
+      ["mixed models", [native("small-model"), native("main-model")], 2.5 + 0.2575 + 10],
+      ["unknown model", [native(null)], 2.5 + 0.2575 + 10],
+      ["a workflow's agents", [native(null, ROOT_NODE, ["small-model", "small-model"])], 8.5],
+      [
+        "a workflow of mixed agents",
+        [native(null, ROOT_NODE, ["small-model", "main-model"])],
+        12.7575,
+      ],
+      // Background subagents started by an earlier turn report in this one.
+      ["the thread's when the turn started none", [native("small-model", OTHER_NODE)], 8.5],
+      [
+        "the turn's own before the thread's",
+        [native("small-model", OTHER_NODE), native("main-model")],
+        12.7575,
+      ],
+    ];
+    for (const [name, subagents, expected] of cases) {
+      const estimate = estimateThreadCost(
+        [thread([turn(extras)], "main-model", subagents)],
+        pricing(),
+      );
+      expect(estimate.costUsd, name).toBeCloseTo(expected, 6);
+    }
+  });
 
-    // Main: 1M cache reads = 0.2. Extras at the main model, same all-cached mix: 0.2 + 10.
-    expect(cost([])).toBeCloseTo(10.4, 6);
-    // Extras at small-model, which has no cache price: 1M input at 1 + 1M output at 5.
-    expect(cost([native("small-model"), native("small-model")])).toBeCloseTo(6.2, 6);
-    // Mixed, unknown or another node's subagents keep the turn's model.
-    expect(cost([native("small-model"), native("main-model")])).toBeCloseTo(10.4, 6);
-    expect(cost([native(null)])).toBeCloseTo(10.4, 6);
-    expect(cost([native("small-model", NodeId.make("other-node"))])).toBeCloseTo(10.4, 6);
+  it("drops a resumed Claude process's restored ledger from its extras", () => {
+    const claudeTurn = (fields: Partial<TurnTokenUsage>, extra: Partial<ThreadCostTurn> = {}) =>
+      turn(usage({ cachedInputTokens: MILLION, outputTokens: 0, ...fields }), "main-model", {
+        driver: "claudeAgent",
+        ...extra,
+      });
+    const cost = (...turns: ReadonlyArray<ThreadCostTurn>) =>
+      estimateThreadCost([thread(turns)], pricing()).costUsd;
+    // Each turn: 1M cache reads = 0.2. 1M extras input = 0.2575, 1M extras output = 10.
+    const cases: ReadonlyArray<[string, ReadonlyArray<ThreadCostTurn>, number]> = [
+      [
+        "a restore repeats every earlier turn and its extras, then adds new work",
+        [
+          claudeTurn({ otherUsage: { inputTokens: MILLION, outputTokens: MILLION } }),
+          claudeTurn({ otherUsage: { inputTokens: 3 * MILLION, outputTokens: 2 * MILLION } }),
+        ],
+        0.2 + 0.2575 + 10 + 0.2 + 0.2575 + 10,
+      ],
+      [
+        "a restore with no new work adds nothing",
+        [
+          claudeTurn({ otherUsage: { inputTokens: 0, outputTokens: 0 } }),
+          claudeTurn({ otherUsage: { inputTokens: MILLION, outputTokens: 0 } }),
+        ],
+        0.4,
+      ],
+      [
+        "extras below the recorded total are new work",
+        [
+          claudeTurn({ otherUsage: { inputTokens: 0, outputTokens: 0 } }),
+          claudeTurn({ otherUsage: { inputTokens: MILLION / 2, outputTokens: MILLION } }),
+        ],
+        0.4 + 0.2575 / 2 + 10,
+      ],
+      [
+        "each provider thread keeps its own ledger",
+        [
+          claudeTurn({ otherUsage: { inputTokens: 0, outputTokens: 0 } }),
+          claudeTurn(
+            { otherUsage: { inputTokens: MILLION, outputTokens: 0 } },
+            { providerThreadId: ProviderThreadId.make("other-provider-thread") },
+          ),
+        ],
+        0.4 + 0.2575,
+      ],
+      [
+        // A local command's counters are not model work; its extras (compaction) are.
+        "a local command prices its extras and restores count it",
+        [
+          claudeTurn({
+            localCommand: true,
+            inputTokens: 0,
+            cachedInputTokens: 0,
+            otherUsage: { inputTokens: MILLION, outputTokens: 0 },
+          }),
+          claudeTurn({ otherUsage: { inputTokens: 2 * MILLION, outputTokens: 0 } }),
+        ],
+        0.2575 + 0.2 + 0.2575,
+      ],
+    ];
+    for (const [name, turns, expected] of cases) {
+      expect(cost(...turns), name).toBeCloseTo(expected, 6);
+    }
+  });
+
+  it("prices the main agent's one-hour cache writes at twice input", () => {
+    // Each turn writes 1M: 2.5 at the five-minute rate, 4 at the one-hour rate.
+    const writes = usage({ cacheCreationTokens: MILLION, outputTokens: 0 });
+    const HOUR = 60 * 60_000;
+    const MINUTES = 5 * 60_000;
+    const withTtl = (promptCacheTtlMs?: number, fields: Partial<ThreadCostTurn> = {}) =>
+      turn(writes, "main-model", {
+        ...fields,
+        ...(promptCacheTtlMs === undefined
+          ? {}
+          : {
+              tokenUsage: {
+                usedTokens: 0,
+                promptCacheTtlMs,
+                updatedAt: "2026-01-01T00:00:00.000Z",
+              },
+            }),
+      });
+    const cases: ReadonlyArray<[string, ReadonlyArray<ThreadCostTurn>, number]> = [
+      ["no TTL reported", [withTtl()], 2.5],
+      ["a five-minute snapshot", [withTtl(MINUTES)], 2.5],
+      ["a one-hour snapshot", [withTtl(HOUR)], 4],
+      // A last request that wrote nothing reports no TTL; the session's caching has not changed.
+      ["a turn without a snapshot keeps the session's TTL", [withTtl(HOUR), withTtl()], 8],
+      ["a later snapshot replaces it", [withTtl(HOUR), withTtl(MINUTES), withTtl()], 9],
+      [
+        "each provider thread keeps its own",
+        [withTtl(HOUR), withTtl(undefined, { providerThreadId: ProviderThreadId.make("other") })],
+        6.5,
+      ],
+    ];
+    for (const [name, turns, expected] of cases) {
+      expect(estimateThreadCost([thread(turns)], pricing()).costUsd, name).toBeCloseTo(expected, 6);
+    }
   });
 
   it("uses custom prices and aliases like the Usage page", () => {
