@@ -131,15 +131,13 @@ function QuestionCard({
   const changing = answer !== null && changingFrom === answer.messageId;
   const options = questionOptions(question);
   const multi = question.kind === "multi";
-  // While changing an answer, the controls start from it until the draft holds a new one.
-  const shownAnswer = draftAnswer ?? (changing ? answer.answer : null);
-  const selectedMulti = multi ? selectedMultiOptions(options, shownAnswer) : new Set<string>();
+  const selectedMulti = multi ? selectedMultiOptions(options, draftAnswer) : new Set<string>();
   const isSelected = (option: string) =>
-    multi ? selectedMulti.has(option) : shownAnswer === option;
+    multi ? selectedMulti.has(option) : draftAnswer === option;
   const choose = (option: string) =>
-    writeDraftAnswer(multi ? toggleMultiOption(options, shownAnswer, option) : option);
+    writeDraftAnswer(multi ? toggleMultiOption(options, draftAnswer, option) : option);
   // A radio group is one tab stop, on the checked option or else the first.
-  const radioTabStop = Math.max(options.indexOf(shownAnswer ?? ""), 0);
+  const radioTabStop = Math.max(options.indexOf(draftAnswer ?? ""), 0);
   const moveFocus = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
     const last = options.length - 1;
     const next =
@@ -186,7 +184,11 @@ function QuestionCard({
               <span aria-hidden>·</span>
               <QuietAction
                 aria-label={`Change your answer to ${question.id}`}
-                onClick={() => setChangingFrom(answer.messageId)}
+                onClick={() => {
+                  setChangingFrom(answer.messageId);
+                  // The draft is the controls' only source, so changing starts from the current answer.
+                  if (draftAnswer === null) writeDraftAnswer(answer.answer);
+                }}
               >
                 Change
               </QuietAction>
@@ -250,7 +252,7 @@ function QuestionCard({
               placeholder={question.kind === "text" ? "Type an answer…" : "Or type an answer…"}
               aria-label={`Answer ${question.id} in your own words`}
               aria-describedby={freeTextHintId}
-              className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/70"
+              className="min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground/70 sm:text-sm"
             />
             <span id={freeTextHintId} className="sr-only">
               Press Enter to add it to your draft.
