@@ -97,7 +97,7 @@ after a steer, shows a faded quote of the earlier message it answers, and that m
 shows **1 reply**. A reply that opens with a `Re:` line shows that line small and grey.
 Click a message, its quote, **1 reply** or the `Re:` line to see just that exchange: your
 messages and the reply that answered them, together. Messages you send while it is open
-reply to that exchange and join it. Press `Esc`, select **Done**, or click outside the
+reply to that exchange and join it. Press `Esc` or click outside the
 messages to return to the full conversation where you left it. Turn the quotes off under
 **Settings → Chat → Reply markers**.
 
@@ -145,6 +145,10 @@ around it.
 
 Select the quote in a draft or sent message to return to its source. If the source
 is unavailable or has changed, the saved quote remains readable.
+
+When selecting a quote, or a question id an agent's reply mentions, jumps the chat to another
+message, a **Back** button appears beside **Scroll to end** and returns you to where you were
+reading.
 
 The chip shows your comment when it has one, or a short quote preview otherwise. Use the pencil
 button to add or change the comment. To remove the citation, place the caret beside its chip and

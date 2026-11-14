@@ -112,6 +112,7 @@ import { getCodexServiceTierOptionValue } from "../../codexModelOptions.ts";
 import { ServerConfig } from "../../config.ts";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import { buildCodexAdditionalContext } from "../../provider/CodexDeveloperInstructions.ts";
+import { codexTeamPreferencesContext } from "../../teamPreferences/teamPreferencesProviders.ts";
 import {
   describeMcpElicitation,
   toMcpElicitationResponse,
@@ -788,6 +789,7 @@ export const buildCodexTurnStartParams = Effect.fn("CodexAdapterV2.buildCodexTur
     readonly appContext?: ProviderAdapter.ProviderAdapterV2TurnInput["appContext"];
     /** The user's `model_reasoning_summary` from the Codex config, when set. */
     readonly configuredReasoningSummary?: CodexSchema.V2TurnStartParams__ReasoningSummary;
+    readonly teamPreferences?: string | undefined;
   }) {
     const runtimeModeDefaults = codexRuntimeModeTurnDefaults(input.runtimePolicy.runtimeMode);
     const approvalPolicy =
@@ -830,10 +832,11 @@ export const buildCodexTurnStartParams = Effect.fn("CodexAdapterV2.buildCodexTur
             },
             ...liveAppCheckoutCodexContext(),
           };
+    const teamContext = codexTeamPreferencesContext(input.teamPreferences);
     const additionalContext =
-      t3Context === undefined && Object.keys(appContext).length === 0
+      t3Context === undefined && Object.keys({ ...appContext, ...teamContext }).length === 0
         ? undefined
-        : { ...t3Context, ...appContext };
+        : { ...t3Context, ...teamContext, ...appContext };
     return yield* decodeCodexTurnStartParamsWithCollaborationMode({
       threadId: input.nativeThreadId,
       input: input.codexInput,
@@ -7269,6 +7272,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               omitServiceTier: adapterOptions.resolveRuntime !== undefined,
               ...(turnInput.appContext === undefined ? {} : { appContext: turnInput.appContext }),
               ...(configuredReasoningSummary === undefined ? {} : { configuredReasoningSummary }),
+              teamPreferences: turnInput.teamPreferences,
             });
             yield* Ref.update(pendingRootTurns, (current) => {
               const updated = new Map(current);

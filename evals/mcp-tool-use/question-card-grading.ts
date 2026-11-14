@@ -1,5 +1,5 @@
 import * as Schema from "effect/Schema";
-import { questionCardsInMarkdown } from "../../apps/web/src/components/chat/questionBlock.logic.ts";
+import { questionCardsInMarkdown } from "../../packages/shared/src/questionCards.ts";
 
 export const QuestionCardsExpect = Schema.Struct({
   /**

@@ -114,12 +114,12 @@ export default function BoardPanel(props: {
     case "not-connected":
       return (
         <BoardMessage
-          title="Connect Linear"
-          description="The board shows the team project's Linear issues, read with your own Linear account. Add a personal API key in Settings."
+          title="Sign in to Linear"
+          description="The board shows the team project's Linear issues, read with your own Linear account. Sign in to Linear in Settings."
         >
           <Button size="sm" variant="outline" onClick={() => openSettings("board")}>
             <Settings2Icon />
-            Connect Linear
+            Sign in to Linear
           </Button>
         </BoardMessage>
       );
@@ -141,7 +141,7 @@ export default function BoardPanel(props: {
           {snapshot.failure.reason === "unauthorized" ? (
             <Button size="sm" variant="outline" onClick={() => openSettings("board")}>
               <Settings2Icon />
-              Reconnect Linear
+              Sign in to Linear again
             </Button>
           ) : null}
         </BoardMessage>
@@ -166,7 +166,9 @@ export default function BoardPanel(props: {
 function failureTitle(reason: Extract<BoardSnapshot, { status: "failed" }>["failure"]["reason"]) {
   switch (reason) {
     case "unauthorized":
-      return "Linear rejected your API key";
+      return "Linear rejected your sign-in";
+    case "sign-in-unavailable":
+      return "Linear sign-in is not set up";
     case "team-not-found":
       return "Linear team not found";
     case "project-not-found":

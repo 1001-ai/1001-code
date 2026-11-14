@@ -65,10 +65,16 @@ still loads.
 
 ## See all team projects
 
-Open **Team projects** from the sidebar footer or the command palette. Projects are drawn inside
-their parent's box. Dashed lines are read links and solid lines are write links; a write link
-only one side has declared is faded. A read link to a repository your git credentials cannot
-reach shows as **No access**.
+Once a catalog is set, the graph shows at the bottom of each thread, where the terminal opens.
+Select **Team projects** in the sidebar footer, or **Show team projects** or **Hide team
+projects** in the command palette, to turn it on or off; the choice holds across threads. The
+graph and a thread's terminal share that place: opening the terminal hides the graph until the
+terminal closes, and showing the graph closes the terminal. Away from a thread, such as on Pull
+requests, the graph opens in the last thread you were in.
+
+Projects are drawn inside their parent's box. Dashed lines are read links and solid lines are
+write links; a write link only one side has declared is faded. A read link to a repository your
+git credentials cannot reach shows as **No access**.
 
 Select a project to highlight what it links to and what links to it, open it, or add it here if
 it is not added yet.
@@ -76,8 +82,9 @@ it is not added yet.
 ## Change links and grouping
 
 A project's owners change its parent and links, either in the project's settings under **Team
-project** or from **Team projects**. Owners are matched against the GitHub login the GitHub CLI is
-signed in with on that environment (`gh auth login`); everyone else sees the links read-only.
+project** or by selecting it in the graph. Owners are matched against the GitHub login the GitHub
+CLI is signed in with on that environment (`gh auth login`); everyone else sees the links
+read-only.
 
 Saving never changes the catalog directly. **Propose change** pushes a new branch to the catalog
 repository with your own git credentials and, on GitHub, opens a pull request. Its commit is
@@ -94,11 +101,11 @@ A team project with a `linear` field has a board: its Linear team's issues, in t
 workflow states. Linear holds the issues, so people working in Linear or another tool see the same
 ones.
 
-1. Create a personal API key in Linear under **Settings → Security & access → Personal API keys**.
-2. Open **Settings → Threads → Board**, paste the key and select **Connect**. The key is checked
-   with Linear and stored in the environment's secret store; Settings then shows who you are
-   connected as. **Disconnect** removes it.
-3. In a thread of the project, open **Board** from the right panel's new surface menu or the
+1. Open **Settings → Threads → Board** and select **Sign in with Linear**. Linear opens in your
+   browser; approve access there and it sends you back to the environment, which says you can
+   close the tab. Settings then shows who you are signed in as. **Disconnect** signs out and
+   revokes the access at Linear.
+2. In a thread of the project, open **Board** from the right panel's new surface menu or the
    command palette.
 
 The board shows open issues and those closed in the last week, as columns or as a list grouped by
@@ -108,5 +115,49 @@ integration. Selecting a card opens its thread when the issue links to a thread 
 are connected to, and opens the issue in Linear otherwise. The board is read when you open it and
 when you select refresh; it does not change issues.
 
-Each environment reads Linear with its own owner's key, so connect Linear on each machine you use
-the board from.
+Each environment reads Linear as the person who signed in on it, so sign in on each machine you
+use the board from.
+
+### Set up Linear sign-in
+
+Sign-in needs a Linear OAuth application, created once for the team by a Linear workspace
+administrator:
+
+1. Create the application in Linear's API settings
+   (`https://linear.app/settings/api/applications/new`).
+2. Add a callback URL `<origin>/oauth/linear/callback` for every address people's browsers reach
+   an environment at; Linear only redirects to callback URLs registered there. For the desktop
+   app that is usually `http://127.0.0.1:3773/oauth/linear/callback`. The port is the one the
+   desktop app's server listens on, and it moves up when 3773 is taken. Add the Tailscale or tunnel
+   address too when people open an environment through one.
+3. Set the application's client ID as `T3CODE_LINEAR_CLIENT_ID` in the environment of each server
+   that shows boards. No client secret is needed; sign-in uses PKCE.
+
+Without `T3CODE_LINEAR_CLIENT_ID`, Settings says sign-in is not set up. Linear sends the browser
+back to the environment's own address, so sign in from a browser that can reach that address.
+
+## Team preferences
+
+Team preferences are standing instructions your agents follow, kept as markdown in the catalog
+repository so the whole team shares them:
+
+- `preferences/team.md` applies to everyone, in every project.
+- `preferences/projects/<key>.md` applies to threads in that catalog project.
+- `preferences/people/<github-login>.md` applies only to that person's own agents. Your login is
+  the one the GitHub CLI is signed in with (`gh auth login`).
+
+Write one preference per list item, in plain words. Every turn gets the team file, then the
+project's, then your own, so a more specific one wins; the user's own message wins over all of
+them. The text is limited to about 8 KB in total, roughly 2,000 tokens.
+
+Open **Team preferences** from the right panel's new surface menu or the command palette, in a
+thread of the project. **Team**, **Project** and **Personal** show each file as it was last
+fetched; **What agents get** shows the exact text agents receive and its size. **Edit** changes
+a file and **Propose change** opens a pull request on the catalog repository, as link changes
+do. The change is pending until it is merged; the repository's review rules decide who approves
+it, including for personal files.
+
+Agents pick up changes on their next turn once the catalog is fetched again. A turn uses the
+last fetch and fetches in the background when it is more than ten minutes old; the refresh
+button fetches at once. Claude and Codex get team preferences. Rules that belong to one
+repository, and are fine to publish, belong in that repository's `AGENTS.md` instead.

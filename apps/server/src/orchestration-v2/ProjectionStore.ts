@@ -98,6 +98,11 @@ import { MCP_APP_OUTPUT_KEY } from "@t3tools/shared/mcpApp";
 import { threadHtmlRenderAttachmentIds } from "../attachmentStore.ts";
 import { readableSearchText } from "./messageSearchIndex.ts";
 import {
+  openQuestionCandidatesColumn,
+  openQuestionsAt,
+  openQuestionsAtFromCandidates,
+} from "./openQuestions.ts";
+import {
   isThreadHistoryUserTurn,
   isConversationHistoryItem,
   THREAD_HISTORY_MAX_RAW_TURNS,
@@ -1071,6 +1076,7 @@ type ShellThreadRow = {
   readonly pending_link_request_payload_json: string | null;
   readonly latest_user_message_at: string | null;
   readonly latest_user_authored_message_at: string | null;
+  readonly open_question_candidates_json: string | null;
   readonly has_actionable_proposed_plan: number;
 };
 
@@ -1741,6 +1747,10 @@ export function threadShellFromProjection(
     latestVisibleMessage: null,
     latestUserMessageAt: latestUserMessage?.updatedAt ?? null,
     latestUserAuthoredMessageAt,
+    openQuestionsAt: openQuestionsAt({
+      messages: projection.messages,
+      latestUserAuthoredMessageAt,
+    }),
     hasActionableProposedPlan: projection.plans.some(
       (plan) => plan.kind === "proposed_plan" && plan.status === "active",
     ),
@@ -1872,6 +1882,7 @@ type ShellThreadState = {
   readonly pendingRuntimeRequest: OrchestrationV2PendingRuntimeRequestSummary | null;
   readonly latestUserMessageAt: DateTime.Utc | null;
   readonly latestUserAuthoredMessageAt: DateTime.Utc | null;
+  readonly openQuestionsAt: DateTime.Utc | null;
   readonly hasActionableProposedPlan: boolean;
   readonly pendingBackgroundTasks: OrchestrationV2ThreadShell["pendingBackgroundTasks"];
   readonly providerInstanceHistory: OrchestrationV2ThreadShell["providerInstanceHistory"];
@@ -2045,6 +2056,7 @@ function shellFromState(input: {
     latestVisibleMessage: null,
     latestUserMessageAt: input.state.latestUserMessageAt,
     latestUserAuthoredMessageAt: input.state.latestUserAuthoredMessageAt,
+    openQuestionsAt: input.state.openQuestionsAt,
     hasActionableProposedPlan: input.state.hasActionableProposedPlan,
     pendingBackgroundTasks: input.state.pendingBackgroundTasks,
     providerInstanceHistory: input.state.providerInstanceHistory,
@@ -6846,6 +6858,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 ORDER BY message.updated_at DESC, message.message_id DESC
                 LIMIT 1
               ) AS latest_user_authored_message_at,
+              ${openQuestionCandidatesColumn(sql, "t.thread_id")} AS open_question_candidates_json,
               EXISTS (
                 SELECT 1
                 FROM orchestration_v2_projection_plans plan
@@ -7454,6 +7467,10 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               ? null
               : DateTime.makeUnsafe(row.latest_user_message_at),
           latestUserAuthoredMessageAt,
+          openQuestionsAt: openQuestionsAtFromCandidates(
+            row.open_question_candidates_json,
+            latestUserAuthoredMessageAt,
+          ),
           hasActionableProposedPlan: row.has_actionable_proposed_plan === 1,
           pendingBackgroundTasks,
           providerInstanceHistory: providerInstanceHistoryForShell({

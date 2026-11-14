@@ -100,7 +100,11 @@ const withCatalog = <A, E>(
     const commit = (files: Record<string, unknown>) =>
       Effect.gen(function* () {
         for (const [name, value] of Object.entries(files)) {
-          const target = path.join(catalog, "projects", name);
+          // A name with a folder is a path from the catalog's root.
+          const target = name.includes("/")
+            ? path.join(catalog, name)
+            : path.join(catalog, "projects", name);
+          yield* fileSystem.makeDirectory(path.dirname(target), { recursive: true });
           if (value === null) yield* fileSystem.remove(target);
           else
             yield* fileSystem.writeFileString(
@@ -477,4 +481,64 @@ it.live(
         ]);
       }),
     ),
+);
+
+it.live("reads the fetched catalog's files and proposes whole files as a branch", () =>
+  withCatalog(({ catalog, commit, service }) =>
+    Effect.gen(function* () {
+      const runner = yield* ProcessRunner.ProcessRunner;
+      yield* commit({
+        "web.json": project("web", "example.com/acme/web"),
+        "preferences/team.md": "- Prefer small pull requests.\n",
+      });
+      const remote = `${catalog}-remote.git`;
+      yield* git(catalog, ["clone", "--quiet", "--bare", catalog, remote]);
+      expect(yield* service.readFile("preferences/team.md")).toBeNull();
+      const fetched = yield* service.setSource(remote);
+      expect(yield* service.readFile("preferences/team.md")).toBe(
+        "- Prefer small pull requests.\n",
+      );
+      expect(yield* service.readFile("preferences/people/alice.md")).toBeNull();
+
+      const files = [
+        { file: "preferences/team.md", text: "- Prefer one change per pull request.\n" },
+        { file: "preferences/people/alice.md", text: "- Keep replies short.\n" },
+      ];
+      const stale = yield* Effect.flip(
+        service.proposeFiles({
+          baseRevision: "0000000",
+          files,
+          title: "Update preferences",
+          body: "Body.",
+          branchStem: "team-preferences/team",
+        }),
+      );
+      expect(stale.detail).toContain("changed since you opened it");
+      const proposal = yield* service.proposeFiles({
+        baseRevision: fetched.revision!,
+        files,
+        title: "Update preferences",
+        body: "Body.",
+        branchStem: "team-preferences/team",
+      });
+      expect(proposal).toMatchObject({
+        remote,
+        files: ["preferences/team.md", "preferences/people/alice.md"],
+        pullRequestUrl: null,
+      });
+      expect(proposal.branch).toBe(`team-preferences/team-${proposal.commit.slice(0, 7)}`);
+      const show = (spec: string) =>
+        runner
+          .run({ command: "git", args: ["-C", remote, "show", spec] })
+          .pipe(Effect.map((output) => output.stdout));
+      expect(yield* show(`${proposal.branch}:preferences/people/alice.md`)).toBe(
+        "- Keep replies short.\n",
+      );
+      expect(yield* show(`${proposal.branch}:projects/web.json`)).toContain('"key":"web"');
+      expect(yield* show("HEAD:preferences/team.md")).toBe("- Prefer small pull requests.\n");
+      expect(yield* service.readFile("preferences/team.md")).toBe(
+        "- Prefer small pull requests.\n",
+      );
+    }),
+  ),
 );

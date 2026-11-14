@@ -22,6 +22,7 @@ import {
   sortInboxThreadsByReturn,
   sortWorkingThreadsBySend,
 } from "@t3tools/client-runtime/state/thread-inbox";
+import { withUnseenQuestions } from "@t3tools/client-runtime/state/thread-questions";
 import {
   sortActiveThreadsByOrderKey,
   resolveSettledThreadTimestamp,
@@ -257,17 +258,23 @@ export function resolveThreadListV2WokeAt(
     : null;
 }
 
-export function resolveThreadListV2Status(
-  thread: Pick<
-    EnvironmentThreadShell,
-    | "hasPendingApprovals"
-    | "hasPendingUserInput"
-    | "pendingSubagentRequest"
-    | "pendingGuestMessageCount"
-    | "runtime"
-    | "blockedOnThreadWait"
-  >,
-): ThreadListV2Status {
+type ThreadListV2StatusInput = Pick<
+  EnvironmentThreadShell,
+  | "hasPendingApprovals"
+  | "hasPendingUserInput"
+  | "pendingSubagentRequest"
+  | "pendingGuestMessageCount"
+  | "runtime"
+  | "blockedOnThreadWait"
+  | "openQuestionsAt"
+  | "lastVisitedAt"
+>;
+
+export function resolveThreadListV2Status(thread: ThreadListV2StatusInput): ThreadListV2Status {
+  return withUnseenQuestions(resolveThreadListV2RunStatus(thread), thread);
+}
+
+function resolveThreadListV2RunStatus(thread: ThreadListV2StatusInput): ThreadListV2Status {
   if (thread.hasPendingApprovals || thread.pendingSubagentRequest === "approval") {
     return "approval";
   }

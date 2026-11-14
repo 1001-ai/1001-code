@@ -11,7 +11,7 @@ import {
 
 /**
  * The board shows a team project's Linear issues. Linear holds the tasks; each environment reads
- * them with its owner's own Linear credential, which never leaves the server.
+ * them with its owner's own Linear OAuth sign-in, whose tokens never leave the server.
  */
 
 export const BoardViewer = Schema.Struct({
@@ -24,7 +24,13 @@ export const BoardViewer = Schema.Struct({
 export type BoardViewer = typeof BoardViewer.Type;
 
 export const BoardConnection = Schema.Union([
-  Schema.Struct({ status: Schema.Literal("disconnected") }),
+  /** The environment has no Linear OAuth application configured, so nobody can sign in. */
+  Schema.Struct({ status: Schema.Literal("unavailable") }),
+  Schema.Struct({
+    status: Schema.Literal("disconnected"),
+    /** Why the last sign-in failed, until the next one starts. */
+    signInFailure: Schema.optionalKey(Schema.String),
+  }),
   Schema.Struct({ status: Schema.Literal("connected"), viewer: BoardViewer }),
 ]);
 export type BoardConnection = typeof BoardConnection.Type;
@@ -32,6 +38,8 @@ export type BoardConnection = typeof BoardConnection.Type;
 export const BoardFailureReason = Schema.Literals([
   /** Linear rejected the credential. */
   "unauthorized",
+  /** The environment has no Linear OAuth application configured. */
+  "sign-in-unavailable",
   "team-not-found",
   "project-not-found",
   "rate-limited",
@@ -177,8 +185,13 @@ export type BoardProjectInput = typeof BoardProjectInput.Type;
 export const BoardConnectionSubscribeInput = Schema.Struct({});
 
 export const BoardConnectInput = Schema.Struct({
-  apiKey: TrimmedNonEmptyString.check(Schema.isMaxLength(500)),
+  /** The environment's origin as the signing-in browser reaches it; Linear redirects back there. */
+  callbackOrigin: TrimmedNonEmptyString.check(Schema.isMaxLength(500)),
 });
 export type BoardConnectInput = typeof BoardConnectInput.Type;
+
+/** Where the client sends the browser to sign in to Linear. */
+export const BoardSignIn = Schema.Struct({ authorizeUrl: TrimmedNonEmptyString });
+export type BoardSignIn = typeof BoardSignIn.Type;
 
 export const BoardDisconnectInput = Schema.Struct({});

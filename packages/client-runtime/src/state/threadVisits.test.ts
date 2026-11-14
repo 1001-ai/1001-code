@@ -15,6 +15,7 @@ interface Shell {
   readonly lastVisitedAt?: string | null;
   readonly latestRun: { readonly completedAt: string | null } | null;
   readonly wokeAt?: string | null;
+  readonly openQuestionsAt?: string | null;
 }
 
 function at(seconds: number) {
@@ -81,14 +82,17 @@ it("records the open once, then throttles streaming visits", () => {
   expect(t.visits.slice(1)).toEqual([{ threadId: t.ref.threadId, visitedAt: at(12) }]);
 });
 
-it("sends an unseen completion without waiting for the throttle", () => {
-  using t = setup("thread-completion", {
+it.each([
+  ["completion", { latestRun: { completedAt: at(20) } }],
+  ["question", { openQuestionsAt: at(20) }],
+] as const)("sends an unseen %s without waiting for the throttle", (kind, patch) => {
+  using t = setup(`thread-unseen-${kind}`, {
     updatedAt: at(10),
     lastVisitedAt: at(0),
     latestRun: null,
   });
   t.mount();
-  t.update({ updatedAt: at(20), latestRun: { completedAt: at(20) } });
+  t.update({ updatedAt: at(20), ...patch });
   expect(t.visits.slice(1)).toEqual([{ threadId: t.ref.threadId, visitedAt: at(20) }]);
 });
 

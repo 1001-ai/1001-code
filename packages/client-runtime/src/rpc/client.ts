@@ -75,6 +75,7 @@ export type EnvironmentSubscriptionRpcTag =
   | typeof WS_METHODS.teamCatalogSubscribe
   | typeof WS_METHODS.boardSubscribe
   | typeof WS_METHODS.boardSubscribeConnection
+  | typeof WS_METHODS.teamPreferencesSubscribe
   | typeof WS_METHODS.terminalAttach
   | typeof WS_METHODS.terminalObserve;
 

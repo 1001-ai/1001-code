@@ -5,6 +5,7 @@ import { Atom } from "effect/reactivity";
 import { parseThreadKey, threadKey } from "./entities.ts";
 import { type AtomCommand, runAtomCommand } from "./runtime.ts";
 import { claimThreadOpen } from "./threadSearch.ts";
+import { hasUnseenQuestions } from "./threadQuestions.ts";
 import type { VisitThreadInput } from "../operations/commands.ts";
 
 // During an active turn the thread's updatedAt advances several times per
@@ -29,6 +30,7 @@ interface VisitedShell {
    * the dispatch and keep the thread marked Woke.
    */
   readonly wokeAt?: string | null | undefined;
+  readonly openQuestionsAt?: string | null | undefined;
 }
 
 export interface ThreadVisitTrackerOptions {
@@ -130,7 +132,12 @@ export function createThreadVisitTracker(options: ThreadVisitTrackerOptions) {
           !Number.isNaN(completedAtMs) &&
           (Number.isNaN(lastVisitedAtMs) || completedAtMs > lastVisitedAtMs);
         const elapsed = Date.now() - lastDispatchAt;
-        if (hasUnseenCompletion || wakeIsLatest || elapsed >= VISIT_DISPATCH_THROTTLE_MS) {
+        if (
+          hasUnseenCompletion ||
+          hasUnseenQuestions(shell) ||
+          wakeIsLatest ||
+          elapsed >= VISIT_DISPATCH_THROTTLE_MS
+        ) {
           dispatch(shell, visitedAt, false);
           return;
         }
