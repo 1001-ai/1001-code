@@ -126,6 +126,7 @@ import * as UsageLimitSources from "./usage/UsageLimitSources.ts";
 import * as UsageService from "./usage/UsageService.ts";
 import * as ThreadCost from "./usage/ThreadCost.ts";
 import * as TeamCatalog from "./teamCatalog/TeamCatalog.ts";
+import * as Board from "./board/Board.ts";
 import * as VcsProvisioningService from "./vcs/VcsProvisioningService.ts";
 import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
@@ -858,6 +859,7 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(UsageService.UsageService)({}),
   Layer.mock(ThreadCost.ThreadCost)({}),
   Layer.mock(TeamCatalog.TeamCatalog)({}),
+  Layer.mock(Board.Board)({}),
   Layer.mock(VcsProvisioningService.VcsProvisioningService)({}),
   Layer.mock(VcsStatusBroadcaster.VcsStatusBroadcaster)({}),
   Layer.mock(WorkspaceEntries.WorkspaceEntries)({}),

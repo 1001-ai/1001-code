@@ -369,6 +369,15 @@ import {
 } from "./teamCatalog.ts";
 import { TeamCatalogProposal, TeamCatalogProposeInput } from "./teamProjectLinks.ts";
 import {
+  BoardConnectInput,
+  BoardConnection,
+  BoardConnectionSubscribeInput,
+  BoardDisconnectInput,
+  BoardError,
+  BoardProjectInput,
+  BoardSnapshot,
+} from "./board.ts";
+import {
   StorageCleanupReport,
   DatabaseReclaimError,
   DatabaseStorageStatus,
@@ -564,6 +573,11 @@ export const WS_METHODS = {
   teamCatalogSubscribe: "teamCatalog.subscribe",
   teamCatalogRefresh: "teamCatalog.refresh",
   teamCatalogSetSource: "teamCatalog.setSource",
+  boardSubscribe: "board.subscribe",
+  boardRefresh: "board.refresh",
+  boardSubscribeConnection: "board.subscribeConnection",
+  boardConnect: "board.connect",
+  boardDisconnect: "board.disconnect",
   teamCatalogPropose: "teamCatalog.propose",
 
   scheduledTasksSubscribe: "scheduledTasks.subscribe",
@@ -1057,6 +1071,38 @@ const WsTeamCatalogSetSourceRpc = Rpc.make(WS_METHODS.teamCatalogSetSource, {
   payload: TeamCatalogSetSourceInput,
   success: TeamCatalogSnapshot,
   error: Schema.Union([TeamCatalogError, EnvironmentAuthorizationError]),
+});
+
+const WsBoardSubscribeRpc = Rpc.make(WS_METHODS.boardSubscribe, {
+  payload: BoardProjectInput,
+  success: BoardSnapshot,
+  error: EnvironmentAuthorizationError,
+  stream: true,
+});
+
+const WsBoardRefreshRpc = Rpc.make(WS_METHODS.boardRefresh, {
+  payload: BoardProjectInput,
+  success: BoardSnapshot,
+  error: EnvironmentAuthorizationError,
+});
+
+const WsBoardSubscribeConnectionRpc = Rpc.make(WS_METHODS.boardSubscribeConnection, {
+  payload: BoardConnectionSubscribeInput,
+  success: BoardConnection,
+  error: EnvironmentAuthorizationError,
+  stream: true,
+});
+
+const WsBoardConnectRpc = Rpc.make(WS_METHODS.boardConnect, {
+  payload: BoardConnectInput,
+  success: BoardConnection,
+  error: Schema.Union([BoardError, EnvironmentAuthorizationError]),
+});
+
+const WsBoardDisconnectRpc = Rpc.make(WS_METHODS.boardDisconnect, {
+  payload: BoardDisconnectInput,
+  success: BoardConnection,
+  error: Schema.Union([BoardError, EnvironmentAuthorizationError]),
 });
 
 const WsTeamCatalogProposeRpc = Rpc.make(WS_METHODS.teamCatalogPropose, {
@@ -2193,6 +2239,11 @@ export const WsRpcGroup = RpcGroup.make(
   WsTeamCatalogSubscribeRpc,
   WsTeamCatalogRefreshRpc,
   WsTeamCatalogSetSourceRpc,
+  WsBoardSubscribeRpc,
+  WsBoardRefreshRpc,
+  WsBoardSubscribeConnectionRpc,
+  WsBoardConnectRpc,
+  WsBoardDisconnectRpc,
   WsTeamCatalogProposeRpc,
   WsServerSignalProcessRpc,
   WsScheduledTasksSubscribeRpc,

@@ -10,6 +10,7 @@ import { DraftInput } from "../ui/draft-input";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { useSettingsScope } from "./SettingsScopeContext";
+import { BoardSettings } from "./BoardSettings";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
 
 function catalogStatus(snapshot: NonNullable<ReturnType<typeof useTeamCatalog>>): string {
@@ -114,14 +115,17 @@ export function TeamCatalogSettings() {
   const { scope, targets } = useSettingsScope();
   if (scope.kind === "project" || scope.kind === "checkout" || targets.length === 0) return null;
   return (
-    <SettingsSection id="team-catalog" title="Team projects">
-      {targets.map((target) => (
-        <TeamCatalogRow
-          key={target.environmentId}
-          environmentId={target.environmentId}
-          label={targets.length > 1 ? target.label : null}
-        />
-      ))}
-    </SettingsSection>
+    <>
+      <SettingsSection id="team-catalog" title="Team projects">
+        {targets.map((target) => (
+          <TeamCatalogRow
+            key={target.environmentId}
+            environmentId={target.environmentId}
+            label={targets.length > 1 ? target.label : null}
+          />
+        ))}
+      </SettingsSection>
+      <BoardSettings />
+    </>
   );
 }
