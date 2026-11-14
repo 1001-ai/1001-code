@@ -20,6 +20,7 @@ import {
 
 import { loadRepoEnv } from "../../scripts/lib/public-config";
 import { thirdPartyLicensesPlugin } from "../../scripts/lib/third-party-licenses";
+import { productNamePlugin } from "./vite/productName";
 import { tailwindPlugins } from "./vite/tailwind";
 import { warmBundledDevPlugin } from "./vite/warmBundledDev";
 import { formatAppDisplayName, resolveWebAppStageLabel } from "./src/branding.logic";
@@ -290,6 +291,7 @@ export default defineConfig(() => {
     assetsInclude: ["**/*.wasm"],
     plugins: [
       bootstrapTitlePlugin(),
+      productNamePlugin(),
       devCompressionPlugin(),
       chunkCycleGuardPlugin(),
       builtDev
