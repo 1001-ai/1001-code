@@ -22,6 +22,7 @@ import {
 } from "@t3tools/shared/cliRelease";
 
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { FORK_RELEASE_DOWNLOAD_MESSAGE, forkReleaseSource } from "@t3tools/contracts";
 
 import * as ProcessRunner from "../processRunner.ts";
 import { isExactServiceVersion, parseServiceState, SERVICE_STATE_FILE } from "./serviceProtocol.ts";
@@ -248,6 +249,11 @@ const publishedArchive = Effect.fn("cloud.pinned_runtime.published_archive")(fun
   input: PinnedRuntimeInstallInput,
   platformKey: CliArchivePlatformKey,
 ) {
+  if (forkReleaseSource(input.releaseBaseUrl) === undefined) {
+    return yield* new PinnedRuntimeInstallError({
+      step: `downloading a t3 release (${FORK_RELEASE_DOWNLOAD_MESSAGE})`,
+    });
+  }
   const fileName = cliArchiveFileName(input.version, platformKey);
   const checksums = parseChecksums(
     new TextDecoder().decode(

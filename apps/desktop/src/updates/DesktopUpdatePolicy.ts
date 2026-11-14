@@ -6,6 +6,7 @@
  * @module DesktopUpdatePolicy
  */
 import {
+  FORK_UPDATES_MESSAGE,
   managedUpdatesMessage,
   type ManagedPolicyDocument,
   type ManagedUpdatesMode,
@@ -38,6 +39,9 @@ export const unmanagedUpdatePolicy: UpdatePolicy = {
 
 function resolveUpdatePolicy(document: ManagedPolicyDocument | undefined): UpdatePolicy {
   const updates = document?.limits?.updates;
+  if (updates?.mode !== "off" && updates?.feedUrl === undefined) {
+    return { ...unmanagedUpdatePolicy, mode: "off", message: FORK_UPDATES_MESSAGE };
+  }
   if (document === undefined || updates === undefined) return unmanagedUpdatePolicy;
   return {
     mode: updates.mode,

@@ -2,6 +2,7 @@ import * as Schema from "effect/Schema";
 import * as Struct from "effect/Struct";
 
 import { TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { FORK_UPDATES_MESSAGE } from "./forkBuild.ts";
 import { ProviderDriverKind, ProviderInstanceEnvironmentVariableName } from "./providerInstance.ts";
 import { isRuntimeModeAbove, RuntimeMode } from "./providerPolicy.ts";
 
@@ -237,8 +238,10 @@ export function isManagedDriverAllowed(
 }
 
 /** Why updates are unavailable on an environment with `summary`, or undefined when allowed. */
-export function managedUpdatesDenial(summary: ManagedPolicySummary | undefined) {
+export function managedUpdatesDenial(
+  summary: ManagedPolicySummary | undefined,
+): string | undefined {
   return summary?.limits?.updates?.mode === "off"
     ? managedUpdatesMessage(summary.organization)
-    : undefined;
+    : FORK_UPDATES_MESSAGE;
 }

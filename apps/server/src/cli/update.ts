@@ -1,4 +1,5 @@
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { FORK_UPDATES_MESSAGE } from "@t3tools/contracts";
 import {
   CLI_RELEASE_BASE_URL_ENV,
   CLI_RELEASE_CHANNELS,
@@ -374,6 +375,9 @@ export const runUpdate = Effect.fn("cli.update.run")(function* (input: {
   );
   if (refusal !== undefined) {
     return yield* new CliUpdateError({ reason: refusal });
+  }
+  if (mirror === undefined && input.requestedVersion === undefined) {
+    return yield* new CliUpdateError({ reason: FORK_UPDATES_MESSAGE });
   }
   if (input.requestedVersion !== undefined && !isExactServiceVersion(input.requestedVersion)) {
     return yield* new CliUpdateError({

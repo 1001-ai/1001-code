@@ -17,6 +17,17 @@ const testState = vi.hoisted(() => ({
   serverVersions: new Map<string, string>(),
 }));
 
+// Fork: these tests cover updates this build turns off (fork/README.md), so they allow them.
+vi.mock(import("@t3tools/contracts"), async (original) => {
+  const actual = await original();
+  return {
+    ...actual,
+    managedUpdatesDenial: (summary) =>
+      summary?.limits?.updates?.mode === "off"
+        ? actual.managedUpdatesMessage(summary.organization)
+        : undefined,
+  };
+});
 vi.mock(import("~/hooks/useCopyToClipboard"), async (original) => ({
   ...(await original()),
   useCopyToClipboard: ((options: { onCopy: (context: { command: string }) => void }) => ({

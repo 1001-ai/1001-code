@@ -1,6 +1,6 @@
 import { useAtom, useAtomValue } from "@effect/atom-react";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import type { EnvironmentId } from "@t3tools/contracts";
+import { managedUpdatesDenial, type EnvironmentId } from "@t3tools/contracts";
 import { AsyncResult } from "effect/reactivity";
 import { useState } from "react";
 import { View } from "react-native";
@@ -38,6 +38,8 @@ export function OutdatedServerUpdateSection({
   const [checkErrorDismissed, setCheckErrorDismissed] = useState(false);
   const error = checkErrorDismissed ? null : releaseCheckError(checkResult);
   const busy = checking || state.status === "running";
+  // An outdated server cannot describe its policy; this build's own default applies.
+  const updatesDenial = managedUpdatesDenial(undefined);
 
   function check() {
     if (busy) return;
@@ -96,14 +98,19 @@ export function OutdatedServerUpdateSection({
             {error ?? (state.status === "failed" ? state.message : null)}
           </Text>
         ) : null}
+        {updatesDenial ? (
+          <Text className="text-sm text-foreground-muted">{updatesDenial}</Text>
+        ) : null}
       </View>
-      <SettingsActionRow
-        icon="arrow.clockwise"
-        label="Check for updates"
-        disabled={busy}
-        loading={checking}
-        onPress={check}
-      />
+      {updatesDenial ? null : (
+        <SettingsActionRow
+          icon="arrow.clockwise"
+          label="Check for updates"
+          disabled={busy}
+          loading={checking}
+          onPress={check}
+        />
+      )}
       {release?.targetVersion ? (
         <SettingsActionRow
           icon="arrow.up.circle"
