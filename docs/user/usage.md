@@ -143,16 +143,18 @@ current model's limits without leaving the conversation. The result opens above 
 closes when you dismiss it or send your next message. It uses the same snapshot as **Usage → Limits**, so it does not run the agent or refresh
 anything. The command is offered only for providers that appear under **Usage → Limits**.
 
-On web and desktop, a status line under the composer keeps the thread's numbers in view as they
-change: room left in the current limit windows, context use, running subagents, and the thread's
-estimated API-equivalent cost. Hover an item for details, such as when a window resets or how old
-its reading is. Cost appears only for providers that report tokens per turn and includes the
+On web and desktop, a status line in a box under the composer keeps the thread's numbers in view
+as they change: room left in the current limit windows, context use, running subagents, and the
+thread's estimated API-equivalent cost. The box also holds the composer's context row when that is
+on. On a narrow screen it keeps the first limit window and context, and drops the other windows,
+then cost and subagents, unless a window is nearly spent. Hover an item for details, such as when
+a window resets or how old its reading is. Cost appears only for providers that report tokens per turn and includes the
 thread's subagents. It uses the same price table and custom prices as **Usage**, at base rates
 without long-context or fast-mode surcharges, so it is an estimate, not your subscription bill.
 To price it, the server downloads public model prices at most once a day. To hide the line,
 right-click it and choose **Hide status line**. Turn **Status line under composer** back on in
 **Settings → Appearance → Thread details**. The thread details card shows the same estimate in its
-**Estimated cost** row.
+**Estimated cost** row, and running subagents in its **Running subagents** row.
 
 For a fuller view, turn on **Usage limits** in **Settings → Appearance → Thread details**, or right-click the thread details card.
 The bottom of the thread details card then shows how much is left in each limit window of the
