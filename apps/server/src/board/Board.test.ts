@@ -1044,4 +1044,43 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Board", (it) => 
       expect(yield* Queue.take(updates)).toMatchObject({ status: "ready", failure: null });
     }).pipe(Effect.scoped),
   );
+
+  it.effect("polling waits out a rate limit a refresh saw, then clears its warning", () =>
+    Effect.gen(function* () {
+      let limited = false;
+      const linear = fakeLinear((operation, variables) =>
+        limited && operation !== "BoardViewer"
+          ? { status: 429, body: { errors: [] }, headers: { "retry-after": "120" } }
+          : boardAnswers([[linearIssue("1", "s-todo")]])(operation, variables),
+      );
+      const board = yield* makeBoard({
+        client: linear.client,
+        catalog: catalog([catalogEntry({ team: "ENG" })]),
+        secrets: yield* memorySecrets(),
+      });
+      yield* signIn(board, linear);
+      const teamReads = () => linear.calls.filter((call) => call.operation === "BoardTeam").length;
+      const updates = yield* Queue.unbounded<BoardSnapshot>();
+      yield* board.changes(PROJECT_ID).pipe(
+        Stream.runForEach((snapshot) => Queue.offer(updates, snapshot)),
+        Effect.forkScoped,
+      );
+      ready(yield* Queue.take(updates));
+
+      limited = true;
+      yield* board.refresh(PROJECT_ID);
+      expect(yield* Queue.take(updates)).toMatchObject({
+        status: "ready",
+        failure: { reason: "rate-limited", retryAfterSeconds: 120 },
+      });
+      expect(teamReads()).toBe(2);
+
+      limited = false;
+      yield* TestClock.adjust("90 seconds");
+      expect(teamReads()).toBe(2);
+      yield* TestClock.adjust("30 seconds");
+      expect(teamReads()).toBe(3);
+      expect(yield* Queue.take(updates)).toMatchObject({ status: "ready", failure: null });
+    }).pipe(Effect.scoped),
+  );
 });

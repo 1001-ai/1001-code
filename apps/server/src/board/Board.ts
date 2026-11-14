@@ -162,17 +162,27 @@ const pollFingerprint = (snapshot: BoardSnapshot) =>
       : snapshot,
   );
 
-/** The wait before the next poll: after a rate limit, Linear's retry time or a long backoff. */
-const pollDelay = (snapshot: BoardSnapshot, spaced: Duration.Duration) => {
+/** When polling may next reach Linear after `snapshot` was shown: later after a rate limit. */
+const quietUntil = (snapshot: BoardSnapshot, nowMs: number) => {
   const failure = "failure" in snapshot ? snapshot.failure : null;
-  if (failure?.reason !== "rate-limited") return spaced;
-  return Duration.max(
-    spaced,
-    failure.retryAfterSeconds === undefined
-      ? RATE_LIMIT_BACKOFF
-      : Duration.seconds(failure.retryAfterSeconds),
+  if (failure?.reason !== "rate-limited") return 0;
+  return (
+    nowMs +
+    (failure.retryAfterSeconds === undefined
+      ? Duration.toMillis(RATE_LIMIT_BACKOFF)
+      : failure.retryAfterSeconds * 1000)
   );
 };
+
+/** One project's poll, shared by every client that has its board open. */
+interface Poll {
+  subscribers: number;
+  fiber: Fiber.Fiber<void> | null;
+  /** The fingerprint of the snapshot open boards last got, from a poll or a refresh. */
+  shown: string | null;
+  /** No poll reaches Linear before this, after a rate limit any read saw. */
+  quietUntilMs: number;
+}
 
 const make = Effect.gen(function* () {
   const layerScope = yield* Effect.scope;
@@ -493,59 +503,67 @@ const make = Effect.gen(function* () {
     );
   });
 
+  // One poll per project however many clients have its board open; the last to leave stops it.
+  const polls = new Map<ProjectId, Poll>();
+  const pollsLock = yield* Semaphore.make(1);
+
+  /** Sends a snapshot to the project's open boards unless the sign-in changed since its read. */
+  const publish = (projectId: ProjectId, snapshot: BoardSnapshot, generation: number) =>
+    credentialLock.withPermits(1)(
+      Effect.suspend(() => {
+        if (generation !== credentialGeneration) return Effect.succeed(false);
+        return Effect.flatMap(Clock.currentTimeMillis, (now) => {
+          const open = polls.get(projectId);
+          if (open !== undefined) {
+            open.shown = pollFingerprint(snapshot);
+            open.quietUntilMs = quietUntil(snapshot, now);
+          }
+          return PubSub.publish(boardSignals, { projectId, snapshot });
+        });
+      }),
+    );
+
   const refresh: Board["Service"]["refresh"] = Effect.fn("Board.refresh")(function* (projectId) {
     // A catalog edit, such as a new `linear` field, should count on the next refresh.
     yield* teamCatalog.refresh({ force: true });
     const generation = credentialGeneration;
     const snapshot = yield* read(projectId, { refresh: true });
     // Open boards get this snapshot itself: a re-read would hit the cache and drop its failure.
-    const published = yield* credentialLock.withPermits(1)(
-      Effect.suspend(() =>
-        generation === credentialGeneration
-          ? PubSub.publish(boardSignals, { projectId, snapshot })
-          : Effect.succeed(false),
-      ),
-    );
+    const published = yield* publish(projectId, snapshot, generation);
     return published ? snapshot : yield* read(projectId);
   });
 
   /**
-   * Reads an open board again every 30 seconds and publishes it when it changed. The first step
-   * only records the board the subscriber was just served, normally from the cache. Unlike
-   * `refresh`, a poll does not fetch the team catalog.
+   * Reads an open board again every 30 seconds and publishes it when it differs from what open
+   * boards last got. The first step only records the board the subscriber was just served,
+   * normally from the cache. Unlike `refresh`, a poll does not fetch the team catalog.
    */
-  const poll = (projectId: ProjectId) => {
-    let previous: string | null = null;
+  const poll = (projectId: ProjectId, state: Poll) => {
     const step = Effect.fn("Board.poll")(function* () {
+      if ((yield* Clock.currentTimeMillis) < state.quietUntilMs) return;
       const generation = credentialGeneration;
       const snapshot = yield* read(projectId);
       const fingerprint = pollFingerprint(snapshot);
-      if (previous !== null && fingerprint !== previous) {
-        yield* credentialLock.withPermits(1)(
-          Effect.suspend(() =>
-            generation === credentialGeneration
-              ? PubSub.publish(boardSignals, { projectId, snapshot })
-              : Effect.void,
-          ),
-        );
+      if (state.shown !== null && fingerprint !== state.shown) {
+        yield* publish(projectId, snapshot, generation);
+        return;
       }
-      previous = fingerprint;
-      return snapshot;
+      state.shown = fingerprint;
+      state.quietUntilMs = quietUntil(snapshot, yield* Clock.currentTimeMillis);
     });
     return step().pipe(
       Effect.repeat(
         Schedule.spaced(POLL_INTERVAL).pipe(
-          Schedule.modifyDelay(({ input, duration }: Schedule.Metadata<number, BoardSnapshot>) =>
-            Effect.succeed(pollDelay(input, duration)),
+          Schedule.modifyDelay(({ duration }) =>
+            Effect.map(Clock.currentTimeMillis, (now) =>
+              Duration.max(duration, Duration.millis(Math.max(0, state.quietUntilMs - now))),
+            ),
           ),
         ),
       ),
+      Effect.asVoid,
     );
   };
-
-  // One poll per project however many clients have its board open; the last to leave stops it.
-  const polls = new Map<ProjectId, { subscribers: number; fiber: Fiber.Fiber<number> }>();
-  const pollsLock = yield* Semaphore.make(1);
 
   const openPoll = (projectId: ProjectId) =>
     pollsLock.withPermits(1)(
@@ -555,8 +573,9 @@ const make = Effect.gen(function* () {
           open.subscribers += 1;
           return;
         }
-        const fiber = yield* poll(projectId).pipe(Effect.forkIn(layerScope));
-        polls.set(projectId, { subscribers: 1, fiber });
+        const state: Poll = { subscribers: 1, fiber: null, shown: null, quietUntilMs: 0 };
+        polls.set(projectId, state);
+        state.fiber = yield* poll(projectId, state).pipe(Effect.forkIn(layerScope));
       }),
     );
 
