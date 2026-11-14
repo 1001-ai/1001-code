@@ -526,10 +526,6 @@ function OpenCommandPaletteDialog(props: {
     null,
   );
   const [isPickingProjectFolder, setIsPickingProjectFolder] = useState(false);
-  const teamProjectGroups = useTeamProjectPaletteGroups({
-    environmentId: addProjectEnvironmentId,
-    closePalette: () => setOpen(false),
-  });
   const [addProjectCloneFlow, setAddProjectCloneFlow] = useState<AddProjectCloneFlow | null>(null);
   const [newProjectFlow, setNewProjectFlow] = useState<{
     readonly environmentId: EnvironmentId;
@@ -1150,7 +1146,7 @@ function OpenCommandPaletteDialog(props: {
 
     return [
       { value: `sources:${environmentId}`, label: "Sources", items: sourceItems },
-      ...(environmentId === addProjectEnvironmentId ? teamProjectGroups : []),
+      ...(environmentId === teamProjectEnvironmentId ? teamProjectGroups : []),
     ];
   };
 
@@ -1227,6 +1223,17 @@ function OpenCommandPaletteDialog(props: {
     addProjectEnvironmentOptions,
     defaultAddProjectEnvironmentId,
   );
+  // An "Add project" intent shows its environment's sources without setting the add-project environment.
+  const teamProjectEnvironmentId =
+    addProjectEnvironmentId ??
+    (currentView?.groups[0]?.value === ADD_PROJECT_ENTRY_GROUP &&
+    addProjectEntry.kind === "choose-source"
+      ? addProjectEntry.environmentId
+      : null);
+  const teamProjectGroups = useTeamProjectPaletteGroups({
+    environmentId: teamProjectEnvironmentId,
+    closePalette: () => setOpen(false),
+  });
 
   const openAddProjectFlow = () => {
     switch (addProjectEntry.kind) {
