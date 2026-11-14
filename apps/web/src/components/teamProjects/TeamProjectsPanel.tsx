@@ -8,12 +8,7 @@ import {
 } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { FolderCheckIcon, FolderDownIcon, RefreshCwIcon, SettingsIcon, XIcon } from "lucide-react";
-import {
-  type CSSProperties,
-  type PointerEvent as ReactPointerEvent,
-  useRef,
-  useState,
-} from "react";
+import { type PointerEvent as ReactPointerEvent, useRef, useState } from "react";
 
 import { observeResize } from "../../lib/observeResize";
 import { workspaceAreaProps } from "../../lib/workspaceFocus";
@@ -30,18 +25,11 @@ import {
 import { RelativeTime } from "../RelativeTime";
 import { Alert, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
-import { ScrollArea } from "../ui/scroll-area";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { TeamProjectGraph } from "./TeamProjectGraph";
 import { TeamProjectLinksEditor } from "./TeamProjectLinksEditor";
 import { useTeamProjectsDrawerStore } from "./teamProjectsDrawerState";
 import { useTeamProjectActions } from "./useTeamProjectActions";
-
-const DOT_GRID: CSSProperties = {
-  backgroundImage:
-    "radial-gradient(circle, color-mix(in srgb, var(--color-foreground) 14%, transparent) 1px, transparent 1.5px)",
-  backgroundSize: "20px 20px",
-};
 
 function Legend() {
   const line = (dash: string | undefined, className: string, width: number) => (
@@ -76,6 +64,34 @@ function Legend() {
         No access
       </span>
     </div>
+  );
+}
+
+/** Fetch and catalog problems, shown over the graph. */
+function CatalogAlerts(props: { readonly snapshot: TeamCatalogSnapshot; readonly issues: number }) {
+  const { snapshot, issues } = props;
+  return (
+    <>
+      {snapshot.error !== null ? (
+        <Alert variant="warning">
+          <AlertDescription>
+            The latest fetch failed, so this is the last fetched catalog: {snapshot.error}
+          </AlertDescription>
+        </Alert>
+      ) : null}
+      {issues > 0 || snapshot.invalid.length > 0 ? (
+        <Alert variant="warning">
+          <AlertDescription>
+            {snapshot.invalid.length > 0
+              ? `${snapshot.invalid.length} catalog file${snapshot.invalid.length === 1 ? " was" : "s were"} skipped as invalid. `
+              : ""}
+            {issues > 0
+              ? `${issues} link or grouping problem${issues === 1 ? "" : "s"}; select a project to see them.`
+              : ""}
+          </AlertDescription>
+        </Alert>
+      ) : null}
+    </>
   );
 }
 
@@ -312,35 +328,17 @@ function TeamProjectsView(props: {
           </Button>
         </div>
       ) : (
-        <div className="flex min-h-0 flex-1" style={DOT_GRID}>
-          <ScrollArea className="min-h-0 min-w-0 flex-1">
-            <div
-              className={selected === null ? "space-y-3 p-4 pe-10 pb-14" : "space-y-3 p-4 pb-14"}
-            >
-              {snapshot.error !== null ? (
-                <Alert variant="warning">
-                  <AlertDescription>
-                    The latest fetch failed, so this is the last fetched catalog: {snapshot.error}
-                  </AlertDescription>
-                </Alert>
-              ) : null}
-              {graph.issues.length > 0 || snapshot.invalid.length > 0 ? (
-                <Alert variant="warning">
-                  <AlertDescription>
-                    {snapshot.invalid.length > 0
-                      ? `${snapshot.invalid.length} catalog file${snapshot.invalid.length === 1 ? " was" : "s were"} skipped as invalid. `
-                      : ""}
-                    {graph.issues.length > 0
-                      ? `${graph.issues.length} link or grouping problem${graph.issues.length === 1 ? "" : "s"}; select a project to see them.`
-                      : ""}
-                  </AlertDescription>
-                </Alert>
-              ) : null}
-              {entries.length === 0 ? (
+        <div className="flex min-h-0 flex-1">
+          <div className="relative min-h-0 min-w-0 flex-1">
+            {entries.length === 0 ? (
+              <div className="space-y-3 p-4 pe-10">
+                <CatalogAlerts snapshot={snapshot} issues={graph.issues.length} />
                 <p className="text-sm text-muted-foreground">
                   {snapshot.refreshing ? "Fetching…" : "The catalog lists no projects yet."}
                 </p>
-              ) : (
+              </div>
+            ) : (
+              <>
                 <TeamProjectGraph
                   projects={entries.map((entry) => entry.project)}
                   links={graph.links}
@@ -348,9 +346,12 @@ function TeamProjectsView(props: {
                   selectedKey={selected?.project.key ?? null}
                   onSelect={setSelectedKey}
                 />
-              )}
-            </div>
-          </ScrollArea>
+                <div className="absolute inset-x-12 top-1.5 z-10 mx-auto max-w-xl space-y-2">
+                  <CatalogAlerts snapshot={snapshot} issues={graph.issues.length} />
+                </div>
+              </>
+            )}
+          </div>
           {selected !== null ? (
             <div className="w-80 max-w-[50%] shrink-0 overflow-y-auto border-l bg-background pb-12">
               <SelectedProject

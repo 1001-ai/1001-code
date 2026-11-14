@@ -77,7 +77,8 @@ write links; a write link only one side has declared is faded. A read link to a 
 git credentials cannot reach shows as **No access**.
 
 Select a project to highlight what it links to and what links to it, open it, or add it here if
-it is not added yet.
+it is not added yet. Drag or scroll to move around the graph; pinch, or use the buttons at its top
+left, to zoom.
 
 ## Change links and grouping
 
