@@ -162,6 +162,8 @@ export interface EnvironmentThreadShell {
   readonly blockedOnThreadWait?: boolean;
   readonly latestUserMessageAt: string | null;
   readonly latestUserAuthoredMessageAt?: string | null;
+  /** When the agent last asked question cards the user has not replied to. */
+  readonly openQuestionsAt?: string | null;
   readonly hasPendingApprovals: boolean;
   readonly hasPendingUserInput: boolean;
   readonly pendingUserInputAt?: string | null;
@@ -313,6 +315,7 @@ export function presentThreadShell(
     ...(thread.latestUserAuthoredMessageAt === undefined
       ? {}
       : { latestUserAuthoredMessageAt: nullableIso(thread.latestUserAuthoredMessageAt) }),
+    openQuestionsAt: nullableIso(thread.openQuestionsAt ?? null),
     hasPendingApprovals:
       thread.pendingRuntimeRequest !== null &&
       thread.pendingRuntimeRequest.kind !== "user_input" &&

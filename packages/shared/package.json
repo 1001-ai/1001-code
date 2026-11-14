@@ -291,6 +291,10 @@
       "types": "./src/composerContextReferences.ts",
       "import": "./src/composerContextReferences.ts"
     },
+    "./questionCards": {
+      "types": "./src/questionCards.ts",
+      "import": "./src/questionCards.ts"
+    },
     "./composerContextLegacy": {
       "types": "./src/composerContextLegacy.ts",
       "import": "./src/composerContextLegacy.ts"

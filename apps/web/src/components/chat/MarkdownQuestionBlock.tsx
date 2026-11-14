@@ -15,17 +15,16 @@ import {
 
 import { useComposerDraftStore } from "~/composerDraftStore";
 import { cn } from "~/lib/utils";
+import { parseQuestionQuote, type QuestionBlock } from "@t3tools/shared/questionCards";
 import { environmentThreadDetails } from "../../state/threads";
 import {
   findQuestionAnswer,
-  parseQuestionQuote,
   questionOptions,
   readAnswerLine,
   selectedMultiOptions,
   toggleMultiOption,
   writeAnswerLine,
   type QuestionAnswer,
-  type QuestionBlock,
 } from "./questionBlock.logic";
 import { QuestionAskedInItemContext } from "./questionBlockScope";
 
