@@ -121,13 +121,18 @@ export function isTeamCatalogSource(source: string): boolean {
   return source.startsWith("/") || /^[^@/:]+@[^/:]+:\S+$/.test(source);
 }
 
-/** The repository as repository identities key it: lowercase, no trailing `/` or `.git`. */
+/** The repository as repository identities key it: lowercase, no port, trailing `/` or `.git`. */
 export function teamCatalogRepositoryKey(repo: string): string {
   const key = repo.trim().toLowerCase();
   let end = key.length;
   while (end > 0 && key[end - 1] === "/") end -= 1;
   const trimmed = key.slice(0, end);
-  return trimmed.endsWith(".git") ? trimmed.slice(0, -".git".length) : trimmed;
+  const withoutGit = trimmed.endsWith(".git") ? trimmed.slice(0, -".git".length) : trimmed;
+  // Repository identities key a remote by host without its port, so `host:2222/a/b` is `host/a/b`.
+  const slash = withoutGit.indexOf("/");
+  const host = slash === -1 ? withoutGit : withoutGit.slice(0, slash);
+  const colon = host.indexOf(":");
+  return colon === -1 ? withoutGit : `${host.slice(0, colon)}${withoutGit.slice(host.length)}`;
 }
 
 export function teamCatalogRepositoryMatches(

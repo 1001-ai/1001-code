@@ -75,6 +75,8 @@ function ContextStrip({ className, ...props }: ComponentProps<"div">) {
       data-slot="composer-context-strip"
       className={cn(
         "group/composer-context surface-glass relative flex w-full items-center gap-2 overflow-x-clip px-2 pt-2 text-muted-foreground",
+        // In the status box (fork) the box paints the glass, and the row lines up with its inset.
+        "group-has-data-[slot=composer-status-box]/composer-surface:bg-transparent group-has-data-[slot=composer-status-box]/composer-surface:backdrop-filter-none group-has-data-[slot=composer-status-box]/composer-surface:px-(--chat-composer-drawer-inset)",
         className,
       )}
       {...props}

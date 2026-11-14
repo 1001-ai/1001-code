@@ -35,12 +35,20 @@ describe("matchTeamCatalogProjects", () => {
         workspaceRoot: "/elsewhere/tools",
         repositoryIdentity: identity("github.com/upstream/tools", "github.com/acme/tools"),
       },
+      // Identities key a remote without its port, whichever transport it was cloned over.
+      {
+        id: "ported",
+        workspaceRoot: "/projects/forge",
+        repositoryIdentity: identity("git.example.com/team/forge"),
+      },
     ];
     const matches = matchTeamCatalogProjects(
       [
         entry("web", "github.com/Acme/Web.git"),
         entry("api", "github.com/acme/api"),
         entry("tools", "github.com/acme/tools"),
+        entry("forge", "git.example.com:2222/team/forge"),
+        entry("other-port", "git.example.com:8443/team/other"),
       ],
       projects,
     );
@@ -50,6 +58,8 @@ describe("matchTeamCatalogProjects", () => {
       ["web", "web-checkout"],
       ["api", null],
       ["tools", "fork"],
+      ["forge", "ported"],
+      ["other-port", null],
     ]);
   });
 
