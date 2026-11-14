@@ -67,6 +67,7 @@ export * from "./usage.ts";
 export * from "./threadCost.ts";
 export * from "./forkBuild.ts";
 export * from "./teamCatalog.ts";
+export * from "./teamProjectLinks.ts";
 export * from "./scheduledTask.ts";
 export * from "./worktreeMcp.ts";
 export * from "./resourceTelemetry.ts";

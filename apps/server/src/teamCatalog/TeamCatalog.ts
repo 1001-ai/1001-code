@@ -1,10 +1,15 @@
 import {
+  checkTeamCatalogProposal,
   isTeamCatalogSource,
   TEAM_CATALOG_PROJECTS_DIRECTORY,
   TeamCatalogError,
   type TeamCatalogCheckout,
+  type TeamCatalogProposal,
+  type TeamCatalogProposeInput,
   type TeamCatalogRefreshInput,
   type TeamCatalogSnapshot,
+  type TeamCatalogViewer,
+  teamCatalogRepositoryKey,
   teamCatalogRepositoryMatches,
 } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -30,6 +35,8 @@ import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { unsetInheritedRepositoryEnv } from "../vcs/VcsProcess.ts";
+import * as TeamCatalogAccess from "./TeamCatalogAccess.ts";
+import { hostedRepositoryOf, proposalFileText, proposalText } from "./teamCatalogProposal.ts";
 import {
   type DecodedTeamCatalog,
   decodeTeamCatalogFiles,
@@ -53,12 +60,22 @@ export class TeamCatalog extends Context.Service<
     readonly setSource: (
       source: string | null,
     ) => Effect.Effect<TeamCatalogSnapshot, TeamCatalogError>;
+    /**
+     * Pushes a parent and links change to the catalog remote as a new branch, with the user's own
+     * git credentials, and opens a pull request when the remote is hosted. Never writes the
+     * local catalog: the change counts once the catalog repository merges it.
+     */
+    readonly propose: (
+      input: TeamCatalogProposeInput,
+    ) => Effect.Effect<TeamCatalogProposal, TeamCatalogError>;
   }
 >()("t3/teamCatalog/TeamCatalog") {}
 
 const FETCH_TIMEOUT = "90 seconds";
 const FRESH_FOR_MS = 30_000;
 const MAX_ERROR_LENGTH = 500;
+const REACHABILITY_FRESH_FOR_MS = 15 * 60_000;
+const NO_VIEWER: TeamCatalogViewer = { login: null, problem: null };
 
 const SourceFile = Schema.fromJsonString(Schema.Struct({ source: Schema.String }));
 const decodeSourceFile = Schema.decodeUnknownOption(SourceFile);
@@ -74,6 +91,7 @@ const emptySnapshot = (source: string | null): TeamCatalogSnapshot => ({
   error: null,
   projects: [],
   invalid: [],
+  viewer: NO_VIEWER,
 });
 
 class GitFailure extends Schema.TaggedError<GitFailure>()("GitFailure", {
@@ -87,6 +105,7 @@ const make = Effect.gen(function* () {
   const processRunner = yield* ProcessRunner.ProcessRunner;
   const identities = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
   const settings = yield* ServerSettings.ServerSettingsService;
+  const access = yield* TeamCatalogAccess.TeamCatalogAccess;
   const folders = yield* ManagedProjectFolders.ManagedProjectFolders;
   const env = {
     ...unsetInheritedRepositoryEnv(process.env, yield* HostProcess.Platform),
@@ -98,22 +117,33 @@ const make = Effect.gen(function* () {
   const sourcePath = path.join(root, "source.json");
   const checkoutPath = path.join(root, "checkout");
 
-  const git = (args: ReadonlyArray<string>) =>
-    processRunner.run({ command: "git", args, env, timeout: FETCH_TIMEOUT }).pipe(
-      Effect.mapError((cause) => new GitFailure({ detail: cause.message })),
-      Effect.flatMap((output) =>
-        output.code === 0
-          ? Effect.succeed(output.stdout.trim())
-          : Effect.fail(
-              new GitFailure({
-                detail: (output.stderr.trim() || `git ${args[2] ?? ""} failed.`).slice(
-                  0,
-                  MAX_ERROR_LENGTH,
-                ),
-              }),
-            ),
-      ),
-    );
+  const git = (
+    args: ReadonlyArray<string>,
+    options: { readonly env?: Record<string, string>; readonly stdin?: string } = {},
+  ) =>
+    processRunner
+      .run({
+        command: "git",
+        args,
+        env: { ...env, ...options.env },
+        timeout: FETCH_TIMEOUT,
+        ...(options.stdin === undefined ? {} : { stdin: options.stdin }),
+      })
+      .pipe(
+        Effect.mapError((cause) => new GitFailure({ detail: cause.message })),
+        Effect.flatMap((output) =>
+          output.code === 0
+            ? Effect.succeed(output.stdout.trim())
+            : Effect.fail(
+                new GitFailure({
+                  detail: (output.stderr.trim() || `git ${args[2] ?? ""} failed.`).slice(
+                    0,
+                    MAX_ERROR_LENGTH,
+                  ),
+                }),
+              ),
+        ),
+      );
 
   const readCatalog = Effect.fn("TeamCatalog.readCatalog")(function* () {
     const directory = path.join(checkoutPath, TEAM_CATALOG_PROJECTS_DIRECTORY);
@@ -198,6 +228,10 @@ const make = Effect.gen(function* () {
     initialSource === null ? EMPTY_CATALOG : yield* readCatalog(),
   );
   const fetchedAtMs = yield* Ref.make<number | null>(null);
+  const viewerRef = yield* Ref.make<TeamCatalogViewer>(NO_VIEWER);
+  const reachableRef = yield* Ref.make<
+    ReadonlyMap<string, { readonly reachable: boolean; readonly checkedAt: number }>
+  >(new Map());
   const state = yield* SubscriptionRef.make(emptySnapshot(initialSource));
   const lock = yield* Semaphore.make(1);
   const backgroundScope = yield* Scope.make();
@@ -209,6 +243,7 @@ const make = Effect.gen(function* () {
     const current = yield* SubscriptionRef.get(state);
     const source = fields.source === undefined ? current.source : fields.source;
     const catalog = yield* Ref.get(catalogRef);
+    const reachability = yield* Ref.get(reachableRef);
     const ghqLayout = yield* settings.getSettings.pipe(
       Effect.map((value) => value.ghqCloneLayout),
       Effect.orElseSucceed(() => false),
@@ -225,6 +260,11 @@ const make = Effect.gen(function* () {
                   project,
                   cloneUrl: teamCatalogCloneUrl(project.repo, source),
                   checkout,
+                  reachable:
+                    checkout.state === "present"
+                      ? true
+                      : (reachability.get(teamCatalogRepositoryKey(project.repo))?.reachable ??
+                        null),
                 })),
               ),
             { concurrency: 4 },
@@ -235,9 +275,41 @@ const make = Effect.gen(function* () {
       source,
       projects,
       invalid: source === null ? [] : catalog.invalid,
+      viewer: source === null ? NO_VIEWER : yield* Ref.get(viewerRef),
     };
     yield* SubscriptionRef.set(state, next);
     return next;
+  });
+
+  // Runs only after a fetch succeeds, so a failed check means no access rather than no network.
+  const checkAccess = Effect.fn("TeamCatalog.checkAccess")(function* (
+    source: string,
+    now: number,
+    force: boolean,
+  ) {
+    const viewer = yield* Ref.get(viewerRef);
+    if (force || viewer.login === null) yield* Ref.set(viewerRef, yield* access.viewer);
+    const known = yield* Ref.get(reachableRef);
+    const catalog = yield* Ref.get(catalogRef);
+    const checked = yield* Effect.forEach(
+      catalog.projects,
+      ({ project }) => {
+        const key = teamCatalogRepositoryKey(project.repo);
+        const previous = known.get(key);
+        if (
+          !force &&
+          previous !== undefined &&
+          now - previous.checkedAt < REACHABILITY_FRESH_FOR_MS
+        ) {
+          return Effect.succeed([key, previous] as const);
+        }
+        return access
+          .canReach(teamCatalogCloneUrl(project.repo, source))
+          .pipe(Effect.map((reachable) => [key, { reachable, checkedAt: now }] as const));
+      },
+      { concurrency: 6 },
+    );
+    yield* Ref.set(reachableRef, new Map(checked));
   });
 
   const refreshUnlocked = Effect.fn("TeamCatalog.refresh")(function* (
@@ -257,6 +329,7 @@ const make = Effect.gen(function* () {
       const fetchedAt = yield* Clock.currentTimeMillis;
       yield* Ref.set(catalogRef, fetched.value.catalog);
       yield* Ref.set(fetchedAtMs, fetchedAt);
+      yield* checkAccess(current.source, fetchedAt, input?.force === true);
       return yield* publish({
         refreshing: false,
         error: null,
@@ -302,6 +375,7 @@ const make = Effect.gen(function* () {
           }
           yield* Ref.set(catalogRef, EMPTY_CATALOG);
           yield* Ref.set(fetchedAtMs, null);
+          yield* Ref.set(reachableRef, new Map());
           yield* SubscriptionRef.set(state, emptySnapshot(source));
         }),
       );
@@ -334,12 +408,102 @@ const make = Effect.gen(function* () {
       .pipe(Effect.andThen(refresh()), Effect.forkIn(backgroundScope));
   }
 
+  const propose = Effect.fn("TeamCatalog.propose")(function* (input: TeamCatalogProposeInput) {
+    const current = yield* SubscriptionRef.get(state);
+    if (current.source === null) {
+      return yield* new TeamCatalogError({ detail: "No team catalog is set." });
+    }
+    const source = current.source;
+    if (current.revision !== input.baseRevision) {
+      return yield* new TeamCatalogError({
+        detail: "The team catalog changed since you opened it. Review the project and save again.",
+      });
+    }
+    let viewer = yield* Ref.get(viewerRef);
+    if (viewer.login === null) {
+      viewer = yield* access.viewer;
+      yield* Ref.set(viewerRef, viewer);
+    }
+    const catalog = yield* Ref.get(catalogRef);
+    const projects = catalog.projects.map((entry) => entry.project);
+    const refusal = checkTeamCatalogProposal(projects, input.changes, viewer.login);
+    if (refusal !== null) return yield* new TeamCatalogError({ detail: refusal });
+
+    const fileOf = new Map(catalog.projects.map((entry) => [entry.project.key, entry.file]));
+    const failed = (detail: string) =>
+      new TeamCatalogError({ detail: detail.slice(0, MAX_ERROR_LENGTH) });
+    const index = path.join(root, `proposal-${input.baseRevision.slice(0, 12)}.index`);
+    const indexEnv = { GIT_INDEX_FILE: index };
+    const commit = yield* Effect.gen(function* () {
+      yield* git(["-C", checkoutPath, "read-tree", input.baseRevision], { env: indexEnv });
+      for (const change of input.changes) {
+        const file = fileOf.get(change.key)!;
+        const original = yield* git(["-C", checkoutPath, "show", `${input.baseRevision}:${file}`]);
+        const blob = yield* git(["-C", checkoutPath, "hash-object", "-w", "--stdin"], {
+          stdin: proposalFileText(original, change),
+        });
+        yield* git(["-C", checkoutPath, "update-index", "--cacheinfo", `100644,${blob},${file}`], {
+          env: indexEnv,
+        });
+      }
+      const tree = yield* git(["-C", checkoutPath, "write-tree"], { env: indexEnv });
+      const text = proposalText(projects, input.changes);
+      const message = `${text.title}\n\n${text.body}\n`;
+      const sha = yield* git(
+        ["-C", checkoutPath, "commit-tree", tree, "-p", input.baseRevision, "-F", "-"],
+        { stdin: message },
+      );
+      return { sha, text };
+    }).pipe(
+      Effect.ensuring(fileSystem.remove(index).pipe(Effect.ignore)),
+      Effect.mapError((cause) => failed(`The change could not be committed: ${cause.detail}`)),
+    );
+
+    const branch = `${commit.text.branchStem}-${commit.sha.slice(0, 7)}`;
+    yield* git([
+      "-C",
+      checkoutPath,
+      "push",
+      "--quiet",
+      "--",
+      source,
+      `${commit.sha}:refs/heads/${branch}`,
+    ]).pipe(Effect.mapError((cause) => failed(`The branch could not be pushed: ${cause.detail}`)));
+    const repository = hostedRepositoryOf(source);
+    const pullRequest =
+      repository === null
+        ? { url: null, problem: null }
+        : yield* access
+            .openPullRequest({
+              repository,
+              branch,
+              title: commit.text.title,
+              body: commit.text.body,
+            })
+            .pipe(
+              Effect.map((url) => ({ url, problem: null })),
+              Effect.catch((error) => Effect.succeed({ url: null, problem: error.detail })),
+            );
+    return {
+      branch,
+      commit: commit.sha,
+      remote: source,
+      files: input.changes.map((change) => fileOf.get(change.key)!),
+      pullRequestUrl: pullRequest.url,
+      pullRequestProblem: pullRequest.problem,
+    } satisfies TeamCatalogProposal;
+  }, lock.withPermits(1));
+
   return TeamCatalog.of({
     snapshot: SubscriptionRef.get(state),
     changes,
     refresh,
     setSource,
+    propose,
   });
 });
 
-export const layer = Layer.effect(TeamCatalog, make);
+/** Without the live credential checks, for tests that provide their own `TeamCatalogAccess`. */
+export const layerWithoutAccess = Layer.effect(TeamCatalog, make);
+
+export const layer = layerWithoutAccess.pipe(Layer.provide(TeamCatalogAccess.layer));

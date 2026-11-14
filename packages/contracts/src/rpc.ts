@@ -367,6 +367,7 @@ import {
   TeamCatalogSnapshot,
   TeamCatalogSubscribeInput,
 } from "./teamCatalog.ts";
+import { TeamCatalogProposal, TeamCatalogProposeInput } from "./teamProjectLinks.ts";
 import {
   StorageCleanupReport,
   DatabaseReclaimError,
@@ -563,6 +564,7 @@ export const WS_METHODS = {
   teamCatalogSubscribe: "teamCatalog.subscribe",
   teamCatalogRefresh: "teamCatalog.refresh",
   teamCatalogSetSource: "teamCatalog.setSource",
+  teamCatalogPropose: "teamCatalog.propose",
 
   scheduledTasksSubscribe: "scheduledTasks.subscribe",
   scheduledTasksUpsert: "scheduledTasks.upsert",
@@ -1054,6 +1056,12 @@ const WsTeamCatalogRefreshRpc = Rpc.make(WS_METHODS.teamCatalogRefresh, {
 const WsTeamCatalogSetSourceRpc = Rpc.make(WS_METHODS.teamCatalogSetSource, {
   payload: TeamCatalogSetSourceInput,
   success: TeamCatalogSnapshot,
+  error: Schema.Union([TeamCatalogError, EnvironmentAuthorizationError]),
+});
+
+const WsTeamCatalogProposeRpc = Rpc.make(WS_METHODS.teamCatalogPropose, {
+  payload: TeamCatalogProposeInput,
+  success: TeamCatalogProposal,
   error: Schema.Union([TeamCatalogError, EnvironmentAuthorizationError]),
 });
 
@@ -2185,6 +2193,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsTeamCatalogSubscribeRpc,
   WsTeamCatalogRefreshRpc,
   WsTeamCatalogSetSourceRpc,
+  WsTeamCatalogProposeRpc,
   WsServerSignalProcessRpc,
   WsScheduledTasksSubscribeRpc,
   WsScheduledTasksUpsertRpc,

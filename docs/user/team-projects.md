@@ -53,5 +53,28 @@ The catalog holds one file per project, `projects/<key>.json`:
 
 Files are checked strictly. A file with a mistake, an unknown field, or a repository another
 file already lists is skipped, and Settings says which file and why. The rest of the catalog
-still loads. Parent and links are read now but not yet used; they are there so the format does
-not change when they are.
+still loads.
+
+## See all team projects
+
+Open **Team projects** from the sidebar footer or the command palette. Projects are drawn inside
+their parent's box. Dashed lines are read links and solid lines are write links; a write link
+only one side has declared is faded. A read link to a repository your git credentials cannot
+reach shows as **No access**.
+
+Select a project to highlight what it links to and what links to it, open it, or add it here if
+it is not added yet.
+
+## Change links and grouping
+
+A project's owners change its parent and links, either in the project's settings under **Team
+project** or from **Team projects**. Owners are matched against the GitHub login the GitHub CLI is
+signed in with on that environment (`gh auth login`); everyone else sees the links read-only.
+
+Saving never changes the catalog directly. **Propose change** pushes a new branch to the catalog
+repository with your own git credentials and, on GitHub, opens a pull request. The catalog
+repository's own review rules decide who approves it, and the change counts once it is merged.
+
+A write link counts only when both projects declare it. When you add one, you can propose the
+other project's matching declaration in the same pull request; its owners still approve it.
+Until then the link shows as pending.

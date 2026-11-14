@@ -59,6 +59,7 @@ import {
   ArrowLeftIcon,
   BugIcon,
   ChartNoAxesColumnIcon,
+  NetworkIcon,
   CheckIcon,
   ChevronRightIcon,
   CornerLeftUpIcon,
@@ -1685,6 +1686,17 @@ function OpenCommandPaletteDialog(props: {
     shortcutCommand: "usage.open",
     run: async () => {
       await navigate({ to: "/usage" });
+    },
+  });
+
+  actionItems.push({
+    kind: "action",
+    value: "action:team-projects",
+    searchTerms: ["team", "projects", "catalog", "graph", "links", "owners", "access"],
+    title: "Open team projects",
+    icon: <NetworkIcon className={ITEM_ICON_CLASS} />,
+    run: async () => {
+      await navigate({ to: "/team-projects" });
     },
   });
 
