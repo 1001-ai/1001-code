@@ -42,6 +42,10 @@ import { TimelineRowCtx } from "./timelineRowContext";
 
 const MOTION_MS = 240;
 const MOTION_EASING = "cubic-bezier(0.25, 0.8, 0.25, 1)";
+// The view is not inside `.messages-timeline-scroll`, so it copies that list's lane padding from
+// index.css: the content then sits where the list's does, beside the details card and preview player.
+const LIST_LANE_PADDING_CLASS =
+  "scrollbar-gutter-both [--exchange-lane-pad:--spacing(3)] sm:[--exchange-lane-pad:--spacing(12)] [--exchange-lane-start:calc(var(--exchange-lane-pad)+var(--chat-lane-inset-start,0px)-var(--chat-timeline-gutter,0px))] [--exchange-lane-end:calc(var(--exchange-lane-pad)+var(--chat-lane-inset-end,0px)-var(--chat-timeline-gutter,0px))] in-data-[chat-canvas]:ps-(--exchange-lane-start) in-data-[chat-canvas]:pe-(--exchange-lane-end)";
 /** A bubble click waits this long, so a double click that selects a word does not open the view. */
 const BUBBLE_CLICK_DELAY_MS = 250;
 /** Inside a bubble, clicks on these do their own thing. */
@@ -754,7 +758,10 @@ export function ExchangeThreadView({
         data-exchange-thread-view=""
         role="region"
         aria-label={view.label}
-        className="absolute inset-0 z-10 overflow-y-auto overscroll-y-contain [overflow-anchor:none]"
+        className={cn(
+          "absolute inset-0 z-10 overflow-y-auto overscroll-y-contain [overflow-anchor:none]",
+          LIST_LANE_PADDING_CLASS,
+        )}
         onClick={onBackdropClick}
       >
         <div ref={contentRef} className="flex min-h-full flex-col">
