@@ -5,12 +5,29 @@ import {
 } from "@t3tools/contracts";
 
 /** The file with the change's parent and links, every other field and its order kept. */
-export function proposalFileText(original: string, change: TeamCatalogProjectChange): string {
+/** The file with the change applied, or null when its parent and links already match. */
+export function proposalFileText(
+  original: string,
+  change: TeamCatalogProjectChange,
+): string | null {
   const value = JSON.parse(original) as Record<string, unknown>;
+  const links = change.links.map((link) => ({ project: link.project, access: link.access }));
+  const currentLinks = Array.isArray(value.links)
+    ? value.links.map((link: { project?: unknown; access?: unknown }) => ({
+        project: link.project,
+        access: link.access,
+      }))
+    : [];
+  if (
+    (value.parent ?? null) === change.parent &&
+    JSON.stringify(currentLinks) === JSON.stringify(links)
+  ) {
+    return null;
+  }
   if (change.parent === null) delete value.parent;
   else value.parent = change.parent;
   if (change.links.length === 0) delete value.links;
-  else value.links = change.links.map((link) => ({ project: link.project, access: link.access }));
+  else value.links = links;
   return formatCatalogFile(value);
 }
 

@@ -448,15 +448,20 @@ const make = Effect.gen(function* () {
     const indexEnv = { GIT_INDEX_FILE: index };
     const commit = yield* Effect.gen(function* () {
       yield* git(["-C", checkoutPath, "read-tree", input.baseRevision], { env: indexEnv });
+      const files: Array<string> = [];
       for (const change of input.changes) {
         const file = fileOf.get(change.key)!;
         const original = yield* git(["-C", checkoutPath, "show", `${input.baseRevision}:${file}`]);
+        // A project sent only to show ownership of a matching declaration keeps its file as is.
+        const text = proposalFileText(original, change);
+        if (text === null) continue;
         const blob = yield* git(["-C", checkoutPath, "hash-object", "-w", "--stdin"], {
-          stdin: proposalFileText(original, change),
+          stdin: text,
         });
         yield* git(["-C", checkoutPath, "update-index", "--cacheinfo", `100644,${blob},${file}`], {
           env: indexEnv,
         });
+        files.push(file);
       }
       const tree = yield* git(["-C", checkoutPath, "write-tree"], { env: indexEnv });
       const text = proposalText(projects, input.changes);
@@ -476,12 +481,17 @@ const make = Effect.gen(function* () {
         ],
         { stdin: message, env: authorEnv },
       );
-      return { sha, text };
+      return { sha, text, files };
     }).pipe(
       Effect.ensuring(fileSystem.remove(index).pipe(Effect.ignore)),
       Effect.mapError((cause) => failed(`The change could not be committed: ${cause.detail}`)),
     );
 
+    if (commit.files.length === 0) {
+      return yield* new TeamCatalogError({
+        detail: "Nothing to propose: the links already match.",
+      });
+    }
     const branch = `${commit.text.branchStem}-${commit.sha.slice(0, 7)}`;
     yield* git([
       "-C",
@@ -511,7 +521,7 @@ const make = Effect.gen(function* () {
       branch,
       commit: commit.sha,
       remote: source,
-      files: input.changes.map((change) => fileOf.get(change.key)!),
+      files: commit.files,
       pullRequestUrl: pullRequest.url,
       pullRequestProblem: pullRequest.problem,
     } satisfies TeamCatalogProposal;

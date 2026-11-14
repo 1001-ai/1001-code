@@ -46,5 +46,19 @@ describe("proposalFileText", () => {
     expect(proposalFileText(original, { key: "web", parent: "suite", links: [] })).not.toContain(
       "links",
     );
+    expect(
+      proposalFileText(original, {
+        key: "web",
+        parent: "suite",
+        links: [{ project: "api", access: "read" }],
+      }),
+    ).toBeNull();
+    expect(
+      proposalFileText(JSON.stringify({ key: "api", name: "API" }), {
+        key: "api",
+        parent: null,
+        links: [],
+      }),
+    ).toBeNull();
   });
 });
