@@ -1,5 +1,9 @@
 # Product usage data
 
+> This build is a fork that ships separately. It sends no product usage events unless you set
+> `T3CODE_TELEMETRY_ENABLED=true` together with your own `T3CODE_POSTHOG_HOST` and
+> `T3CODE_POSTHOG_KEY`. The rest of this page describes upstream T3 Code.
+
 The T3 Code server sends product usage events to T3 Code's own endpoint at `ingest.t3.codes`,
 associated with a hashed account or installation identifier. To count how many installations one person
 uses, the server also sends hashed account identifiers: your T3 Connect account, your OpenAI and
