@@ -21,7 +21,6 @@ import { cn } from "~/lib/utils";
 import { useComposerDraftStore } from "../../composerDraftStore";
 import { useClientSettings } from "../../hooks/useSettings";
 import { readResponseSubagents } from "../../state/entities";
-import { Button } from "../ui/button";
 import {
   deriveExchangeMap,
   replyMarkersEnabled,
@@ -541,7 +540,6 @@ export function ExchangeThreadView({
 }) {
   const overlayRef = useRef<HTMLDivElement>(null);
   const glassRef = useRef<HTMLDivElement>(null);
-  const headerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const layersRef = useRef<HTMLElement[]>([]);
   const shownRowIdsRef = useRef<ReadonlySet<string>>(new Set());
@@ -554,7 +552,7 @@ export function ExchangeThreadView({
     // Making the list inert would drop focus from the control that opened the view; move it first.
     const active = document.activeElement;
     if (active === document.body || (active !== null && viewport.contains(active))) {
-      headerRef.current?.querySelector<HTMLElement>("button")?.focus({ preventScroll: true });
+      overlay.focus({ preventScroll: true });
     }
     // The list stays visible under the view's glass, so the thread reads as a layer above the chat.
     const glass = glassRef.current;
@@ -565,14 +563,6 @@ export function ExchangeThreadView({
     });
     const moves: Animation[] = [];
     if (glass) moves.push(glass.animate([{ opacity: 0 }, { opacity: 1 }], timing));
-    const header = headerRef.current?.animate(
-      [
-        { opacity: 0, transform: "translateY(-4px)" },
-        { opacity: 1, transform: "none" },
-      ],
-      timing,
-    );
-    if (header) moves.push(header);
     for (const element of overlay.querySelectorAll<HTMLElement>("[data-exchange-thread-row]")) {
       const rowId = element.dataset.exchangeThreadRow!;
       const source = view.sources.get(rowId);
@@ -661,7 +651,6 @@ export function ExchangeThreadView({
     for (const element of layersRef.current) element.removeAttribute("inert");
     layersRef.current = [];
     const clearing = glassRef.current?.animate([{ opacity: 1 }, { opacity: 0 }], timing);
-    headerRef.current?.animate([{ opacity: 1 }, { opacity: 0 }], timing);
     for (const element of overlay.querySelectorAll<HTMLElement>("[data-exchange-thread-row]")) {
       const rowId = element.dataset.exchangeThreadRow!;
       const listed = viewport ? timelineRowElement(viewport, rowId) : null;
@@ -729,20 +718,14 @@ export function ExchangeThreadView({
 
   const onBackdropClick = (event: MouseEvent<HTMLDivElement>) => {
     const target = event.target as HTMLElement;
-    // Row frames span the viewport; only the content lane counts as the messages.
-    if (
-      target.closest("[data-timeline-row-id], [data-exchange-thread-header] .chat-content-lane")
-    ) {
-      return;
-    }
+    if (target.closest("[data-timeline-row-id]")) return;
     if (document.getSelection()?.isCollapsed === false) return;
     close();
   };
 
   return (
     <InThreadViewCtx value>
-      {/* A sibling, not the scroller's own background: a backdrop-filter on the scroller stops
-          Chromium painting its sticky header's text. */}
+      {/* A sibling of the scroller, so opening and closing fade it by opacity without animating the blur. */}
       <div
         ref={glassRef}
         aria-hidden
@@ -753,30 +736,17 @@ export function ExchangeThreadView({
         data-exchange-thread-view=""
         role="region"
         aria-label={view.label}
+        tabIndex={-1}
         className={cn(
-          "absolute inset-0 z-10 overflow-y-auto overscroll-y-contain [overflow-anchor:none]",
+          "absolute inset-0 z-10 overflow-y-auto overscroll-y-contain outline-none [overflow-anchor:none]",
           LIST_LANE_PADDING_CLASS,
         )}
         onClick={onBackdropClick}
       >
         <div ref={contentRef} className="flex min-h-full flex-col">
-          <div
-            ref={headerRef}
-            data-exchange-thread-header=""
-            className="messages-timeline-row-frame sticky top-0 z-10 bg-card"
-          >
-            {topFadeEnabled ? (
-              <div className="h-[var(--workspace-titlebar-scroll-fade-height)]" />
-            ) : null}
-            <div className="chat-content-lane flex items-center justify-between gap-3 border-b border-border/60 py-1.5 ps-1">
-              <p className="min-w-0 truncate text-xs text-muted-foreground tabular-nums">
-                {view.label}
-              </p>
-              <Button type="button" size="xs" variant="ghost" onClick={close}>
-                Done
-              </Button>
-            </div>
-          </div>
+          {topFadeEnabled ? (
+            <div className="h-[var(--workspace-titlebar-scroll-fade-height)] shrink-0" />
+          ) : null}
           <div
             className="flex flex-1 flex-col justify-end pt-4"
             style={{ paddingBottom: bottomInset + 16 }}
