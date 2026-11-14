@@ -16,7 +16,7 @@ import * as TestClock from "effect/testing/TestClock";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
 import * as TeamCatalog from "../teamCatalog/TeamCatalog.ts";
-import * as TeamPreferences from "./TeamPreferences.ts";
+import * as Preferences from "./Preferences.ts";
 
 const PROJECT_ID = ProjectId.make("project-web");
 
@@ -62,7 +62,7 @@ const makePreferences = (input: {
   readonly liveLogin?: string | null;
 }) => {
   const proposals: Array<TeamCatalog.TeamCatalogFilesProposal> = [];
-  const build = TeamPreferences.layer.pipe(
+  const build = Preferences.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
         Layer.mock(TeamCatalog.TeamCatalog)({
@@ -111,7 +111,7 @@ const makePreferences = (input: {
       ),
     ),
     Layer.build,
-    Effect.map((context) => Context.get(context, TeamPreferences.TeamPreferences)),
+    Effect.map((context) => Context.get(context, Preferences.Preferences)),
   );
   return { build, proposals };
 };
@@ -205,7 +205,7 @@ it.effect("proposes the edited file, and refuses an unchanged one or a scope wit
         ],
         title: "Update personal preferences for Alice",
         body: expect.stringContaining("preferences/people/alice.md"),
-        branchStem: "team-preferences/personal-alice",
+        branchStem: "preferences/personal-alice",
       },
     ]);
 

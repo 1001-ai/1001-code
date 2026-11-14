@@ -136,9 +136,9 @@ administrator:
 Without `T3CODE_LINEAR_CLIENT_ID`, Settings says sign-in is not set up. Linear sends the browser
 back to the environment's own address, so sign in from a browser that can reach that address.
 
-## Team preferences
+## Preferences
 
-Team preferences are standing instructions your agents follow, kept as markdown in the catalog
+Preferences are standing instructions your agents follow, kept as markdown in the catalog
 repository so the whole team shares them:
 
 - `preferences/team.md` applies to everyone, in every project.
@@ -150,7 +150,7 @@ Write one preference per list item, in plain words. Every turn gets the team fil
 project's, then your own, so a more specific one wins; the user's own message wins over all of
 them. The text is limited to about 8 KB in total, roughly 2,000 tokens.
 
-Open **Team preferences** from the right panel's new surface menu or the command palette, in a
+Open **Preferences** from the right panel's new surface menu or the command palette, in a
 thread of the project. **Team**, **Project** and **Personal** show each file as it was last
 fetched; **What agents get** shows the exact text agents receive and its size. **Edit** changes
 a file and **Propose change** opens a pull request on the catalog repository, as link changes
@@ -159,5 +159,5 @@ it, including for personal files.
 
 Agents pick up changes on their next turn once the catalog is fetched again. A turn uses the
 last fetch and fetches in the background when it is more than ten minutes old; the refresh
-button fetches at once. Claude and Codex get team preferences. Rules that belong to one
+button fetches at once. Claude and Codex get preferences. Rules that belong to one
 repository, and are fine to publish, belong in that repository's `AGENTS.md` instead.

@@ -379,10 +379,10 @@ import {
   BoardSnapshot,
 } from "./board.ts";
 import {
-  TeamPreferencesProjectInput,
-  TeamPreferencesProposeInput,
-  TeamPreferencesView,
-} from "./teamPreferences.ts";
+  PreferencesProjectInput,
+  PreferencesProposeInput,
+  PreferencesView,
+} from "./preferences.ts";
 import {
   StorageCleanupReport,
   DatabaseReclaimError,
@@ -585,8 +585,8 @@ export const WS_METHODS = {
   boardConnect: "board.connect",
   boardDisconnect: "board.disconnect",
   teamCatalogPropose: "teamCatalog.propose",
-  teamPreferencesSubscribe: "teamPreferences.subscribe",
-  teamPreferencesPropose: "teamPreferences.propose",
+  preferencesSubscribe: "preferences.subscribe",
+  preferencesPropose: "preferences.propose",
 
   scheduledTasksSubscribe: "scheduledTasks.subscribe",
   scheduledTasksUpsert: "scheduledTasks.upsert",
@@ -1119,15 +1119,15 @@ const WsTeamCatalogProposeRpc = Rpc.make(WS_METHODS.teamCatalogPropose, {
   error: Schema.Union([TeamCatalogError, EnvironmentAuthorizationError]),
 });
 
-const WsTeamPreferencesSubscribeRpc = Rpc.make(WS_METHODS.teamPreferencesSubscribe, {
-  payload: TeamPreferencesProjectInput,
-  success: TeamPreferencesView,
+const WsPreferencesSubscribeRpc = Rpc.make(WS_METHODS.preferencesSubscribe, {
+  payload: PreferencesProjectInput,
+  success: PreferencesView,
   error: EnvironmentAuthorizationError,
   stream: true,
 });
 
-const WsTeamPreferencesProposeRpc = Rpc.make(WS_METHODS.teamPreferencesPropose, {
-  payload: TeamPreferencesProposeInput,
+const WsPreferencesProposeRpc = Rpc.make(WS_METHODS.preferencesPropose, {
+  payload: PreferencesProposeInput,
   success: TeamCatalogProposal,
   error: Schema.Union([TeamCatalogError, EnvironmentAuthorizationError]),
 });
@@ -2266,8 +2266,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsBoardConnectRpc,
   WsBoardDisconnectRpc,
   WsTeamCatalogProposeRpc,
-  WsTeamPreferencesSubscribeRpc,
-  WsTeamPreferencesProposeRpc,
+  WsPreferencesSubscribeRpc,
+  WsPreferencesProposeRpc,
   WsServerSignalProcessRpc,
   WsScheduledTasksSubscribeRpc,
   WsScheduledTasksUpsertRpc,
