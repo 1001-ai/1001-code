@@ -93,7 +93,7 @@ import {
   resolvePreviewAnnotationImage,
   userMessageFileLabel,
 } from "./TimelineUserMessageRow.logic";
-import { ExchangeReplyLink, ExchangeViewThreadButton } from "./ExchangeThread";
+import { ExchangeReplyLink, useExchangeBubble } from "./ExchangeThread";
 
 // Drawn inside the media so dark screenshots keep an edge on the dark background.
 const MEDIA_EDGE_CLASS_NAME =
@@ -432,6 +432,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
   const ctx = use(TimelineRowCtx);
   const { onImageExpand, onFileOpen } = ctx;
   const coarsePointer = useMediaQuery({ pointer: "coarse" });
+  const exchangeBubble = useExchangeBubble(row.id);
   // A linked environment's agent sent it from a thread there.
   const senderRef =
     row.message.linkedSender ??
@@ -837,7 +838,6 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             variant="ghost"
           />
         )}
-        <ExchangeViewThreadButton rowId={row.id} />
       </div>
     </div>
   );
@@ -887,6 +887,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
           !folded && !mediaOnly && !fileCardsOnly && !audioOnly && "p-3",
           folded && expanded && "w-full",
         )}
+        {...exchangeBubble}
       >
         {/* Outside the fold so a collapsed message still has a heading to navigate to. */}
         {mediaAboveText ? null : (
