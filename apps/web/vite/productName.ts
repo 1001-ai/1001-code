@@ -13,14 +13,16 @@ const KEPT_PHRASES = [
   "Install T3 Code on your phone",
   "· T3 Code ${device.appVersion}",
   "T3 Code SnapShots",
+  "T3 Code GNOME extension",
   "T3 Code · …",
 ];
 
 const escapePattern = (text: string) => text.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
 
-// Kept phrases come first so they win over the bare name, which JSX text may wrap across lines.
+// Kept phrases come first so they win over the bare name, which JSX text may wrap across lines
+// and connector links carry URL-encoded.
 const UPSTREAM_NAME = new RegExp(
-  `${KEPT_PHRASES.map(escapePattern).join("|")}|\\bT3(\\s+)Code\\b`,
+  `${KEPT_PHRASES.map(escapePattern).join("|")}|\\bT3(\\s+|%20)Code\\b`,
   "g",
 );
 
