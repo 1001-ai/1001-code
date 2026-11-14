@@ -105,6 +105,8 @@ describe("isNearAnchor", () => {
     expect(isNearAnchor(anchor, measure({ a: 40 + 201 }))).toBe(false);
     expect(isNearAnchor(anchor, measure({ b: -200 - 150 }))).toBe(true);
     expect(isNearAnchor(anchor, measure({}))).toBe(false);
+    // A jump that lands at the end is still away from a place above it.
+    expect(isNearAnchor(anchor, measure({}, true))).toBe(false);
   });
 
   it("treats a place at the end as the end", () => {

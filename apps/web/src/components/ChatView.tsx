@@ -3517,6 +3517,9 @@ export default function ChatView(props: ChatViewProps) {
                   leading={jumpBack.backButton}
                 />
               )}
+              {!showScrollToBottom &&
+                !isThreadFindActive &&
+                jumpBack.backRow(scrollToEndClearance + 4)}
             </div>
 
             <div

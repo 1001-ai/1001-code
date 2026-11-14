@@ -106,6 +106,21 @@ export function useJumpBack({
   const state = useSyncExternalStore(store.subscribe, store.get, store.get);
   const viewportRef = useRef<TimelineViewport | null>(null);
   const lastJumpKeyRef = useRef<string | null>(null);
+  // The list is shared across threads, so a running Back scroll must stop when this place stops applying.
+  const restoreRef = useRef<{ readonly threadKey: string; readonly stop: () => void } | null>(null);
+  const cancelRestore = () => {
+    restoreRef.current?.stop();
+    restoreRef.current = null;
+  };
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- stops a running Back scroll when its thread is left or the view unmounts
+  useEffect(
+    () => () => {
+      if (restoreRef.current?.threadKey !== threadKey) return;
+      restoreRef.current.stop();
+      restoreRef.current = null;
+    },
+    [threadKey],
+  );
 
   const recordJump = useStableCallback((location: ParsedLocation) => {
     const key = citationJumpKey(
@@ -116,6 +131,7 @@ export function useJumpBack({
     );
     if (key === null) return;
     lastJumpKeyRef.current = key;
+    cancelRestore();
     const list = legendListRef.current;
     const anchor = list ? readAnchor(list) : null;
     store.dispatch(anchor ? { type: "jump", visit: currentVisit, anchor } : { type: "clear" });
@@ -166,7 +182,10 @@ export function useJumpBack({
       unsubscribe();
       viewport.scrollNode.removeEventListener("scroll", onScroll);
       if (frame !== null) cancelAnimationFrame(frame);
-      if (viewportRef.current === viewport) viewportRef.current = null;
+      if (viewportRef.current === viewport) {
+        cancelRestore();
+        viewportRef.current = null;
+      }
     };
   });
 
@@ -175,6 +194,7 @@ export function useJumpBack({
     const list = legendListRef.current;
     const viewport = viewportRef.current;
     store.dispatch({ type: "clear" });
+    cancelRestore();
     if (current === null || !list || !viewport) return;
     const target = jumpBackTarget(
       current.anchor,
@@ -185,7 +205,8 @@ export function useJumpBack({
       scrollToEnd(true);
       return;
     }
-    startTimelinePositionRestore({
+    // Stops itself on the reader's next scroll, like a thread-open restore.
+    const stop = startTimelinePositionRestore({
       list,
       viewport,
       listIdentityKey: threadKey,
@@ -200,17 +221,36 @@ export function useJumpBack({
       releaseForFind: false,
       onPositioned: () => {},
     });
+    restoreRef.current = { threadKey, stop };
   };
 
+  const visible = jumpBackVisible(state, currentVisit);
   return {
     attachViewport,
-    backButton: jumpBackVisible(state, currentVisit) ? <JumpBackButton onBack={goBack} /> : null,
+    /** Beside Scroll to end, as its `leading` slot. */
+    backButton: visible ? <JumpBackButton onBack={goBack} beside /> : null,
+    /** On its own where the pill row sits, for a jump that lands at the end and hides Scroll to end. */
+    backRow: (bottom: number) =>
+      visible ? (
+        <div
+          className="chat-scroll-to-bottom pointer-events-none absolute z-30 flex justify-center py-1.5"
+          style={{ bottom }}
+        >
+          <JumpBackButton onBack={goBack} beside={false} />
+        </div>
+      ) : null,
   };
 }
 
-function JumpBackButton({ onBack }: { readonly onBack: () => void }) {
+function JumpBackButton({
+  onBack,
+  beside,
+}: {
+  readonly onBack: () => void;
+  readonly beside: boolean;
+}) {
   return (
-    <div className="pointer-events-auto me-2">
+    <div className={beside ? "pointer-events-auto me-2" : "pointer-events-auto"}>
       <Button
         data-jump-back="true"
         aria-label="Back to where you were"
