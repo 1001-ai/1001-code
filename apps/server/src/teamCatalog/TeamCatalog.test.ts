@@ -20,6 +20,7 @@ import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { TeamCatalogError } from "@t3tools/contracts";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 
 import * as TeamCatalog from "./TeamCatalog.ts";
 import * as TeamCatalogAccess from "./TeamCatalogAccess.ts";
@@ -76,7 +77,10 @@ const withCatalog = <A, E>(
     readonly stateDir: string;
     readonly commit: (files: Record<string, unknown>) => Effect.Effect<void, Error>;
     readonly service: TeamCatalog.TeamCatalog["Service"];
-    readonly start: Effect.Effect<TeamCatalog.TeamCatalog["Service"], Error, Services>;
+    /** Starts another server on the same T3 home, with `environment` as its process env. */
+    readonly start: (
+      environment?: NodeJS.ProcessEnv,
+    ) => Effect.Effect<TeamCatalog.TeamCatalog["Service"], Error, Services>;
     /** Holds the service's next `git fetch` until `release`; `started` completes when it is held. */
     readonly holdNextFetch: Effect.Effect<FetchHold>;
     /** Switches the GitHub CLI login the service sees. */
@@ -150,11 +154,14 @@ const withCatalog = <A, E>(
       ),
     );
     // Each start is a server start on the same T3 home, alive until the test ends.
-    const start = Layer.build(layer).pipe(
-      Effect.map((context) => Context.get(context, TeamCatalog.TeamCatalog)),
-      Effect.provideService(Scope.Scope, yield* Scope.Scope),
-    );
-    const service = yield* start;
+    const scope = yield* Scope.Scope;
+    const start = (environment: NodeJS.ProcessEnv = {}) =>
+      Layer.build(layer).pipe(
+        Effect.map((context) => Context.get(context, TeamCatalog.TeamCatalog)),
+        Effect.provideService(HostProcess.Environment, environment),
+        Effect.provideService(Scope.Scope, scope),
+      );
+    const service = yield* start();
     return yield* test({
       catalog,
       projectsRoot,
@@ -271,7 +278,7 @@ it.live("serves the last fetch at once after a restart, even with the catalog un
       const fetched = yield* service.setSource(catalog);
       yield* fileSystem.remove(catalog, { recursive: true });
 
-      const restarted = yield* start;
+      const restarted = yield* start();
       const restored = yield* restarted.changes.pipe(
         Stream.filter((snapshot) => snapshot.projects.length > 0),
         Stream.runHead,
@@ -288,6 +295,81 @@ it.live("serves the last fetch at once after a restart, even with the catalog un
       expect(failed.fetchedAt).toBe(Option.getOrThrow(restored).fetchedAt);
       expect(failed.projects.map((entry) => entry.project.key)).toEqual(["web"]);
       expect(failed.viewer).toEqual({ login: "alice", problem: null });
+    }),
+  ),
+);
+
+it.live("follows the environment's default catalog until the user chooses one", () =>
+  withCatalog(({ catalog, stateDir, commit, start }) =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      yield* commit({ "web.json": project("web", "example.com/acme/web") });
+      const chosen = `${catalog}-chosen.git`;
+      yield* git(catalog, ["clone", "--quiet", "--bare", catalog, chosen]);
+      const withDefault = (source: string) => ({ [TeamCatalog.DEFAULT_SOURCE_ENV]: source });
+      // Waiting for its first fetch keeps a restart's background fetch from racing the next one.
+      const restart = (environment: NodeJS.ProcessEnv) =>
+        start(environment).pipe(Effect.tap((service) => service.refresh()));
+      const sources = (service: TeamCatalog.TeamCatalog["Service"]) =>
+        service.snapshot.pipe(
+          Effect.map(({ source, defaultSource }) => ({ source, defaultSource })),
+        );
+
+      const following = yield* restart(withDefault(catalog));
+      expect(yield* following.snapshot).toMatchObject({ source: catalog, defaultSource: catalog });
+      expect((yield* following.snapshot).projects.map((entry) => entry.project.key)).toEqual([
+        "web",
+      ]);
+
+      yield* following.setSource(chosen);
+      const chosenAfterRestart = yield* restart(withDefault(catalog));
+      expect(yield* sources(chosenAfterRestart)).toEqual({
+        source: chosen,
+        defaultSource: catalog,
+      });
+
+      yield* chosenAfterRestart.setSource(null);
+      const clearedAfterRestart = yield* restart(withDefault(catalog));
+      expect(yield* sources(clearedAfterRestart)).toEqual({ source: null, defaultSource: catalog });
+
+      // Choosing the default again follows it, so a changed default reaches this user.
+      yield* clearedAfterRestart.setSource(catalog);
+      expect(yield* fileSystem.exists(`${stateDir}/team-catalog/source.json`)).toBe(false);
+      expect(yield* sources(yield* restart(withDefault(chosen)))).toEqual({
+        source: chosen,
+        defaultSource: chosen,
+      });
+
+      expect(yield* sources(yield* restart(withDefault("relative/path")))).toEqual({
+        source: null,
+        defaultSource: null,
+      });
+    }),
+  ),
+);
+
+it.live("drops a checkout fetched from another catalog when the default changes", () =>
+  withCatalog(({ catalog, commit, start }) =>
+    Effect.gen(function* () {
+      yield* commit({ "web.json": project("web", "example.com/acme/web") });
+      const fetched = yield* start({ [TeamCatalog.DEFAULT_SOURCE_ENV]: catalog }).pipe(
+        Effect.flatMap((service) => service.refresh()),
+      );
+      expect(fetched.projects.map((entry) => entry.project.key)).toEqual(["web"]);
+
+      const moved = `${catalog}-moved`;
+      const restarted = yield* start({ [TeamCatalog.DEFAULT_SOURCE_ENV]: moved });
+      const settled = yield* restarted.changes.pipe(
+        Stream.filter((snapshot) => snapshot.fetchedAt !== null || snapshot.error !== null),
+        Stream.runHead,
+      );
+      expect(Option.getOrThrow(settled)).toMatchObject({
+        source: moved,
+        revision: null,
+        fetchedAt: null,
+        projects: [],
+      });
+      expect(Option.getOrThrow(settled).error).not.toBeNull();
     }),
   ),
 );

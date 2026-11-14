@@ -14,7 +14,12 @@ import { BoardSettings } from "./BoardSettings";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
 
 function catalogStatus(snapshot: NonNullable<ReturnType<typeof useTeamCatalog>>): string {
-  if (snapshot.source === null) return "Not set.";
+  if (snapshot.source === null) return snapshot.defaultSource === null ? "Not set." : "Off.";
+  const status = fetchStatus(snapshot);
+  return snapshot.source === snapshot.defaultSource ? `Default catalog. ${status}` : status;
+}
+
+function fetchStatus(snapshot: NonNullable<ReturnType<typeof useTeamCatalog>>): string {
   if (snapshot.refreshing) return "Fetching…";
   const count = `${snapshot.projects.length} project${snapshot.projects.length === 1 ? "" : "s"}`;
   if (snapshot.error !== null) {
@@ -75,6 +80,19 @@ function TeamCatalogRow(props: {
             disabled={snapshot === null || !canWrite}
             aria-label="Team catalog git URL"
           />
+          {snapshot !== null &&
+          snapshot.defaultSource !== null &&
+          snapshot.source !== snapshot.defaultSource ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={!canWrite}
+              onClick={() => void commit(snapshot.defaultSource ?? "")}
+            >
+              Use default
+            </Button>
+          ) : null}
           <Tooltip>
             <TooltipTrigger
               render={
