@@ -15,6 +15,7 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
@@ -309,8 +310,25 @@ const make = Effect.gen(function* () {
     refresh().pipe(Effect.forkIn(backgroundScope), Effect.as(SubscriptionRef.changes(state))),
   );
 
+  // Serve the last fetch at once, dated by git's own FETCH_HEAD, so a restart or an offline start
+  // shows the catalog right away and only refetches when it is stale.
+  const restoreCachedCatalog = Effect.fn("TeamCatalog.restoreCachedCatalog")(function* () {
+    const fetchedAt = yield* fileSystem.stat(path.join(checkoutPath, ".git", "FETCH_HEAD")).pipe(
+      Effect.map((info) => Option.getOrNull(info.mtime)?.getTime() ?? null),
+      Effect.orElseSucceed(() => null),
+    );
+    if (fetchedAt === null) return;
+    yield* Ref.set(fetchedAtMs, fetchedAt);
+    const revision = yield* git(["-C", checkoutPath, "rev-parse", "HEAD"]).pipe(
+      Effect.orElseSucceed(() => null),
+    );
+    yield* publish({ revision, fetchedAt: DateTime.formatIso(DateTime.makeUnsafe(fetchedAt)) });
+  });
+
   if (initialSource !== null) {
-    yield* refresh({ force: true }).pipe(Effect.forkIn(backgroundScope));
+    yield* lock
+      .withPermits(1)(restoreCachedCatalog())
+      .pipe(Effect.andThen(refresh()), Effect.forkIn(backgroundScope));
   }
 
   return TeamCatalog.of({
