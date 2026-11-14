@@ -90,6 +90,8 @@ export type TeamCatalogViewer = typeof TeamCatalogViewer.Type;
 export const TeamCatalogSnapshot = Schema.Struct({
   /** The catalog's git URL; null when none is set. */
   source: Schema.NullOr(TrimmedNonEmptyString),
+  /** The environment's default catalog, read while the user has not chosen one; null when none. */
+  defaultSource: Schema.NullOr(TrimmedNonEmptyString),
   revision: Schema.NullOr(TrimmedNonEmptyString),
   fetchedAt: Schema.NullOr(IsoDateTime),
   refreshing: Schema.Boolean,

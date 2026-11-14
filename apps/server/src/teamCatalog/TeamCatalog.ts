@@ -77,14 +77,23 @@ const MAX_ERROR_LENGTH = 500;
 const REACHABILITY_FRESH_FOR_MS = 15 * 60_000;
 const NO_VIEWER: TeamCatalogViewer = { login: null, problem: null };
 
-const SourceFile = Schema.fromJsonString(Schema.Struct({ source: Schema.String }));
+/** Names the catalog an environment reads until its user chooses one, such as from a launch setup. */
+export const DEFAULT_SOURCE_ENV = "T3CODE_TEAM_CATALOG";
+const CHECKOUT_SOURCE_KEY = "t3code.catalogSource";
+
+// No file means the user never chose, so the environment default applies; a null source is off.
+const SourceFile = Schema.fromJsonString(Schema.Struct({ source: Schema.NullOr(Schema.String) }));
 const decodeSourceFile = Schema.decodeUnknownOption(SourceFile);
 const encodeSourceFile = Schema.encodeSync(SourceFile);
 
 const EMPTY_CATALOG: DecodedTeamCatalog = { projects: [], invalid: [] };
 
-const emptySnapshot = (source: string | null): TeamCatalogSnapshot => ({
+const emptySnapshot = (
+  source: string | null,
+  defaultSource: string | null,
+): TeamCatalogSnapshot => ({
   source,
+  defaultSource,
   revision: null,
   fetchedAt: null,
   refreshing: false,
@@ -171,6 +180,7 @@ const make = Effect.gen(function* () {
         .makeDirectory(checkoutPath, { recursive: true })
         .pipe(Effect.mapError((cause) => new GitFailure({ detail: cause.message })));
       yield* git(["init", "--quiet", checkoutPath]);
+      yield* git(["-C", checkoutPath, "config", CHECKOUT_SOURCE_KEY, source]);
     }
     yield* git([
       "-C",
@@ -213,17 +223,34 @@ const make = Effect.gen(function* () {
     return { path: checkout, state } satisfies TeamCatalogCheckout;
   });
 
-  const loadSource = fileSystem.readFileString(sourcePath).pipe(
-    Effect.map((text) => decodeSourceFile(text)),
-    Effect.map((decoded) =>
-      decoded._tag === "Some" && isTeamCatalogSource(decoded.value.source)
-        ? decoded.value.source
-        : null,
-    ),
-    Effect.orElseSucceed(() => null),
-  );
+  const configuredDefault = (yield* HostProcess.Environment)[DEFAULT_SOURCE_ENV]?.trim() ?? "";
+  const defaultSource = isTeamCatalogSource(configuredDefault) ? configuredDefault : null;
+  if (configuredDefault !== "" && defaultSource === null) {
+    yield* Effect.logWarning(`Ignoring ${DEFAULT_SOURCE_ENV}: it is not a git URL.`);
+  }
 
-  const initialSource = yield* loadSource;
+  const userChoice = yield* fileSystem.readFileString(sourcePath).pipe(
+    Effect.map(decodeSourceFile),
+    Effect.orElseSucceed(() => Option.none<typeof SourceFile.Type>()),
+  );
+  const initialSource = Option.match(userChoice, {
+    onNone: () => defaultSource,
+    onSome: ({ source }) => (source !== null && isTeamCatalogSource(source) ? source : null),
+  });
+
+  // A checkout fetched from another source, such as a default that changed, is not this catalog.
+  const hasCheckout = yield* fileSystem
+    .exists(path.join(checkoutPath, ".git"))
+    .pipe(Effect.orElseSucceed(() => false));
+  const checkoutSource = hasCheckout
+    ? yield* git(["-C", checkoutPath, "config", "--local", "--get", CHECKOUT_SOURCE_KEY]).pipe(
+        Effect.orElseSucceed(() => null),
+      )
+    : initialSource;
+  if (checkoutSource !== initialSource) {
+    yield* fileSystem.remove(checkoutPath, { recursive: true }).pipe(Effect.ignore);
+  }
+
   const catalogRef = yield* Ref.make<DecodedTeamCatalog>(
     initialSource === null ? EMPTY_CATALOG : yield* readCatalog(),
   );
@@ -232,7 +259,7 @@ const make = Effect.gen(function* () {
   const reachableRef = yield* Ref.make<
     ReadonlyMap<string, { readonly reachable: boolean; readonly checkedAt: number }>
   >(new Map());
-  const state = yield* SubscriptionRef.make(emptySnapshot(initialSource));
+  const state = yield* SubscriptionRef.make(emptySnapshot(initialSource, defaultSource));
   const lock = yield* Semaphore.make(1);
   const backgroundScope = yield* Scope.make();
   yield* Effect.addFinalizer(() => Scope.close(backgroundScope, Exit.void));
@@ -367,23 +394,29 @@ const make = Effect.gen(function* () {
         Effect.gen(function* () {
           if ((yield* SubscriptionRef.get(state)).source === source) return;
           yield* fileSystem.remove(checkoutPath, { recursive: true }).pipe(Effect.ignore);
-          if (source === null) {
-            yield* fileSystem.remove(sourcePath).pipe(Effect.ignore);
-          } else {
-            yield* fileSystem.makeDirectory(root, { recursive: true }).pipe(
-              Effect.andThen(fileSystem.writeFileString(sourcePath, encodeSourceFile({ source }))),
-              Effect.mapError(
-                (cause) =>
-                  new TeamCatalogError({
-                    detail: `The team catalog setting could not be saved: ${cause.message}`,
-                  }),
-              ),
-            );
-          }
+          // Choosing the default goes back to following it, so a later default reaches this user too.
+          yield* (
+            source === defaultSource
+              ? fileSystem.remove(sourcePath, { force: true })
+              : fileSystem
+                  .makeDirectory(root, { recursive: true })
+                  .pipe(
+                    Effect.andThen(
+                      fileSystem.writeFileString(sourcePath, encodeSourceFile({ source })),
+                    ),
+                  )
+          ).pipe(
+            Effect.mapError(
+              (cause) =>
+                new TeamCatalogError({
+                  detail: `The team catalog setting could not be saved: ${cause.message}`,
+                }),
+            ),
+          );
           yield* Ref.set(catalogRef, EMPTY_CATALOG);
           yield* Ref.set(fetchedAtMs, null);
           yield* Ref.set(reachableRef, new Map());
-          yield* SubscriptionRef.set(state, emptySnapshot(source));
+          yield* SubscriptionRef.set(state, emptySnapshot(source, defaultSource));
         }),
       );
       return yield* refresh({ force: true });
