@@ -74,6 +74,7 @@ import { proxyConfig } from "../shared/proxy.ts";
 import { changeRequestsCreatedBy } from "../../apps/server/src/orchestration-v2/PullRequestSyncReactor.ts";
 import { DeviceExpect, gradeDevice } from "./device-grading.ts";
 import { FileLinksExpect, gradeFileLinks } from "./file-link-grading.ts";
+import { QuestionCardsExpect, gradeQuestionCards } from "./question-card-grading.ts";
 import {
   AGENT_DEVICE_SHELL,
   deviceFailure,
@@ -229,6 +230,8 @@ const McpToolUseExpect = Schema.Struct({
   secret: Schema.optional(SecretExpect),
   /** File pills in the final answer resolve against the thread cwd to `world.files` entries. */
   fileLinks: Schema.optional(FileLinksExpect),
+  /** Question cards chat renders from the agent's text. See question-card-grading.ts. */
+  questionCards: Schema.optional(QuestionCardsExpect),
 });
 
 /**
@@ -1897,6 +1900,7 @@ export const gradeSample = (
     ),
   );
   checks.push(...gradeSecret(expect.secret, run, pasted));
+  checks.push(...gradeQuestionCards(expect.questionCards, run));
   return checks;
 };
 

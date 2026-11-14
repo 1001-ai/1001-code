@@ -185,7 +185,15 @@ describe("CodexAdapterV2 runtime policy", () => {
             assert.equal(params.effort, reasoningEffort);
             // Some Responses providers reject `detailed`; `auto` is the most detailed a model supports.
             assert.equal(params.summary, "auto");
-            assert.equal(params.additionalContext !== undefined, hasT3Mcp === true);
+            assert.equal(
+              params.additionalContext?.["t3_code_runtime"] !== undefined,
+              hasT3Mcp === true,
+            );
+            // Question cards need no MCP server, so a turn without one still teaches the format.
+            assert.equal(
+              params.additionalContext?.["t3_code_question_cards"] !== undefined,
+              hasT3Mcp !== true,
+            );
           }
         }
       }),
@@ -242,8 +250,9 @@ describe("CodexAdapterV2 runtime policy", () => {
         modelSelection,
         appContext,
       });
-      assert.deepEqual(alone.additionalContext, {
-        "mcp_app_todos_list_todos_item-1": { kind: "untrusted", value: "Filtered to overdue" },
+      assert.deepEqual(alone.additionalContext?.["mcp_app_todos_list_todos_item-1"], {
+        kind: "untrusted",
+        value: "Filtered to overdue",
       });
       const withT3 = yield* CodexAdapterV2.buildCodexTurnStartParams({
         nativeThreadId: "native-app-context",

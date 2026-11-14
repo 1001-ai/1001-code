@@ -1237,6 +1237,7 @@ describe("AntigravityAdapterV2 session system prompt", () => {
           assert.include(append, "pull_request_linking");
           assert.include(append, "asking_the_user");
           assert.notInclude(sent, "<pull_request_linking>");
+          assert.notInclude(sent, "<asking_the_user>");
         } else {
           assert.notInclude(append, "systemPrompt");
           assert.include(sent, "<pull_request_linking>");
