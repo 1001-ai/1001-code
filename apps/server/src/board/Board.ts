@@ -3,6 +3,7 @@ import {
   BoardViewer,
   type BoardConnection,
   type BoardData,
+  type BoardSignIn,
   type BoardSnapshot,
   type ProjectId,
   type TeamCatalogLinear,
@@ -11,8 +12,11 @@ import {
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Base64Url from "effect/encoding/Base64Url";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
@@ -43,11 +47,19 @@ import {
   linearFailure,
   linearProject,
 } from "./linearBoard.ts";
+import {
+  LINEAR_OAUTH_ENDPOINTS,
+  TokenResponse,
+  authorizeUrl,
+  redirectUriFor,
+  standInEndpoints,
+  tokenFailure,
+} from "./linearOAuth.ts";
 
 /**
- * A team project's Linear board, read with this environment owner's Linear API key. The key is
- * stored in the server secret store and never sent to clients. Reads happen when a client opens
- * or refreshes a board; nothing polls Linear while no board is open.
+ * A team project's Linear board, read as the person who signed in to Linear on this environment.
+ * The OAuth tokens live in the server secret store and never reach clients. Reads happen when a
+ * client opens or refreshes a board; nothing polls Linear while no board is open.
  */
 export class Board extends Context.Service<
   Board,
@@ -55,8 +67,15 @@ export class Board extends Context.Service<
     readonly connection: Effect.Effect<BoardConnection>;
     /** The current connection, then every change. */
     readonly connectionChanges: Stream.Stream<BoardConnection>;
-    /** Checks the key with Linear and stores it only when Linear accepts it. */
-    readonly connect: (apiKey: string) => Effect.Effect<BoardConnection, BoardError>;
+    /** Starts a sign-in that Linear sends back to `callbackOrigin`; the browser goes to the URL. */
+    readonly startSignIn: (callbackOrigin: string) => Effect.Effect<BoardSignIn, BoardError>;
+    /** Finishes a sign-in from Linear's redirect, storing the tokens only when it all checks out. */
+    readonly completeSignIn: (params: {
+      readonly state: string | null;
+      readonly code: string | null;
+      readonly error: string | null;
+    }) => Effect.Effect<BoardViewer, BoardSignInError>;
+    /** Forgets the sign-in here and revokes it at Linear. */
     readonly disconnect: Effect.Effect<BoardConnection>;
     /** The project's board, from a read in the last few seconds unless `refresh` is set. */
     readonly read: (
@@ -69,19 +88,37 @@ export class Board extends Context.Service<
   }
 >()("t3/board/Board") {}
 
+/** Why a sign-in could not finish, for the page Linear redirected the browser to. */
+export class BoardSignInError extends Schema.TaggedError<BoardSignInError>()("BoardSignInError", {
+  message: Schema.String,
+}) {}
+
 export const CREDENTIAL_SECRET_NAME = "board-linear-credential";
+/** The Linear OAuth application's client id; sign-in is unavailable without it. */
+export const CLIENT_ID_ENV = "T3CODE_LINEAR_CLIENT_ID";
 /** Dev-only: point the board at a local Linear stand-in. Ignored outside `vp run dev`. */
 const DEV_LINEAR_API_URL_ENV = "T3CODE_DEV_LINEAR_API_URL";
 
 const FRESH_FOR_MS = 30_000;
 const REQUEST_TIMEOUT = "20 seconds";
+/** Linear's access tokens last a day; refresh this long before one runs out. */
+const REFRESH_EARLY_MS = 5 * 60_000;
+const SIGN_IN_TTL_MS = 10 * 60_000;
+const MAX_PENDING_SIGN_INS = 16;
 
 const StoredCredential = Schema.fromJsonString(
-  Schema.Struct({ apiKey: Schema.String, viewer: BoardViewer }),
+  Schema.Struct({
+    accessToken: Schema.String,
+    refreshToken: Schema.String,
+    /** Epoch milliseconds. */
+    expiresAt: Schema.Number,
+    viewer: BoardViewer,
+  }),
 );
 type StoredCredential = typeof StoredCredential.Type;
 const decodeCredential = Schema.decodeUnknownOption(StoredCredential);
 const encodeCredential = Schema.encodeSync(StoredCredential);
+const decodeTokenResponse = Schema.decodeUnknownEffect(TokenResponse);
 
 type Target =
   | { readonly _tag: "linear"; readonly linear: TeamCatalogLinear }
@@ -100,6 +137,15 @@ interface CachedBoard {
   readonly readAtMs: number;
 }
 
+interface PendingSignIn {
+  readonly verifier: string;
+  readonly redirectUri: string;
+  readonly expiresAtMs: number;
+}
+
+type Tokens = Pick<StoredCredential, "accessToken" | "refreshToken" | "expiresAt">;
+type TokenFailure = ReturnType<typeof tokenFailure>;
+
 const make = Effect.gen(function* () {
   const secrets = yield* ServerSecretStore.ServerSecretStore;
   const httpClient = yield* HttpClient.HttpClient;
@@ -108,34 +154,55 @@ const make = Effect.gen(function* () {
   const teamCatalog = yield* TeamCatalog.TeamCatalog;
   const projects = yield* ProjectStore.ProjectStoreV2;
   const identities = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
+  const random = yield* SecureRandom.SecureRandom;
+  const digest = yield* Digest.Digest;
 
+  const clientId = environment[CLIENT_ID_ENV]?.trim() || null;
   const devEndpoint = environment[DEV_LINEAR_API_URL_ENV]?.trim();
-  const endpoint = config.devUrl !== undefined && devEndpoint ? devEndpoint : LINEAR_API_URL;
+  const standIn = config.devUrl !== undefined && devEndpoint ? devEndpoint : null;
+  const endpoint = standIn ?? LINEAR_API_URL;
+  const oauthEndpoints = standIn === null ? LINEAR_OAUTH_ENDPOINTS : standInEndpoints(standIn);
 
-  const readCredential = secrets.get(CREDENTIAL_SECRET_NAME).pipe(
+  const storedBytes = secrets.get(CREDENTIAL_SECRET_NAME).pipe(Effect.orDie);
+  // A credential this version cannot read, such as an old API key, is removed, not left behind.
+  const stored = yield* storedBytes;
+  if (
+    Option.isSome(stored) &&
+    Option.isNone(decodeCredential(new TextDecoder().decode(stored.value)))
+  ) {
+    yield* secrets.remove(CREDENTIAL_SECRET_NAME).pipe(Effect.orDie);
+  }
+
+  /** The stored sign-in, kept but unused while the environment has no client id. */
+  const readCredential = storedBytes.pipe(
     Effect.map((bytes) =>
-      Option.getOrNull(
-        Option.flatMap(bytes, (value) => decodeCredential(new TextDecoder().decode(value))),
-      ),
+      clientId === null
+        ? null
+        : Option.getOrNull(
+            Option.flatMap(bytes, (value) => decodeCredential(new TextDecoder().decode(value))),
+          ),
     ),
-    Effect.orDie,
   );
 
   const toConnection = (credential: StoredCredential | null): BoardConnection =>
-    credential === null
-      ? { status: "disconnected" }
-      : { status: "connected", viewer: credential.viewer };
+    clientId === null
+      ? { status: "unavailable" }
+      : credential === null
+        ? { status: "disconnected" }
+        : { status: "connected", viewer: credential.viewer };
 
   const connectionState = yield* SubscriptionRef.make(toConnection(yield* readCredential));
   const boardSignals = yield* PubSub.unbounded<BoardSignal>();
   const cache = new Map<string, CachedBoard>();
   const readLock = yield* Semaphore.make(1);
-  // Bumped on every key change; a refresh publishes only if no change happened while it read.
+  // Bumped on every sign-in change; a refresh publishes only if no change happened while it read.
   let credentialGeneration = 0;
   const credentialLock = yield* Semaphore.make(1);
+  const tokenLock = yield* Semaphore.make(1);
+  const pendingSignIns = new Map<string, PendingSignIn>();
 
-  const linear = Effect.fn("Board.linear")(function* <S extends Schema.Top>(
-    apiKey: string,
+  const linearRequest = Effect.fn("Board.linearRequest")(function* <S extends Schema.Top>(
+    accessToken: string,
     query: string,
     variables: Record<string, unknown>,
     schema: S,
@@ -143,7 +210,10 @@ const make = Effect.gen(function* () {
     const response = yield* httpClient
       .execute(
         HttpClientRequest.post(endpoint).pipe(
-          HttpClientRequest.setHeaders({ authorization: apiKey, accept: "application/json" }),
+          HttpClientRequest.setHeaders({
+            authorization: `Bearer ${accessToken}`,
+            accept: "application/json",
+          }),
           HttpClientRequest.bodyJsonUnsafe({ query, variables }),
         ),
       )
@@ -173,12 +243,111 @@ const make = Effect.gen(function* () {
     );
   });
 
-  const fetchBoard = Effect.fn("Board.fetchBoard")(function* (
-    apiKey: string,
-    target: TeamCatalogLinear,
+  const tokenRequest = Effect.fn("Board.tokenRequest")(function* (params: Record<string, string>) {
+    const response = yield* httpClient
+      .execute(
+        HttpClientRequest.post(oauthEndpoints.token).pipe(
+          HttpClientRequest.setHeaders({ accept: "application/json" }),
+          HttpClientRequest.bodyUrlParams(params),
+        ),
+      )
+      .pipe(
+        Effect.timeout(REQUEST_TIMEOUT),
+        Effect.mapError((): TokenFailure => ({
+          dead: false,
+          error: new BoardError({ reason: "unreachable", detail: "Could not reach Linear." }),
+        })),
+      );
+    const body: unknown = yield* response.json.pipe(Effect.orElseSucceed(() => null));
+    if (response.status !== 200) return yield* Effect.fail(tokenFailure(response.status, body));
+    const tokens = yield* decodeTokenResponse(body).pipe(
+      Effect.mapError((): TokenFailure => ({
+        dead: false,
+        error: new BoardError({
+          reason: "invalid-response",
+          detail: "Linear's sign-in service answered in an unexpected shape.",
+        }),
+      })),
+    );
+    const now = yield* Clock.currentTimeMillis;
+    return {
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token,
+      expiresAt: now + tokens.expires_in * 1000,
+    } satisfies Tokens;
+  });
+
+  /**
+   * An access token Linear should accept: the stored one, or a refreshed one when it is about to
+   * expire or is the token Linear just `rejected`. Refresh tokens rotate, so one refresh at a time.
+   */
+  const accessToken = (rejected: string | null) =>
+    tokenLock.withPermits(1)(
+      Effect.gen(function* () {
+        const generation = credentialGeneration;
+        const credential = yield* readCredential;
+        if (credential === null || clientId === null) {
+          return yield* new BoardError({
+            reason: "unauthorized",
+            detail: "Not signed in to Linear.",
+          });
+        }
+        const now = yield* Clock.currentTimeMillis;
+        if (credential.accessToken !== rejected && credential.expiresAt - REFRESH_EARLY_MS > now) {
+          return credential.accessToken;
+        }
+        const refreshed = yield* tokenRequest({
+          grant_type: "refresh_token",
+          refresh_token: credential.refreshToken,
+          client_id: clientId,
+        }).pipe(
+          Effect.catch((failure) =>
+            Effect.gen(function* () {
+              if (failure.dead) {
+                // Only a sign-in nobody replaced meanwhile is dropped.
+                yield* credentialLock.withPermits(1)(
+                  Effect.suspend(() =>
+                    generation === credentialGeneration ? applyCredential(null) : Effect.void,
+                  ),
+                );
+              }
+              return yield* failure.error;
+            }),
+          ),
+          // Linear has already rotated the refresh token once it answers; keep its reply.
+          Effect.uninterruptible,
+        );
+        yield* credentialLock.withPermits(1)(
+          Effect.suspend(() =>
+            generation === credentialGeneration
+              ? writeCredential({ ...credential, ...refreshed })
+              : Effect.void,
+          ),
+        );
+        return refreshed.accessToken;
+      }),
+    );
+
+  /** A Linear query as the signed-in person, refreshing the token once if Linear rejects it. */
+  const linear = Effect.fn("Board.linear")(function* <S extends Schema.Top>(
+    query: string,
+    variables: Record<string, unknown>,
+    schema: S,
   ) {
+    const token = yield* accessToken(null);
+    return yield* linearRequest(token, query, variables, schema).pipe(
+      Effect.catchIf(
+        (error) => error.reason === "unauthorized",
+        () =>
+          accessToken(token).pipe(
+            Effect.flatMap((fresh) => linearRequest(fresh, query, variables, schema)),
+          ),
+      ),
+    );
+  });
+
+  const fetchBoard = Effect.fn("Board.fetchBoard")(function* (target: TeamCatalogLinear) {
     const teamData = yield* linear(
-      apiKey,
       TEAM_QUERY,
       {
         key: target.team,
@@ -191,7 +360,7 @@ const make = Effect.gen(function* () {
     if (team === undefined) {
       return yield* new BoardError({
         reason: "team-not-found",
-        detail: `No Linear team with the key ${target.team} is visible to this API key.`,
+        detail: `No Linear team with the key ${target.team} is visible to your Linear account.`,
       });
     }
     const project =
@@ -217,7 +386,6 @@ const make = Effect.gen(function* () {
     let truncated = false;
     for (let page = 0; page < MAX_ISSUE_PAGES; page += 1) {
       const data: IssuesData = yield* linear(
-        apiKey,
         ISSUES_QUERY,
         { filter, first: ISSUE_PAGE_SIZE, after },
         IssuesData,
@@ -257,13 +425,14 @@ const make = Effect.gen(function* () {
   });
 
   const read: Board["Service"]["read"] = Effect.fn("Board.read")(function* (projectId, options) {
+    const generation = credentialGeneration;
     const credential = yield* readCredential;
     if (credential === null) return { status: "not-connected" } satisfies BoardSnapshot;
     const target = yield* resolveTarget(projectId);
     if (target._tag === "unconfigured") return target.snapshot;
 
-    // Keyed by API key too, so a read still in flight when the key changes cannot be served later.
-    const key = `${credential.apiKey}\u0000${target.linear.team}\u0000${target.linear.project ?? ""}`;
+    // Keyed by sign-in too, so a read still in flight when it changes cannot be served later.
+    const key = `${generation}\u0000${target.linear.team}\u0000${target.linear.project ?? ""}`;
     return yield* readLock.withPermits(1)(
       Effect.gen(function* () {
         const now = yield* Clock.currentTimeMillis;
@@ -271,7 +440,7 @@ const make = Effect.gen(function* () {
         if (options?.refresh !== true && cached && now - cached.readAtMs < FRESH_FOR_MS) {
           return { status: "ready", board: cached.board, failure: null } satisfies BoardSnapshot;
         }
-        const outcome = yield* fetchBoard(credential.apiKey, target.linear).pipe(
+        const outcome = yield* fetchBoard(target.linear).pipe(
           Effect.map((board) => ({ board, error: null })),
           Effect.catch((error) => Effect.succeed({ board: null, error })),
         );
@@ -329,44 +498,155 @@ const make = Effect.gen(function* () {
       }),
     );
 
-  const setCredential = Effect.fn("Board.setCredential")(
-    function* (credential: StoredCredential | null) {
-      if (credential === null) {
-        yield* secrets.remove(CREDENTIAL_SECRET_NAME).pipe(Effect.orDie);
-      } else {
-        yield* secrets
-          .set(CREDENTIAL_SECRET_NAME, new TextEncoder().encode(encodeCredential(credential)))
-          .pipe(Effect.orDie);
+  const writeCredential = (credential: StoredCredential) =>
+    secrets
+      .set(CREDENTIAL_SECRET_NAME, new TextEncoder().encode(encodeCredential(credential)))
+      .pipe(Effect.orDie);
+
+  /** Replaces the sign-in; the caller holds `credentialLock`. */
+  const applyCredential = Effect.fn("Board.applyCredential")(function* (
+    credential: StoredCredential | null,
+  ) {
+    if (credential === null) {
+      yield* secrets.remove(CREDENTIAL_SECRET_NAME).pipe(Effect.orDie);
+    } else {
+      yield* writeCredential(credential);
+    }
+    cache.clear();
+    credentialGeneration += 1;
+    const connection = toConnection(credential);
+    yield* SubscriptionRef.set(connectionState, connection);
+    yield* PubSub.publish(boardSignals, null);
+    return connection;
+  });
+
+  const setCredential = (credential: StoredCredential | null) =>
+    credentialLock.withPermits(1)(applyCredential(credential));
+
+  const startSignIn: Board["Service"]["startSignIn"] = Effect.fn("Board.startSignIn")(
+    function* (callbackOrigin) {
+      if (clientId === null) {
+        return yield* new BoardError({
+          reason: "sign-in-unavailable",
+          detail: "Linear sign-in is not set up for this environment.",
+        });
       }
-      cache.clear();
-      credentialGeneration += 1;
-      const connection = toConnection(credential);
-      yield* SubscriptionRef.set(connectionState, connection);
-      yield* PubSub.publish(boardSignals, null);
-      return connection;
+      const redirectUri = redirectUriFor(callbackOrigin);
+      if (redirectUri === null) {
+        return yield* new BoardError({
+          reason: "sign-in-unavailable",
+          detail: "Linear cannot send a sign-in back to this environment's address.",
+        });
+      }
+      const verifier = Base64Url.encode(yield* random.randomBytes(32));
+      const challenge = Base64Url.encode(
+        yield* digest.digest(Digest.sha256, new TextEncoder().encode(verifier)),
+      );
+      const state = Base64Url.encode(yield* random.randomBytes(32));
+      const now = yield* Clock.currentTimeMillis;
+      for (const [key, pending] of pendingSignIns) {
+        if (pending.expiresAtMs <= now) pendingSignIns.delete(key);
+      }
+      // Oldest first, so a burst of abandoned sign-ins cannot grow this without bound.
+      for (const key of pendingSignIns.keys()) {
+        if (pendingSignIns.size < MAX_PENDING_SIGN_INS) break;
+        pendingSignIns.delete(key);
+      }
+      pendingSignIns.set(state, { verifier, redirectUri, expiresAtMs: now + SIGN_IN_TTL_MS });
+      return {
+        authorizeUrl: authorizeUrl({
+          endpoint: oauthEndpoints.authorize,
+          clientId,
+          redirectUri,
+          state,
+          codeChallenge: challenge,
+        }),
+      };
     },
-    (effect) => credentialLock.withPermits(1)(effect),
   );
 
-  const connect: Board["Service"]["connect"] = Effect.fn("Board.connect")(function* (rawKey) {
-    const apiKey = rawKey.trim();
-    const data = yield* linear(apiKey, VIEWER_QUERY, {}, ViewerData);
-    return yield* setCredential({
-      apiKey,
-      viewer: {
+  const completeSignIn: Board["Service"]["completeSignIn"] = Effect.fn("Board.completeSignIn")(
+    function* (params) {
+      const now = yield* Clock.currentTimeMillis;
+      const pending = params.state === null ? undefined : pendingSignIns.get(params.state);
+      if (params.state !== null) pendingSignIns.delete(params.state);
+      if (clientId === null || pending === undefined || pending.expiresAtMs <= now) {
+        return yield* new BoardSignInError({
+          message:
+            "This sign-in link has expired or was already used. Start again from Settings → Board.",
+        });
+      }
+      if (params.error !== null) {
+        return yield* new BoardSignInError({
+          message:
+            params.error === "access_denied"
+              ? "Linear sign-in was cancelled."
+              : `Linear did not complete the sign-in (${params.error.slice(0, 100)}).`,
+        });
+      }
+      if (params.code === null) {
+        return yield* new BoardSignInError({ message: "Linear sent no authorization code." });
+      }
+      const tokens = yield* tokenRequest({
+        grant_type: "authorization_code",
+        code: params.code,
+        redirect_uri: pending.redirectUri,
+        client_id: clientId,
+        code_verifier: pending.verifier,
+      }).pipe(
+        Effect.mapError(
+          (failure) =>
+            new BoardSignInError({
+              message: failure.dead
+                ? "Linear did not accept this sign-in. Start again from Settings → Board."
+                : failure.error.detail,
+            }),
+        ),
+      );
+      const data = yield* linearRequest(tokens.accessToken, VIEWER_QUERY, {}, ViewerData).pipe(
+        Effect.mapError((error) => new BoardSignInError({ message: error.detail })),
+      );
+      const viewer: BoardViewer = {
         id: data.viewer.id,
         name: data.viewer.name,
         email: data.viewer.email,
         workspace: data.organization.name,
-      },
-    });
-  });
+      };
+      yield* setCredential({ ...tokens, viewer });
+      return viewer;
+    },
+  );
+
+  const revoke = (token: string, hint: "access_token" | "refresh_token") =>
+    httpClient
+      .execute(
+        HttpClientRequest.post(oauthEndpoints.revoke).pipe(
+          HttpClientRequest.bodyUrlParams({ token, token_type_hint: hint }),
+        ),
+      )
+      .pipe(Effect.timeout(REQUEST_TIMEOUT), Effect.ignore);
+
+  const disconnect = Effect.gen(function* () {
+    const credential = Option.getOrNull(
+      Option.flatMap(yield* storedBytes, (value) =>
+        decodeCredential(new TextDecoder().decode(value)),
+      ),
+    );
+    const connection = yield* setCredential(null);
+    // Forgotten here first, so a slow or unreachable Linear cannot keep the sign-in alive.
+    if (credential !== null) {
+      yield* revoke(credential.refreshToken, "refresh_token");
+      yield* revoke(credential.accessToken, "access_token");
+    }
+    return connection;
+  }).pipe(Effect.withSpan("Board.disconnect"));
 
   return Board.of({
     connection: SubscriptionRef.get(connectionState),
     connectionChanges: SubscriptionRef.changes(connectionState),
-    connect,
-    disconnect: setCredential(null),
+    startSignIn,
+    completeSignIn,
+    disconnect,
     read,
     changes,
     refresh,
