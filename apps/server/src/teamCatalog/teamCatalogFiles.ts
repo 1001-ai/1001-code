@@ -93,11 +93,12 @@ export function teamCatalogCheckoutFolder(repo: string, ghqLayout: boolean): Rea
 
 const SSH_SOURCE = /^ssh:\/\/(?:([^@/\s]+)@)?([^/:\s]+)(?::(\d+))?\//i;
 const SCP_SOURCE = /^(?:([^@/:\s]+)@)?([^/:\s]+):(?!\/)/;
-const HTTPS_SOURCE = /^https?:\/\/(?:[^@/\s]+@)?([^/:\s]+)(?::(\d+))?\//i;
+const HTTPS_SOURCE = /^(https?):\/\/(?:[^@/\s]+@)?([^/:\s]+)(?::(\d+))?\//i;
 
 /**
  * Clones over the transport the catalog itself was fetched with, which this machine has proven:
- * on the catalog's host that keeps its SSH user and port too. Never copies HTTPS credentials.
+ * on the catalog's host that keeps its SSH user, its port and plain HTTP too. Never copies
+ * HTTP credentials.
  */
 export function teamCatalogCloneUrl(repo: string, source: string): string {
   const [hostPart = "", ...path] = repositorySegments(repo);
@@ -122,8 +123,9 @@ export function teamCatalogCloneUrl(repo: string, source: string): string {
     return `${sameHost(scp[2]) ? scp[1] : "git"}@${host}:${repository}`;
   }
   const https = HTTPS_SOURCE.exec(source);
-  if (https && sameHost(https[1]) && https[2] !== undefined && port === undefined) {
-    return `https://${host}:${https[2]}/${repository}`;
+  if (https && sameHost(https[2])) {
+    const sourcePort = port === undefined && https[3] !== undefined ? `:${https[3]}` : "";
+    return `${https[1]!.toLowerCase()}://${hostPart}${sourcePort}/${repository}`;
   }
   return `https://${hostPart}/${repository}`;
 }

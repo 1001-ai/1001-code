@@ -171,10 +171,11 @@ const make = Effect.gen(function* () {
       if (info.type !== "Directory") return "occupied" as const;
       if ((yield* fileSystem.readDirectory(checkout)).length === 0) return "missing" as const;
       const identity = yield* identities.resolve(checkout, { refresh: true });
-      const realPath = yield* fileSystem.realPath(checkout);
-      return identity?.rootPath === realPath && teamCatalogRepositoryMatches(repo, identity)
-        ? ("present" as const)
-        : ("occupied" as const);
+      if (!teamCatalogRepositoryMatches(repo, identity)) return "occupied" as const;
+      // Git's empty prefix says the folder is the work tree's root, without comparing paths
+      // that Windows spells differently (slashes, 8.3 names).
+      const prefix = yield* git(["-C", checkout, "rev-parse", "--show-prefix"]);
+      return prefix === "" ? ("present" as const) : ("occupied" as const);
     }).pipe(
       Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed("missing" as const)),
       Effect.orElseSucceed(() => "occupied" as const),

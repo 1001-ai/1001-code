@@ -118,6 +118,16 @@ describe("teamCatalogCloneUrl", () => {
       "https://git.example.com:8443/team/web.git",
     ],
     ["https://github.com/acme/catalog", "github.com/Acme/Web", "https://github.com/Acme/Web.git"],
+    [
+      "http://git.example.com:8080/team/catalog.git",
+      "git.example.com/team/web",
+      "http://git.example.com:8080/team/web.git",
+    ],
+    [
+      "http://git.example.com/team/catalog.git",
+      "github.com/acme/web",
+      "https://github.com/acme/web.git",
+    ],
     ["/srv/catalog", "github.com/acme/web.git", "https://github.com/acme/web.git"],
     [
       "git@git.example.com:team/catalog.git",
