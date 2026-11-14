@@ -6,7 +6,11 @@ The three Icon Composer projects are the source of truth for full application ic
 - `nightly/app-icon.icon`
 - `prod/app-icon.icon`
 
-Each project uses `text.svg` for the T3 mark and `background.svg` when the background is a vector layer. Additional layers use semantic names that describe their role and placement.
+Each project uses `text.svg` for the 1001 mark and `background.svg` when the background is a vector layer. Additional layers use semantic names that describe their role and placement.
+
+`1001/` holds the logo as supplied (`logo-black.png`), its white counterpart, and `mark.svg`, a vector trace of it. The `text.svg` layers, `prod/logo.svg`, and the web mark in `apps/web/src/components/T3Wordmark.tsx` all carry that trace. Replace the trace if an original vector turns up.
+
+The tracked PNG and ICO files were last rendered without Icon Composer: flat layers, with the silhouettes and the macOS shadow taken from upstream's exports. They will not match an Icon Composer export, so `vp run icons:check` reports them until `vp run icons:export` and the macOS exports below replace them with native renders.
 
 Run `vp run icons:export` from the repository root to regenerate the tracked iOS, Linux, Windows, and web assets. The development web exports are also copied to `apps/web/public` for the browser favicon, web app manifest icons, and splash screen. Run `vp run icons:check` to verify that the generated assets and public copies match their sources without changing files.
 
