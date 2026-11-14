@@ -40,12 +40,6 @@ const SCOPE_LABEL: Record<PreferencesScope, string> = {
   personal: "Personal",
 };
 
-const SCOPE_DESCRIPTION: Record<PreferencesScope, string> = {
-  team: "Every teammate's agents, in every project.",
-  project: "Agents in this project's threads.",
-  personal: "Only your own agents.",
-};
-
 /** Revision, size and an approximate token count, at about four bytes a token. */
 function blockStatus(view: PreferencesView): string {
   const revision =
@@ -343,15 +337,11 @@ function DocumentHeading(props: {
     <div className="flex items-start gap-2">
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-medium">{title}</div>
-        <div className="truncate text-xs text-muted-foreground">
-          {document.file === null ? (
-            SCOPE_DESCRIPTION[document.scope]
-          ) : (
-            <>
-              <code>{document.file}</code> · {SCOPE_DESCRIPTION[document.scope]}
-            </>
-          )}
-        </div>
+        {document.file !== null && (
+          <div className="truncate text-xs text-muted-foreground">
+            <code>{document.file}</code>
+          </div>
+        )}
       </div>
       {document.file !== null && !props.editing ? (
         <Tooltip>
