@@ -40,7 +40,8 @@ The catalog holds one file per project, `projects/<key>.json`:
   "repo": "github.com/your-team/web",
   "owners": ["github-login"],
   "parent": "suite",
-  "links": [{ "project": "api", "access": "read" }]
+  "links": [{ "project": "api", "access": "read" }],
+  "linear": { "team": "WEB", "project": "Web app" }
 }
 ```
 
@@ -50,8 +51,34 @@ The catalog holds one file per project, `projects/<key>.json`:
 - `parent` (optional) groups the project under another one.
 - `links` (optional) name other projects this one may `read` or `write`. A write link counts only
   when both projects declare it, and agents then open pull requests there rather than push.
+- `linear` (optional) gives the project a [board](#board): `team` is the Linear team's key, as in
+  its issue identifiers, and `project` (optional) narrows the board to one Linear project in that
+  team, by its name or the id at the end of its URL.
 
 Files are checked strictly. A file with a mistake, an unknown field, or a repository another
 file already lists is skipped, and Settings says which file and why. The rest of the catalog
 still loads. Parent and links are read now but not yet used; they are there so the format does
 not change when they are.
+
+## Board
+
+A team project with a `linear` field has a board: its Linear team's issues, in the team's own
+workflow states. Linear holds the issues, so people working in Linear or another tool see the same
+ones.
+
+1. Create a personal API key in Linear under **Settings → Security & access → Personal API keys**.
+2. Open **Settings → Threads → Board**, paste the key and select **Connect**. The key is checked
+   with Linear and stored in the environment's secret store; Settings then shows who you are
+   connected as. **Disconnect** removes it.
+3. In a thread of the project, open **Board** from the right panel's new surface menu or the
+   command palette.
+
+The board shows open issues and those closed in the last week, as columns or as a list grouped by
+state. **Mine** keeps the issues assigned to you. A card shows its pull request's state, from the
+pull request this app tracks for a thread when it has one, and otherwise from Linear's GitHub
+integration. Selecting a card opens its thread when the issue links to a thread on a machine you
+are connected to, and opens the issue in Linear otherwise. The board is read when you open it and
+when you select refresh; it does not change issues.
+
+Each environment reads Linear with its own owner's key, so connect Linear on each machine you use
+the board from.

@@ -34,6 +34,14 @@ export const TeamCatalogLink = Schema.Struct({
 });
 export type TeamCatalogLink = typeof TeamCatalogLink.Type;
 
+/** The Linear team whose workflow states and issues are the project's board, by its key. */
+export const TeamCatalogLinear = Schema.Struct({
+  team: Schema.String.check(Schema.isPattern(/^[A-Z][A-Z0-9_]{0,15}$/)),
+  /** Narrows the board to one Linear project in the team: its name or URL slug id. */
+  project: Schema.optionalKey(TrimmedNonEmptyString.check(Schema.isMaxLength(200))),
+});
+export type TeamCatalogLinear = typeof TeamCatalogLinear.Type;
+
 export const TeamCatalogProject = Schema.Struct({
   key: TeamCatalogProjectKey,
   name: TrimmedNonEmptyString.check(Schema.isMaxLength(100)),
@@ -41,6 +49,7 @@ export const TeamCatalogProject = Schema.Struct({
   owners: Schema.Array(TeamCatalogOwner),
   parent: Schema.optionalKey(TeamCatalogProjectKey),
   links: Schema.optionalKey(Schema.Array(TeamCatalogLink)),
+  linear: Schema.optionalKey(TeamCatalogLinear),
 });
 export type TeamCatalogProject = typeof TeamCatalogProject.Type;
 
