@@ -82,7 +82,7 @@ export function MarkdownQuestionBlock({
     return (
       <div
         role="status"
-        className="my-4 rounded-xl border border-border/70 bg-muted/30 px-4 py-3 text-muted-foreground text-sm"
+        className="my-4 rounded-xl border border-border/70 bg-card px-4 py-3 text-muted-foreground text-sm"
       >
         Writing a question…
       </div>
@@ -167,7 +167,7 @@ function QuestionCard({
     <section
       aria-labelledby={promptId}
       data-chat-markdown-question={question.id}
-      className="my-4 flex w-full min-w-0 flex-col gap-1 rounded-xl border border-border/70 bg-muted/30 px-4 py-3"
+      className="my-4 flex w-full min-w-0 flex-col gap-1 rounded-xl border border-border/70 bg-card px-4 py-3"
     >
       <div className="min-w-0 text-sm [overflow-wrap:anywhere]">
         <span className="me-2 font-mono text-2xs text-muted-foreground">{question.id}</span>
