@@ -379,6 +379,11 @@ import {
   BoardSnapshot,
 } from "./board.ts";
 import {
+  TeamPreferencesProjectInput,
+  TeamPreferencesProposeInput,
+  TeamPreferencesView,
+} from "./teamPreferences.ts";
+import {
   StorageCleanupReport,
   DatabaseReclaimError,
   DatabaseStorageStatus,
@@ -580,6 +585,8 @@ export const WS_METHODS = {
   boardConnect: "board.connect",
   boardDisconnect: "board.disconnect",
   teamCatalogPropose: "teamCatalog.propose",
+  teamPreferencesSubscribe: "teamPreferences.subscribe",
+  teamPreferencesPropose: "teamPreferences.propose",
 
   scheduledTasksSubscribe: "scheduledTasks.subscribe",
   scheduledTasksUpsert: "scheduledTasks.upsert",
@@ -1108,6 +1115,19 @@ const WsBoardDisconnectRpc = Rpc.make(WS_METHODS.boardDisconnect, {
 
 const WsTeamCatalogProposeRpc = Rpc.make(WS_METHODS.teamCatalogPropose, {
   payload: TeamCatalogProposeInput,
+  success: TeamCatalogProposal,
+  error: Schema.Union([TeamCatalogError, EnvironmentAuthorizationError]),
+});
+
+const WsTeamPreferencesSubscribeRpc = Rpc.make(WS_METHODS.teamPreferencesSubscribe, {
+  payload: TeamPreferencesProjectInput,
+  success: TeamPreferencesView,
+  error: EnvironmentAuthorizationError,
+  stream: true,
+});
+
+const WsTeamPreferencesProposeRpc = Rpc.make(WS_METHODS.teamPreferencesPropose, {
+  payload: TeamPreferencesProposeInput,
   success: TeamCatalogProposal,
   error: Schema.Union([TeamCatalogError, EnvironmentAuthorizationError]),
 });
@@ -2246,6 +2266,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsBoardConnectRpc,
   WsBoardDisconnectRpc,
   WsTeamCatalogProposeRpc,
+  WsTeamPreferencesSubscribeRpc,
+  WsTeamPreferencesProposeRpc,
   WsServerSignalProcessRpc,
   WsScheduledTasksSubscribeRpc,
   WsScheduledTasksUpsertRpc,

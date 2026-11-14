@@ -104,7 +104,12 @@ import { preventThumbButtonFocus, takeThumbButtonNavigation } from "./preview/th
 import { PierreEntryIcon } from "./chat/PierreEntryIcon";
 import { resolvePullRequestState } from "./pullRequest/pullRequestPresentation";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
-import { BoardSurfaceIcon, boardSurfaceActions } from "~/components/board/boardSurface";
+import { BoardSurfaceIcon } from "~/components/board/boardSurface";
+import {
+  TeamPreferencesSurfaceIcon,
+  type TeamSurfaceKind,
+  teamSurfaceActions,
+} from "~/components/teamPreferences/teamPreferencesSurface";
 import { observeResize } from "~/lib/observeResize";
 import { surfaceShortcutKey } from "~/lib/surfaceShortcutKey";
 
@@ -147,7 +152,7 @@ export interface RightPanelTabsProps {
   /** Absent where side chats are not offered. */
   onAddSideChat?: (() => void) | undefined;
   /** Absent where no project is open. */
-  onAddBoard?: (() => void) | undefined;
+  onAddTeamSurface?: ((kind: TeamSurfaceKind) => void) | undefined;
   browserAvailable: boolean;
   terminalAvailable: boolean;
   diffAvailable: boolean;
@@ -330,7 +335,7 @@ function RightPanelEmptyState(props: {
   /** Absent where side chats are not offered. */
   onAddSideChat?: (() => void) | undefined;
   /** Absent where no project is open. */
-  onAddBoard?: (() => void) | undefined;
+  onAddTeamSurface?: ((kind: TeamSurfaceKind) => void) | undefined;
   browserAvailable: boolean;
   terminalAvailable: boolean;
   diffAvailable: boolean;
@@ -414,7 +419,7 @@ function RightPanelEmptyState(props: {
           },
         ]
       : []),
-    ...boardSurfaceActions(props.onAddBoard),
+    ...teamSurfaceActions(props.onAddTeamSurface),
   ] as const;
 
   type SurfaceAction = (typeof actions)[number];
@@ -604,6 +609,8 @@ function surfaceTitle(
       return "Side chat";
     case "board":
       return "Board";
+    case "preferences":
+      return "Team preferences";
     case "preview": {
       const snapshot = surface.resourceId ? sessions[surface.resourceId] : null;
       if (!snapshot || snapshot.navStatus._tag === "Idle") return "Browser";
@@ -694,6 +701,8 @@ function SurfaceIcon({
       return <PullRequestGlyph.link className="size-3 shrink-0" />;
     case "board":
       return <BoardSurfaceIcon />;
+    case "preferences":
+      return <TeamPreferencesSurfaceIcon />;
     case "side-chat":
       return <SideChatTabIcon environmentId={environmentId} threadId={surface.threadId} />;
     case "device":
@@ -1175,7 +1184,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           },
         ]
       : []),
-    ...boardSurfaceActions(props.onAddBoard),
+    ...teamSurfaceActions(props.onAddTeamSurface),
   ] as const;
 
   const handleAddSurfaceMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -1559,7 +1568,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             onAddPullRequests={props.onAddPullRequests}
             onAddDevice={props.onAddDevice}
             onAddSideChat={props.onAddSideChat}
-            onAddBoard={props.onAddBoard}
+            onAddTeamSurface={props.onAddTeamSurface}
             browserAvailable={props.browserAvailable}
             terminalAvailable={props.terminalAvailable}
             diffAvailable={props.diffAvailable}
