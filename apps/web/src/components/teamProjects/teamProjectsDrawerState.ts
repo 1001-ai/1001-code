@@ -21,7 +21,10 @@ interface TeamProjectsDrawerState {
    */
   readonly open: boolean | null;
   readonly height: number;
+  /** Set by a "show" off a thread; the thread it lands in closes its terminal. Not persisted. */
+  readonly closeTerminalOnArrival: boolean;
   readonly setOpen: (open: boolean) => void;
+  readonly setCloseTerminalOnArrival: (close: boolean) => void;
   readonly setHeight: (height: number) => void;
 }
 
@@ -30,7 +33,9 @@ export const useTeamProjectsDrawerStore = create<TeamProjectsDrawerState>()(
     (set) => ({
       open: null,
       height: DEFAULT_THREAD_TERMINAL_HEIGHT,
+      closeTerminalOnArrival: false,
       setOpen: (open) => set({ open }),
+      setCloseTerminalOnArrival: (closeTerminalOnArrival) => set({ closeTerminalOnArrival }),
       setHeight: (height) => set({ height }),
     }),
     {
@@ -79,6 +84,9 @@ export function useTeamProjectsDrawerToggle() {
   const threadRef = useRouteThreadRef();
   const open = useTeamProjectsDrawerOpen(threadRef);
   const setOpen = useTeamProjectsDrawerStore((state) => state.setOpen);
+  const setCloseTerminalOnArrival = useTeamProjectsDrawerStore(
+    (state) => state.setCloseTerminalOnArrival,
+  );
   const terminalOpen = useThreadTerminalOpen(threadRef);
   const setTerminalOpen = useTerminalUiStateStore((state) => state.setTerminalOpen);
   const navigateToMainApp = useNavigateToMainApp();
@@ -87,8 +95,12 @@ export function useTeamProjectsDrawerToggle() {
   const toggle = () => {
     const step = teamProjectsDrawerToggle({ onThread: threadRef !== null, open, terminalOpen });
     setOpen(step.open);
-    if (step.closeTerminal && threadRef !== null) setTerminalOpen(threadRef, false);
-    if (step.leaveForThread) void navigateToMainApp();
+    if (step.leaveForThread) {
+      setCloseTerminalOnArrival(step.closeTerminal);
+      void navigateToMainApp();
+    } else if (step.closeTerminal && threadRef !== null) {
+      setTerminalOpen(threadRef, false);
+    }
   };
 
   return { visible, toggle };

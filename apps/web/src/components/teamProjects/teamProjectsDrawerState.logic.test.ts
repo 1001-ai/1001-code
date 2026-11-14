@@ -7,38 +7,34 @@ import {
 
 describe("teamProjectsDrawerToggle", () => {
   it.each([
-    [
-      "opens a closed graph",
-      { open: false, terminalOpen: false },
-      { open: true, closeTerminal: false },
-    ],
-    [
-      "closes a shown graph",
-      { open: true, terminalOpen: false },
-      { open: false, closeTerminal: false },
-    ],
-    [
-      "opens over the terminal",
-      { open: false, terminalOpen: true },
-      { open: true, closeTerminal: true },
-    ],
+    ["opens a closed graph", true, false, false, { open: true, closeTerminal: false }],
+    ["closes a shown graph", true, true, false, { open: false, closeTerminal: false }],
+    ["opens over the terminal", true, false, true, { open: true, closeTerminal: true }],
     [
       "brings back a graph the terminal hides instead of closing it",
-      { open: true, terminalOpen: true },
+      true,
+      true,
+      true,
       { open: true, closeTerminal: true },
     ],
-  ])("in a thread, %s", (_name, state, expected) => {
-    expect(teamProjectsDrawerToggle({ onThread: true, ...state })).toEqual({
+    [
+      "off a thread, shows the graph in the last thread over its terminal",
+      false,
+      false,
+      true,
+      { open: true, closeTerminal: true },
+    ],
+    [
+      "off a thread, shows a graph that is already on",
+      false,
+      true,
+      false,
+      { open: true, closeTerminal: true },
+    ],
+  ] as const)("%s", (_name, onThread, open, terminalOpen, expected) => {
+    expect(teamProjectsDrawerToggle({ onThread, open, terminalOpen })).toEqual({
       ...expected,
-      leaveForThread: false,
-    });
-  });
-
-  it("off a thread, opens the graph and goes back to the last thread", () => {
-    expect(teamProjectsDrawerToggle({ onThread: false, open: true, terminalOpen: false })).toEqual({
-      open: true,
-      closeTerminal: false,
-      leaveForThread: true,
+      leaveForThread: !onThread,
     });
   });
 });

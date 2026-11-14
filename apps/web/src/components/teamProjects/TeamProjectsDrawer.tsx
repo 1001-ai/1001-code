@@ -1,7 +1,14 @@
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { ScopedThreadRef } from "@t3tools/contracts";
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
 
-import { useTeamProjectsDrawerOpen, useThreadTerminalOpen } from "./teamProjectsDrawerState";
+import { usePanelAnimationSettings, usePanelPresence } from "../../panelAnimations";
+import { useTerminalUiStateStore } from "../../terminalUiStateStore";
+import {
+  useTeamProjectsDrawerOpen,
+  useTeamProjectsDrawerStore,
+  useThreadTerminalOpen,
+} from "./teamProjectsDrawerState";
 
 const TeamProjectsDrawerPanel = lazy(() => import("./TeamProjectsPanel"));
 
@@ -14,13 +21,37 @@ export function TeamProjectsDrawer(props: {
   readonly threadRef: ScopedThreadRef | null;
   readonly composerHeight: number;
 }) {
-  const open = useTeamProjectsDrawerOpen(props.threadRef);
-  const terminalOpen = useThreadTerminalOpen(props.threadRef);
-  if (props.threadRef === null || !open || terminalOpen) return null;
+  const { threadRef } = props;
+  const open = useTeamProjectsDrawerOpen(threadRef);
+  const terminalOpen = useThreadTerminalOpen(threadRef);
+  // The terminal drawer stays in layout while it collapses; mounting the graph then would stack both.
+  const { active: animated, durationMs } = usePanelAnimationSettings();
+  const terminal = usePanelPresence(
+    terminalOpen,
+    true,
+    animated,
+    threadRef === null ? null : scopedThreadKey(threadRef),
+    durationMs,
+  );
+  const closeTerminalOnArrival = useTeamProjectsDrawerStore(
+    (state) => state.closeTerminalOnArrival,
+  );
+  const setCloseTerminalOnArrival = useTeamProjectsDrawerStore(
+    (state) => state.setCloseTerminalOnArrival,
+  );
+  const setTerminalOpen = useTerminalUiStateStore((state) => state.setTerminalOpen);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- a "show" made off a thread closes the terminal of the thread it lands in, which only this view knows
+  useEffect(() => {
+    if (!closeTerminalOnArrival || threadRef === null) return;
+    setCloseTerminalOnArrival(false);
+    setTerminalOpen(threadRef, false);
+  }, [closeTerminalOnArrival, setCloseTerminalOnArrival, setTerminalOpen, threadRef]);
+
+  if (threadRef === null || !open || terminal.present) return null;
   return (
     <Suspense fallback={null}>
       <TeamProjectsDrawerPanel
-        threadEnvironmentId={props.threadRef.environmentId}
+        threadEnvironmentId={threadRef.environmentId}
         composerHeight={props.composerHeight}
       />
     </Suspense>
