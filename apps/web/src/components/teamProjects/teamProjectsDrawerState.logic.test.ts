@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { teamProjectsDrawerToggle } from "./teamProjectsDrawerState.logic";
+import {
+  resolveTeamProjectsDrawerOpen,
+  teamProjectsDrawerToggle,
+} from "./teamProjectsDrawerState.logic";
 
 describe("teamProjectsDrawerToggle", () => {
   it.each([
@@ -37,5 +40,16 @@ describe("teamProjectsDrawerToggle", () => {
       closeTerminal: false,
       leaveForThread: true,
     });
+  });
+});
+
+describe("resolveTeamProjectsDrawerOpen", () => {
+  it.each([
+    ["is on by default where a catalog is set", null, true, true],
+    ["stays off by default without a catalog", null, false, false],
+    ["stays closed once the user closes it", false, true, false],
+    ["stays open once the user opens it, catalog or not", true, false, true],
+  ] as const)("%s", (_name, stored, catalogSet, expected) => {
+    expect(resolveTeamProjectsDrawerOpen(stored, catalogSet)).toBe(expected);
   });
 });

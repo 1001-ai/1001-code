@@ -65,11 +65,12 @@ still loads.
 
 ## See all team projects
 
-Select **Team projects** in the sidebar footer, or **Show team projects** in the command palette,
-to open the graph at the bottom of the thread, where the terminal opens. It stays open as you move
-between threads. The graph and a thread's terminal share that place: opening the terminal hides
-the graph until the terminal closes, and showing the graph closes the terminal. Away from a
-thread, such as on Pull requests, the graph opens in the last thread you were in.
+Once a catalog is set, the graph shows at the bottom of each thread, where the terminal opens.
+Select **Team projects** in the sidebar footer, or **Show team projects** or **Hide team
+projects** in the command palette, to turn it on or off; the choice holds across threads. The
+graph and a thread's terminal share that place: opening the terminal hides the graph until the
+terminal closes, and showing the graph closes the terminal. Away from a thread, such as on Pull
+requests, the graph opens in the last thread you were in.
 
 Projects are drawn inside their parent's box. Dashed lines are read links and solid lines are
 write links; a write link only one side has declared is faded. A read link to a repository your

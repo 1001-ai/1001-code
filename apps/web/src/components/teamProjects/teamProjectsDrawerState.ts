@@ -6,13 +6,20 @@ import { useComposerDraftStore } from "../../composerDraftStore";
 import { useThreadRouteTarget } from "../../hooks/useThreadRouteTarget";
 import { resolveStorage } from "../../lib/storage";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../../terminalUiStateStore";
+import { useTeamCatalog } from "../../state/teamCatalog";
 import { DEFAULT_THREAD_TERMINAL_HEIGHT } from "../../types";
 import { useNavigateToMainApp } from "../sidebar/mainAppLocation";
-import { teamProjectsDrawerToggle } from "./teamProjectsDrawerState.logic";
+import {
+  resolveTeamProjectsDrawerOpen,
+  teamProjectsDrawerToggle,
+} from "./teamProjectsDrawerState.logic";
 
 interface TeamProjectsDrawerState {
-  /** One drawer for every thread: the catalog is the environment's, not the thread's. */
-  readonly open: boolean;
+  /**
+   * One drawer for every thread: the catalog is the environment's, not the thread's. Null until
+   * the user opens or closes it, and then it is on wherever a catalog is set.
+   */
+  readonly open: boolean | null;
   readonly height: number;
   readonly setOpen: (open: boolean) => void;
   readonly setHeight: (height: number) => void;
@@ -21,13 +28,13 @@ interface TeamProjectsDrawerState {
 export const useTeamProjectsDrawerStore = create<TeamProjectsDrawerState>()(
   persist(
     (set) => ({
-      open: false,
+      open: null,
       height: DEFAULT_THREAD_TERMINAL_HEIGHT,
       setOpen: (open) => set({ open }),
       setHeight: (height) => set({ height }),
     }),
     {
-      name: "t3code:team-projects-drawer:v1",
+      name: "t3code:team-projects-drawer:v2",
       storage: createJSONStorage(() =>
         resolveStorage(typeof window !== "undefined" ? window.localStorage : undefined),
       ),
@@ -35,6 +42,16 @@ export const useTeamProjectsDrawerStore = create<TeamProjectsDrawerState>()(
     },
   ),
 );
+
+/**
+ * Whether the graph is on. Until the user chooses, it is on where the environment has a catalog,
+ * so the catalog is subscribed only then; an explicit choice needs no catalog read.
+ */
+export function useTeamProjectsDrawerOpen(threadRef: ScopedThreadRef | null): boolean {
+  const stored = useTeamProjectsDrawerStore((state) => state.open);
+  const snapshot = useTeamCatalog(stored === null ? (threadRef?.environmentId ?? null) : null);
+  return resolveTeamProjectsDrawerOpen(stored, snapshot?.source != null);
+}
 
 /** The thread's terminal drawer has the bottom area while it is open. */
 export function useThreadTerminalOpen(threadRef: ScopedThreadRef | null): boolean {
@@ -60,7 +77,7 @@ function useRouteThreadRef(): ScopedThreadRef | null {
 /** Shows or hides the graph in the current thread's bottom area, the last thread's off a thread. */
 export function useTeamProjectsDrawerToggle() {
   const threadRef = useRouteThreadRef();
-  const open = useTeamProjectsDrawerStore((state) => state.open);
+  const open = useTeamProjectsDrawerOpen(threadRef);
   const setOpen = useTeamProjectsDrawerStore((state) => state.setOpen);
   const terminalOpen = useThreadTerminalOpen(threadRef);
   const setTerminalOpen = useTerminalUiStateStore((state) => state.setTerminalOpen);

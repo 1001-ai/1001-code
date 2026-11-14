@@ -11,3 +11,11 @@ export function teamProjectsDrawerToggle(input: {
   const visible = input.open && !input.terminalOpen;
   return { open: !visible, closeTerminal: !visible && input.terminalOpen, leaveForThread: false };
 }
+
+/** A choice the user made wins; until then the graph is on where a catalog is set. */
+export function resolveTeamProjectsDrawerOpen(
+  stored: boolean | null,
+  catalogSet: boolean,
+): boolean {
+  return stored ?? catalogSet;
+}
