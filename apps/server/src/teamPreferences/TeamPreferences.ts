@@ -46,6 +46,8 @@ export class TeamPreferences extends Context.Service<
   }
 >()("t3/teamPreferences/TeamPreferences") {}
 
+const SIGNED_OUT = "Sign in to the GitHub CLI with gh auth login to have personal preferences.";
+
 /** Turns use the cached catalog; one older than this starts a background fetch. */
 const STALE_AFTER_MS = 10 * 60_000;
 
@@ -120,10 +122,7 @@ const make = Effect.gen(function* () {
         ),
         yield* document(
           "personal",
-          login === null
-            ? (catalog.viewer.problem ??
-                "Sign in to the GitHub CLI with gh auth login to have personal preferences.")
-            : { key: login, label: login },
+          login === null ? (catalog.viewer.problem ?? SIGNED_OUT) : { key: login, label: login },
         ),
       ];
       const block = buildTeamPreferencesBlock({
@@ -173,7 +172,22 @@ const make = Effect.gen(function* () {
   const propose: TeamPreferences["Service"]["propose"] = Effect.fn("TeamPreferences.propose")(
     function* (input) {
       const view = yield* read(input.projectId);
-      const target = view.documents.find((candidate) => candidate.scope === input.scope);
+      const listed = view.documents.find((candidate) => candidate.scope === input.scope);
+      // The personal file is the live login's: after a GitHub CLI account switch the cached one
+      // would edit the previous person's file under the new author.
+      const target =
+        input.scope === "personal" && view.source !== null
+          ? yield* teamCatalog.liveViewer.pipe(
+              Effect.flatMap((viewer) =>
+                document(
+                  "personal",
+                  viewer.login === null
+                    ? (viewer.problem ?? SIGNED_OUT)
+                    : { key: viewer.login, label: viewer.login },
+                ),
+              ),
+            )
+          : listed;
       if (view.source === null || target === undefined) {
         return yield* new TeamCatalogError({ detail: "No team catalog is set." });
       }

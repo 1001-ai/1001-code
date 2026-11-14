@@ -56,6 +56,8 @@ const makePreferences = (input: {
   readonly identity?: RepositoryIdentity | null;
   readonly readFile?: TeamCatalog.TeamCatalog["Service"]["readFile"];
   readonly refreshed?: Deferred.Deferred<void>;
+  /** The GitHub CLI's login now, when it differs from the one the snapshot cached. */
+  readonly liveLogin?: string | null;
 }) => {
   const proposals: Array<TeamCatalog.TeamCatalogFilesProposal> = [];
   const build = TeamPreferences.layer.pipe(
@@ -63,6 +65,14 @@ const makePreferences = (input: {
       Layer.mergeAll(
         Layer.mock(TeamCatalog.TeamCatalog)({
           snapshot: Effect.succeed(input.catalog),
+          liveViewer: Effect.succeed(
+            input.liveLogin === undefined
+              ? input.catalog.viewer
+              : {
+                  login: input.liveLogin,
+                  problem: input.liveLogin === null ? "Signed out." : null,
+                },
+          ),
           readFile:
             input.readFile ??
             ((file) =>
@@ -196,6 +206,29 @@ it.effect("proposes the edited file, and refuses an unchanged one or a scope wit
         branchStem: "team-preferences/personal-alice",
       },
     ]);
+
+    // After a GitHub CLI account switch, a personal edit goes to the signed-in person's file.
+    const switched = makePreferences({ catalog: catalog(), liveLogin: "Bob" });
+    const bob = yield* switched.build;
+    yield* bob.propose({
+      projectId: PROJECT_ID,
+      scope: "personal",
+      baseRevision: "rev-1",
+      text: "- Bob's new rule.",
+    });
+    expect(switched.proposals.map((proposal) => proposal.files)).toEqual([
+      [{ file: "preferences/people/bob.md", text: "- Bob's new rule.\n" }],
+    ]);
+    const signedOut = yield* makePreferences({ catalog: catalog(), liveLogin: null }).build;
+    const refused = yield* Effect.flip(
+      signedOut.propose({
+        projectId: PROJECT_ID,
+        scope: "personal",
+        baseRevision: "rev-1",
+        text: "- Anything.",
+      }),
+    );
+    expect(refused.detail).toBe("Signed out.");
   }).pipe(Effect.scoped),
 );
 

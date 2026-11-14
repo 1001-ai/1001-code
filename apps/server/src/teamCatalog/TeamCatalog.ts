@@ -68,6 +68,8 @@ export class TeamCatalog extends Context.Service<
     readonly propose: (
       input: TeamCatalogProposeInput,
     ) => Effect.Effect<TeamCatalogProposal, TeamCatalogError>;
+    /** The GitHub CLI's login now, never the one cached for display; it also updates that cache. */
+    readonly liveViewer: Effect.Effect<TeamCatalogViewer>;
     /** A file of the last fetch, by its path in the catalog; null when it has none. */
     readonly readFile: (file: string) => Effect.Effect<string | null>;
     /** Proposes whole files, as `propose` does, under the GitHub CLI's login. */
@@ -562,11 +564,12 @@ const make = Effect.gen(function* () {
     return current.source;
   });
 
+  const liveViewer = access.viewer.pipe(Effect.tap((viewer) => Ref.set(viewerRef, viewer)));
+
   const propose = Effect.fn("TeamCatalog.propose")(function* (input: TeamCatalogProposeInput) {
     const source = yield* currentSource(input.baseRevision);
     // Ownership is checked against the live login, never the one cached for display.
-    const viewer = yield* access.viewer;
-    yield* Ref.set(viewerRef, viewer);
+    const viewer = yield* liveViewer;
     const catalog = yield* Ref.get(catalogRef);
     const projects = catalog.projects.map((entry) => entry.project);
     const refusal = checkTeamCatalogProposal(projects, input.changes, viewer.login);
@@ -629,6 +632,7 @@ const make = Effect.gen(function* () {
     refresh,
     setSource,
     propose,
+    liveViewer,
     readFile,
     proposeFiles,
   });

@@ -184,7 +184,11 @@ export function RightPanelSurfaceContent(props: {
     case "preferences":
       return (
         <Suspense fallback={null}>
-          <TeamPreferencesPanel threadRef={threadRef} projectId={props.pullRequest.projectId} />
+          <TeamPreferencesPanel
+            key={`${threadRef.environmentId}:${props.pullRequest.projectId}`}
+            threadRef={threadRef}
+            projectId={props.pullRequest.projectId}
+          />
         </Suspense>
       );
     case "side-chat":
