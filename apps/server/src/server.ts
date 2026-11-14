@@ -201,6 +201,7 @@ import * as UsageService from "./usage/UsageService.ts";
 import * as ThreadCost from "./usage/ThreadCost.ts";
 import * as TeamCatalog from "./teamCatalog/TeamCatalog.ts";
 import * as Board from "./board/Board.ts";
+import * as LiveAppCheckout from "./liveAppCheckout.ts";
 import * as CodexUsageHistory from "./usage/CodexUsageHistory.ts";
 import * as RuntimeLayer from "./orchestration-v2/runtimeLayer.ts";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
@@ -691,6 +692,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   ThreadCost.layer,
   TeamCatalog.layer,
   Board.layer.pipe(Layer.provide(TeamCatalog.layer)),
+  LiveAppCheckout.layer,
   Layer.effectDiscard(ProjectSettingsOverrideSweep.sweep),
 ).pipe(
   Layer.provideMerge(layerOrchestrationApplication),
