@@ -128,15 +128,18 @@ function QuestionCard({
     setFreeText("");
   };
 
+  const changing = answer !== null && changingFrom === answer.messageId;
   const options = questionOptions(question);
   const multi = question.kind === "multi";
-  const selectedMulti = multi ? selectedMultiOptions(options, draftAnswer) : new Set<string>();
+  // While changing an answer, the controls start from it until the draft holds a new one.
+  const shownAnswer = draftAnswer ?? (changing ? answer.answer : null);
+  const selectedMulti = multi ? selectedMultiOptions(options, shownAnswer) : new Set<string>();
   const isSelected = (option: string) =>
-    multi ? selectedMulti.has(option) : draftAnswer === option;
+    multi ? selectedMulti.has(option) : shownAnswer === option;
   const choose = (option: string) =>
-    writeDraftAnswer(multi ? toggleMultiOption(options, draftAnswer, option) : option);
+    writeDraftAnswer(multi ? toggleMultiOption(options, shownAnswer, option) : option);
   // A radio group is one tab stop, on the checked option or else the first.
-  const radioTabStop = Math.max(options.indexOf(draftAnswer ?? ""), 0);
+  const radioTabStop = Math.max(options.indexOf(shownAnswer ?? ""), 0);
   const moveFocus = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
     const last = options.length - 1;
     const next =
@@ -158,7 +161,6 @@ function QuestionCard({
     optionRefs.current[next]?.focus();
     if (!multi) writeDraftAnswer(options[next] ?? null);
   };
-  const changing = answer !== null && changingFrom === answer.messageId;
   const showControls = answer === null || changing;
 
   return (
