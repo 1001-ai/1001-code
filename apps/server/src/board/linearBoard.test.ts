@@ -1,6 +1,12 @@
 import { describe, expect, it } from "@effect/vitest";
 
-import { boardColumns, type LinearIssue, type LinearState, linearFailure } from "./linearBoard.ts";
+import {
+  boardColumns,
+  type LinearIssue,
+  type LinearState,
+  linearFailure,
+  linearProject,
+} from "./linearBoard.ts";
 
 const states: ReadonlyArray<LinearState> = [
   { id: "done", name: "Done", type: "completed", color: "#5e6ad2", position: 0 },
@@ -153,5 +159,27 @@ describe("linearFailure", () => {
     expect(linearFailure({ status: 429, body: null, retryAfter: "soon" })).not.toHaveProperty(
       "retryAfterSeconds",
     );
+  });
+});
+
+describe("linearProject", () => {
+  const checkout = {
+    id: "p1",
+    slugId: "a1b2c3d4e5f6",
+    name: "Checkout",
+    url: "https://linear.app/acme/project/checkout-a1b2c3d4e5f6",
+  };
+  const otherCheckout = { ...checkout, id: "p2", slugId: "0f9e8d7c6b5a" };
+  const namedLikeSlug = { ...checkout, id: "p3", slugId: "112233445566", name: "a1b2c3d4e5f6" };
+
+  it.each([
+    ["one project by name", [checkout], "checkout", "p1"],
+    ["one project by URL id", [checkout], "a1b2c3d4e5f6", "p1"],
+    ["the URL id over a name match", [namedLikeSlug, checkout], "a1b2c3d4e5f6", "p1"],
+    ["two projects with the name", [checkout, otherCheckout], "Checkout", "ambiguous"],
+    ["no match", [], "Checkout", null],
+  ] as const)("finds %s", (_name, candidates, wanted, expected) => {
+    const found = linearProject(candidates, wanted);
+    expect(typeof found === "object" && found !== null ? found.id : found).toBe(expected);
   });
 });

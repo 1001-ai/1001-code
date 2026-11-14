@@ -8,10 +8,15 @@ import {
 } from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
 import * as Context from "effect/Context";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as Queue from "effect/Queue";
+import * as Scope from "effect/Scope";
+import * as Stream from "effect/Stream";
 import { HttpClient, HttpClientResponse } from "effect/http";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
@@ -24,6 +29,7 @@ import { LINEAR_API_URL } from "./linearBoard.ts";
 
 const PROJECT_ID = ProjectId.make("project-web");
 const GOOD_KEY = "lin_api_good";
+const OTHER_KEY = "lin_api_other";
 
 const identity: RepositoryIdentity = {
   canonicalKey: "github.com/acme/web",
@@ -88,17 +94,24 @@ interface Answer {
 }
 
 /** A Linear stand-in: answers each GraphQL operation by name and records what it was asked. */
-const fakeLinear = (answer: (operation: string, variables: Record<string, unknown>) => Answer) => {
+const fakeLinear = (
+  answer: (
+    operation: string,
+    variables: Record<string, unknown>,
+    apiKey: string,
+  ) => Answer | Effect.Effect<Answer>,
+) => {
   const calls: Array<{ operation: string; variables: Record<string, unknown> }> = [];
   const client = HttpClient.make((request) =>
-    Effect.sync(() => {
+    Effect.gen(function* () {
       expect(request.url).toBe(LINEAR_API_URL);
       const body = JSON.parse(
         request.body._tag === "Uint8Array" ? new TextDecoder().decode(request.body.body) : "{}",
       ) as { query: string; variables: Record<string, unknown> };
       const operation = /query (\w+)/.exec(body.query)?.[1] ?? "";
       calls.push({ operation, variables: body.variables });
-      if (request.headers.authorization !== GOOD_KEY) {
+      const apiKey = request.headers.authorization ?? "";
+      if (apiKey !== GOOD_KEY && apiKey !== OTHER_KEY) {
         return HttpClientResponse.fromWeb(
           request,
           Response.json(
@@ -114,7 +127,8 @@ const fakeLinear = (answer: (operation: string, variables: Record<string, unknow
           ),
         );
       }
-      const result = answer(operation, body.variables);
+      const answered = answer(operation, body.variables, apiKey);
+      const result = Effect.isEffect(answered) ? yield* answered : answered;
       return HttpClientResponse.fromWeb(
         request,
         Response.json(result.body, {
@@ -160,17 +174,24 @@ const boardAnswers =
 const makeBoard = (input: {
   readonly client: HttpClient.HttpClient;
   readonly catalog: TeamCatalogSnapshot;
+  /** What a forced catalog fetch finds; an unforced one keeps the catalog it has. */
+  readonly fetchedCatalog?: TeamCatalogSnapshot;
   readonly secrets: Context.Context<
     ServerSecretStore.ServerSecretStore | ServerConfig.ServerConfig
   >;
-}) =>
-  Board.layer.pipe(
+}) => {
+  let current = input.catalog;
+  return Board.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
         Layer.succeed(HttpClient.HttpClient, input.client),
         Layer.mock(TeamCatalog.TeamCatalog)({
-          snapshot: Effect.succeed(input.catalog),
-          refresh: () => Effect.succeed(input.catalog),
+          snapshot: Effect.sync(() => current),
+          refresh: (refreshInput) =>
+            Effect.sync(() => {
+              if (refreshInput?.force === true) current = input.fetchedCatalog ?? current;
+              return current;
+            }),
         }),
         Layer.mock(ProjectStore.ProjectStoreV2)({
           get: () =>
@@ -189,6 +210,7 @@ const makeBoard = (input: {
     Layer.build,
     Effect.map((context) => Context.get(context, Board.Board)),
   );
+};
 
 /** A secret store in a fresh temp T3 home, shared by every board built from it. */
 const buildSecrets = () =>
@@ -199,7 +221,7 @@ const buildSecrets = () =>
   );
 
 const connected = (
-  test: (board: Board.Board["Service"]) => Effect.Effect<void>,
+  test: (board: Board.Board["Service"]) => Effect.Effect<void, never, Scope.Scope>,
   answer: Parameters<typeof fakeLinear>[0],
   catalogSnapshot = catalog([catalogEntry({ team: "ENG" })]),
 ) =>
@@ -296,6 +318,56 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Board", (it) => 
     }),
   );
 
+  it.effect("refreshes the catalog itself, so a Linear team just added to it counts", () =>
+    Effect.gen(function* () {
+      const linear = fakeLinear(boardAnswers([[linearIssue("1", "s-todo")]]));
+      const board = yield* makeBoard({
+        client: linear.client,
+        catalog: catalog([catalogEntry(undefined)]),
+        fetchedCatalog: catalog([catalogEntry({ team: "ENG" })]),
+        secrets: yield* buildSecrets(),
+      });
+      yield* board.connect(GOOD_KEY);
+      expect(yield* board.read(PROJECT_ID)).toMatchObject({ reason: "no-linear-team" });
+      expect((yield* board.refresh(PROJECT_ID)).status).toBe("ready");
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("never serves a board read with the previous key once another key connects", () =>
+    Effect.gen(function* () {
+      const reading = yield* Deferred.make<void>();
+      const released = yield* Deferred.make<void>();
+      const linear = fakeLinear((operation, variables, apiKey) => {
+        const answered = boardAnswers([[linearIssue(apiKey === GOOD_KEY ? "1" : "2", "s-todo")]])(
+          operation,
+          variables,
+        );
+        return operation === "BoardIssues" && apiKey === GOOD_KEY
+          ? Deferred.succeed(reading, undefined).pipe(
+              Effect.andThen(Deferred.await(released)),
+              Effect.as(answered),
+            )
+          : answered;
+      });
+      const board = yield* makeBoard({
+        client: linear.client,
+        catalog: catalog([catalogEntry({ team: "ENG" })]),
+        secrets: yield* buildSecrets(),
+      });
+      yield* board.connect(GOOD_KEY);
+      const previous = yield* board.read(PROJECT_ID).pipe(Effect.forkChild);
+      yield* Deferred.await(reading);
+      yield* board.connect(OTHER_KEY);
+      yield* Deferred.succeed(released, undefined);
+      yield* Fiber.join(previous);
+
+      const snapshot = ready(yield* board.read(PROJECT_ID));
+      expect(
+        snapshot?.board.columns.flatMap((column) => column.issues.map((issue) => issue.identifier)),
+      ).toEqual(["ENG-2"]);
+    }).pipe(Effect.scoped),
+  );
+
   it.effect("reads every page of the team's issues into its columns, then serves the cache", () => {
     const answer = boardAnswers([
       [linearIssue("1", "s-todo"), linearIssue("2", "s-done")],
@@ -371,9 +443,14 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Board", (it) => 
     return connected(
       (board) =>
         Effect.gen(function* () {
-          const first = ready(yield* board.read(PROJECT_ID));
+          const updates = yield* Queue.unbounded<BoardSnapshot>();
+          yield* board.changes(PROJECT_ID).pipe(
+            Stream.runForEach((snapshot) => Queue.offer(updates, snapshot)),
+            Effect.forkScoped,
+          );
+          const first = ready(yield* Queue.take(updates));
           limited = true;
-          expect(yield* board.read(PROJECT_ID, { refresh: true })).toEqual({
+          const limitedSnapshot = {
             status: "ready",
             board: first?.board,
             failure: {
@@ -381,7 +458,10 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Board", (it) => 
               detail: "Linear's rate limit was reached. Try again later.",
               retryAfterSeconds: 60,
             },
-          });
+          };
+          expect(yield* board.refresh(PROJECT_ID)).toEqual(limitedSnapshot);
+          // The open board gets the warning too, though its cached read is still fresh.
+          expect(yield* Queue.take(updates)).toEqual(limitedSnapshot);
         }),
       answer,
     );

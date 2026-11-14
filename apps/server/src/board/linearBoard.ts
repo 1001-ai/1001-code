@@ -4,6 +4,7 @@ import {
   EnvironmentId,
   ThreadId,
   type BoardColumn,
+  type BoardData,
   type BoardIssue,
   type BoardPullRequest,
   type BoardThreadLink,
@@ -37,7 +38,7 @@ export const TEAM_QUERY = `query BoardTeam($key: String!, $project: String!, $wi
         first: 2
         filter: { or: [{ slugId: { eq: $project } }, { name: { eqIgnoreCase: $project } }] }
       ) @include(if: $withProject) {
-        nodes { id name url }
+        nodes { id slugId name url }
       }
     }
   }
@@ -90,6 +91,14 @@ const LinearState = Schema.Struct({
 });
 export type LinearState = typeof LinearState.Type;
 
+const LinearProject = Schema.Struct({
+  id: Schema.String,
+  slugId: Schema.String,
+  name: Schema.String,
+  url: Schema.String,
+});
+export type LinearProject = typeof LinearProject.Type;
+
 export const TeamData = Schema.Struct({
   teams: Nodes(
     Schema.Struct({
@@ -97,13 +106,25 @@ export const TeamData = Schema.Struct({
       key: Schema.String,
       name: Schema.String,
       states: Nodes(LinearState),
-      projects: Schema.optionalKey(
-        Nodes(Schema.Struct({ id: Schema.String, name: Schema.String, url: Schema.String })),
-      ),
+      projects: Schema.optionalKey(Nodes(LinearProject)),
     }),
   ),
 });
 export type TeamData = typeof TeamData.Type;
+
+/** The project the catalog names: by the id at the end of its URL, else by its only name match. */
+export function linearProject(
+  candidates: ReadonlyArray<LinearProject>,
+  wanted: string,
+): NonNullable<BoardData["project"]> | "ambiguous" | null {
+  const byName = candidates.filter(
+    (candidate) => candidate.name.toLowerCase() === wanted.toLowerCase(),
+  );
+  const found = candidates.find((candidate) => candidate.slugId === wanted) ?? byName[0];
+  if (found === undefined) return null;
+  if (found.slugId !== wanted && byName.length > 1) return "ambiguous";
+  return { id: found.id, name: found.name, url: found.url };
+}
 
 const LinearIssue = Schema.Struct({
   id: Schema.String,

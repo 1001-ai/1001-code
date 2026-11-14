@@ -265,6 +265,7 @@ function ReadyBoardView(props: {
   const { board, failure } = props.snapshot;
   const columns = filterBoardColumns(board.columns, props.filter);
   const total = columns.reduce((count, column) => count + column.issues.length, 0);
+  const loaded = board.columns.reduce((count, column) => count + column.issues.length, 0);
   const linearUrl = board.project?.url ?? null;
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -344,7 +345,7 @@ function ReadyBoardView(props: {
       ) : null}
       {board.truncated ? (
         <p className="px-3 pt-2 text-xs text-muted-foreground">
-          Showing the first {total} issues. Open Linear for the rest.
+          Showing the first {loaded} issues. Open Linear for the rest.
         </p>
       ) : null}
       {total === 0 ? (

@@ -41,6 +41,7 @@ import {
   boardColumns,
   issuesFilter,
   linearFailure,
+  linearProject,
 } from "./linearBoard.ts";
 
 /**
@@ -91,6 +92,9 @@ const unconfigured = (
   catalogFile: string | null = null,
 ): Target => ({ _tag: "unconfigured", snapshot: { status: "unconfigured", reason, catalogFile } });
 
+/** A refreshed project's snapshot, or null when every board changed with the connection. */
+type BoardSignal = { readonly projectId: ProjectId; readonly snapshot: BoardSnapshot } | null;
+
 interface CachedBoard {
   readonly board: BoardData;
   readonly readAtMs: number;
@@ -123,8 +127,7 @@ const make = Effect.gen(function* () {
       : { status: "connected", viewer: credential.viewer };
 
   const connectionState = yield* SubscriptionRef.make(toConnection(yield* readCredential));
-  /** A refreshed project's id, or null when every board changed with the connection. */
-  const boardSignals = yield* PubSub.unbounded<ProjectId | null>();
+  const boardSignals = yield* PubSub.unbounded<BoardSignal>();
   const cache = new Map<string, CachedBoard>();
   const readLock = yield* Semaphore.make(1);
 
@@ -188,7 +191,16 @@ const make = Effect.gen(function* () {
         detail: `No Linear team with the key ${target.team} is visible to this API key.`,
       });
     }
-    const project = target.project === undefined ? null : (team.projects?.nodes[0] ?? null);
+    const project =
+      target.project === undefined
+        ? null
+        : linearProject(team.projects?.nodes ?? [], target.project);
+    if (project === "ambiguous") {
+      return yield* new BoardError({
+        reason: "project-not-found",
+        detail: `The Linear team ${team.key} has more than one project named ${target.project}. Name it by the id at the end of its URL.`,
+      });
+    }
     if (target.project !== undefined && project === null) {
       return yield* new BoardError({
         reason: "project-not-found",
@@ -247,7 +259,8 @@ const make = Effect.gen(function* () {
     const target = yield* resolveTarget(projectId);
     if (target._tag === "unconfigured") return target.snapshot;
 
-    const key = `${target.linear.team}\u0000${target.linear.project ?? ""}`;
+    // Keyed by API key too, so a read still in flight when the key changes cannot be served later.
+    const key = `${credential.apiKey}\u0000${target.linear.team}\u0000${target.linear.project ?? ""}`;
     return yield* readLock.withPermits(1)(
       Effect.gen(function* () {
         const now = yield* Clock.currentTimeMillis;
@@ -283,9 +296,10 @@ const make = Effect.gen(function* () {
 
   const refresh: Board["Service"]["refresh"] = Effect.fn("Board.refresh")(function* (projectId) {
     // A catalog edit, such as a new `linear` field, should count on the next refresh.
-    yield* teamCatalog.refresh();
+    yield* teamCatalog.refresh({ force: true });
     const snapshot = yield* read(projectId, { refresh: true });
-    yield* PubSub.publish(boardSignals, projectId);
+    // Open boards get this snapshot itself: a re-read would hit the cache and drop its failure.
+    yield* PubSub.publish(boardSignals, { projectId, snapshot });
     return snapshot;
   });
 
@@ -294,11 +308,14 @@ const make = Effect.gen(function* () {
       Effect.gen(function* () {
         const subscription = yield* PubSub.subscribe(boardSignals);
         return Stream.concat(
-          Stream.make(projectId),
+          Stream.fromEffect(read(projectId)),
           Stream.fromSubscription(subscription).pipe(
-            Stream.filter((signal) => signal === null || signal === projectId),
+            Stream.filter((signal) => signal === null || signal.projectId === projectId),
+            Stream.mapEffect((signal) =>
+              signal === null ? read(projectId) : Effect.succeed(signal.snapshot),
+            ),
           ),
-        ).pipe(Stream.mapEffect(() => read(projectId)));
+        );
       }),
     );
 
