@@ -2,6 +2,7 @@
 import { threadRuntimeIsActive, type EnvironmentThreadShell } from "./models.ts";
 import { toSortableTimestamp } from "./threadSort.ts";
 import { effectiveSnoozed } from "./threadSettled.ts";
+import { hasUnseenQuestions } from "./threadQuestions.ts";
 
 type WorkingThreadInput = Pick<
   EnvironmentThreadShell,
@@ -12,10 +13,13 @@ type WorkingThreadInput = Pick<
   | "interactionMode"
   | "latestRun"
   | "runtime"
+  | "openQuestionsAt"
+  | "lastVisitedAt"
 >;
 
 export function isThreadWorking(thread: WorkingThreadInput): boolean {
   if (thread.hasPendingApprovals || thread.hasPendingUserInput) return false;
+  if (hasUnseenQuestions(thread)) return false;
   if (thread.pendingSubagentRequest != null) return false;
   if (!threadRuntimeIsActive(thread.runtime) && thread.runtime?.status !== "idle") return false;
   const run = thread.latestRun;
@@ -51,7 +55,7 @@ export function asLaunchingThread<T extends EnvironmentThreadShell>(thread: T): 
 
 type InboxThreadInput = Pick<
   EnvironmentThreadShell,
-  "id" | "environmentId" | "createdAt" | "unsettledAt" | "latestRun"
+  "id" | "environmentId" | "createdAt" | "unsettledAt" | "latestRun" | "openQuestionsAt"
 >;
 
 export function sortInboxThreadsByReturn<T extends InboxThreadInput>(
@@ -66,6 +70,7 @@ export function sortInboxThreadsByReturn<T extends InboxThreadInput>(
         toSortableTimestamp(thread.unsettledAt ?? undefined) ?? 0,
         toSortableTimestamp(thread.latestRun?.requestedAt ?? undefined) ?? 0,
         toSortableTimestamp(thread.latestRun?.completedAt ?? undefined) ?? 0,
+        toSortableTimestamp(thread.openQuestionsAt ?? undefined) ?? 0,
         observedReturnAt?.(thread) ?? 0,
       ),
     ]),
