@@ -17,7 +17,7 @@ export interface ThreadCostPricing {
 
 export type ThreadCostTurn = Pick<
   OrchestrationV2ProviderTurn,
-  "status" | "model" | "turnTokenUsage" | "nodeId"
+  "status" | "model" | "turnTokenUsage" | "nodeId" | "providerThreadId" | "tokenUsage"
 > & {
   /** The driver of the provider thread that ran the turn, which decides how its model is priced. */
   readonly driver: string | null;
@@ -26,7 +26,7 @@ export type ThreadCostTurn = Pick<
 export interface ThreadCostSource {
   readonly providerTurns: ReadonlyArray<ThreadCostTurn>;
   readonly subagents: ReadonlyArray<
-    Pick<OrchestrationV2Subagent, "origin" | "parentNodeId" | "model">
+    Pick<OrchestrationV2Subagent, "origin" | "parentNodeId" | "model" | "workflow">
   >;
   /** The thread's selected model, for turns that did not report one. */
   readonly fallbackModel: string | null;
@@ -92,36 +92,86 @@ function rateFor(
   );
 }
 
-// Claude's native subagents run under the turn's root node; when they share a model, that prices them.
+// A workflow's own model is its caller's; its agents name the models they ran.
+function subagentModels(
+  subagent: ThreadCostSource["subagents"][number],
+): ReadonlyArray<string | null> {
+  const agents = subagent.workflow?.agents ?? [];
+  return agents.length > 0 ? agents.map((agent) => agent.model ?? null) : [subagent.model];
+}
+
+/**
+ * The model that prices a turn's ledger extras: the one its native subagents share. Background
+ * subagents finish in later turns, so a turn that started none uses the whole thread's.
+ */
 function nativeSubagentModel(
   thread: ThreadCostSource,
   turn: Pick<ThreadCostTurn, "nodeId">,
 ): string | null {
-  const models = new Set<string | null>();
-  for (const subagent of thread.subagents) {
-    if (subagent.origin === "provider_native" && subagent.parentNodeId === turn.nodeId) {
-      models.add(subagent.model);
-    }
-  }
+  const native = thread.subagents.filter((subagent) => subagent.origin === "provider_native");
+  const started = native.filter((subagent) => subagent.parentNodeId === turn.nodeId);
+  const models = new Set((started.length > 0 ? started : native).flatMap(subagentModels));
   const [only] = models;
   return models.size === 1 && only !== undefined ? only : null;
 }
 
+type LedgerUsage = NonNullable<TurnTokenUsage["otherUsage"]>;
+
+/**
+ * A resumed Claude CLI restores its session's model ledger, so the first result of a new process
+ * reports every earlier turn's work again as ledger growth. A turn whose extras reach everything
+ * the provider thread recorded before it carries that restored total; only the excess is new.
+ */
+function withoutRestoredLedger(other: LedgerUsage, before: LedgerUsage): LedgerUsage {
+  const restored =
+    before.inputTokens > 0 &&
+    other.inputTokens >= before.inputTokens &&
+    other.outputTokens >= before.outputTokens;
+  return restored
+    ? {
+        inputTokens: other.inputTokens - before.inputTokens,
+        outputTokens: other.outputTokens - before.outputTokens,
+      }
+    : other;
+}
+
+// Anthropic bills a one-hour cache write at 2x input, 1.6x the five-minute write rates carry.
+const HOUR_CACHE_WRITE_MULTIPLIER = 1.6;
+const HOUR_MS = 60 * 60_000;
+
+/**
+ * Ledger extras (native subagents, compaction) arrive as one unsplit input count. Measured Claude
+ * subagents read nearly all of it from cache and write about 2.5% to five-minute caches; the main
+ * agent's own mix says nothing about them, since a session's first turn is mostly cache writes.
+ */
+const EXTRAS_CACHE_WRITE_SHARE = 0.025;
+
 // A turn sums many requests, so context tiers (chosen per request) cannot apply; base rates do.
-function turnCost(usage: TurnTokenUsage, rates: TokenRates, otherRates: TokenRates): number {
+function turnCost(
+  usage: TurnTokenUsage,
+  other: LedgerUsage | undefined,
+  rates: TokenRates,
+  otherRates: TokenRates,
+  hourCacheWrites: boolean,
+): number {
   const cached = usage.cachedInputTokens ?? 0;
   const cacheWrite = usage.cacheCreationTokens ?? 0;
   const input = usage.inputTokens ?? cached + cacheWrite;
   const uncached = Math.max(0, input - cached - cacheWrite);
-  const inputCost = (at: TokenRates) =>
-    uncached * at.inputCostPerToken +
-    cached * at.cacheReadCostPerToken +
-    cacheWrite * at.cacheCreationCostPerToken;
-  const main = inputCost(rates) + (usage.outputTokens ?? 0) * rates.outputCostPerToken;
-  const other = usage.otherUsage;
+  const writeRate =
+    rates.cacheCreationCostPerToken * (hourCacheWrites ? HOUR_CACHE_WRITE_MULTIPLIER : 1);
+  // A local command's own counters describe its result, not model work.
+  const main =
+    usage.localCommand === true
+      ? 0
+      : uncached * rates.inputCostPerToken +
+        cached * rates.cacheReadCostPerToken +
+        cacheWrite * writeRate +
+        (usage.outputTokens ?? 0) * rates.outputCostPerToken;
   if (other === undefined) return main;
-  // Ledger extras (native subagents, compaction) arrive unsplit; assume the turn's cache mix.
-  const otherInputRate = input > 0 ? inputCost(otherRates) / input : otherRates.inputCostPerToken;
+  const otherInputRate =
+    (1 - EXTRAS_CACHE_WRITE_SHARE) * otherRates.cacheReadCostPerToken +
+    EXTRAS_CACHE_WRITE_SHARE * otherRates.cacheCreationCostPerToken;
   return (
     main + other.inputTokens * otherInputRate + other.outputTokens * otherRates.outputCostPerToken
   );
@@ -144,11 +194,35 @@ export function estimateThreadCost(
   let unpricedTurns = 0;
   let unreportedTurns = 0;
   for (const thread of threads) {
+    const recorded = new Map<string, LedgerUsage>();
     for (const turn of thread.providerTurns) {
       const usage = turn.turnTokenUsage;
-      if (usage?.localCommand === true) continue;
       if (!hasCounts(usage)) {
-        if (REPORTING_TURN_STATUSES.has(turn.status)) unreportedTurns += 1;
+        if (
+          turn.turnTokenUsage?.localCommand !== true &&
+          REPORTING_TURN_STATUSES.has(turn.status)
+        ) {
+          unreportedTurns += 1;
+        }
+        continue;
+      }
+      const mainInput = usage.localCommand === true ? 0 : (usage.inputTokens ?? 0);
+      const mainOutput = usage.localCommand === true ? 0 : (usage.outputTokens ?? 0);
+      const before = recorded.get(turn.providerThreadId) ?? { inputTokens: 0, outputTokens: 0 };
+      const other =
+        usage.otherUsage === undefined
+          ? undefined
+          : turn.driver === "claudeAgent"
+            ? withoutRestoredLedger(usage.otherUsage, before)
+            : usage.otherUsage;
+      recorded.set(turn.providerThreadId, {
+        inputTokens: before.inputTokens + mainInput + (other?.inputTokens ?? 0),
+        outputTokens: before.outputTokens + mainOutput + (other?.outputTokens ?? 0),
+      });
+      if (
+        usage.localCommand === true &&
+        (other?.inputTokens ?? 0) + (other?.outputTokens ?? 0) === 0
+      ) {
         continue;
       }
       const model = turn.model ?? usage.models?.[0] ?? thread.fallbackModel;
@@ -157,10 +231,11 @@ export function estimateThreadCost(
         unpricedTurns += 1;
         continue;
       }
-      const subagentModel = usage.otherUsage ? nativeSubagentModel(thread, turn) : null;
+      const subagentModel = other ? nativeSubagentModel(thread, turn) : null;
       const otherRates =
         (subagentModel === null ? null : rateFor(pricing, turn.driver, subagentModel)) ?? rates;
-      costUsd += turnCost(usage, rates, otherRates);
+      const hourCacheWrites = (turn.tokenUsage?.promptCacheTtlMs ?? 0) >= HOUR_MS;
+      costUsd += turnCost(usage, other, rates, otherRates, hourCacheWrites);
       pricedTurns += 1;
     }
   }

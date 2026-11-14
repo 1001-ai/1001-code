@@ -32,6 +32,7 @@ import {
   type ThreadDetailsUsageInput,
 } from "./ThreadDetailsUsage";
 import { ThreadDetailsItemsMenuItems } from "./ThreadDetailsItemsMenu";
+import { ThreadDetailsCost } from "./ThreadDetailsCost";
 import { resolveThreadDetailsVisibility, THREAD_DETAILS_ITEMS } from "./threadDetailsItems";
 import { useClientSettings } from "../../hooks/useSettings";
 import { useProject, useServerConfigs } from "../../state/entities";
@@ -288,6 +289,10 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
 
               {visible.context && props.usage.contextWindow ? (
                 <ThreadDetailsContext usage={props.usage.contextWindow} />
+              ) : null}
+
+              {visible.cost && props.isServerThread && !props.draftId ? (
+                <ThreadDetailsCost environmentId={props.environmentId} threadId={props.threadId} />
               ) : null}
 
               {/* Shown only when no section above has content, so an emptied card can be refilled. */}

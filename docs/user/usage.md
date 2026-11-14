@@ -151,7 +151,8 @@ thread's subagents. It uses the same price table and custom prices as **Usage**,
 without long-context or fast-mode surcharges, so it is an estimate, not your subscription bill.
 To price it, the server downloads public model prices at most once a day. To hide the line,
 right-click it and choose **Hide status line**. Turn **Status line under composer** back on in
-**Settings → Appearance → Thread details**.
+**Settings → Appearance → Thread details**. The thread details card shows the same estimate in its
+**Estimated cost** row.
 
 For a fuller view, turn on **Usage limits** in **Settings → Appearance → Thread details**, or right-click the thread details card.
 The bottom of the thread details card then shows how much is left in each limit window of the
