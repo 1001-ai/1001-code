@@ -8,7 +8,12 @@ import {
 } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { FolderCheckIcon, FolderDownIcon, RefreshCwIcon, SettingsIcon, XIcon } from "lucide-react";
-import { type PointerEvent as ReactPointerEvent, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+  useRef,
+  useState,
+} from "react";
 
 import { observeResize } from "../../lib/observeResize";
 import { workspaceAreaProps } from "../../lib/workspaceFocus";
@@ -31,6 +36,12 @@ import { TeamProjectGraph } from "./TeamProjectGraph";
 import { TeamProjectLinksEditor } from "./TeamProjectLinksEditor";
 import { useTeamProjectsDrawerStore } from "./teamProjectsDrawerState";
 import { useTeamProjectActions } from "./useTeamProjectActions";
+
+const DOT_GRID: CSSProperties = {
+  backgroundImage:
+    "radial-gradient(circle, color-mix(in srgb, var(--color-foreground) 14%, transparent) 1px, transparent 1.5px)",
+  backgroundSize: "20px 20px",
+};
 
 function Legend() {
   const line = (dash: string | undefined, className: string, width: number) => (
@@ -301,7 +312,7 @@ function TeamProjectsView(props: {
           </Button>
         </div>
       ) : (
-        <div className="flex min-h-0 flex-1">
+        <div className="flex min-h-0 flex-1" style={DOT_GRID}>
           <ScrollArea className="min-h-0 min-w-0 flex-1">
             <div
               className={selected === null ? "space-y-3 p-4 pe-10 pb-14" : "space-y-3 p-4 pb-14"}
@@ -341,7 +352,7 @@ function TeamProjectsView(props: {
             </div>
           </ScrollArea>
           {selected !== null ? (
-            <div className="w-80 max-w-[50%] shrink-0 overflow-y-auto border-l pb-12">
+            <div className="w-80 max-w-[50%] shrink-0 overflow-y-auto border-l bg-background pb-12">
               <SelectedProject
                 environmentId={environmentId}
                 snapshot={snapshot}
