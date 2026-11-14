@@ -8,9 +8,11 @@ import {
   type PreferencesProposeInput,
   type PreferencesScope,
   type PreferencesView,
+  type ThreadId,
   teamCatalogRepositoryMatches,
   preferencesFile,
 } from "@t3tools/contracts";
+import { THREAD_LINK_PROTOCOL } from "@t3tools/shared/threadLinks";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -21,6 +23,7 @@ import * as Option from "effect/Option";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 
+import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
 import * as TeamCatalog from "../teamCatalog/TeamCatalog.ts";
@@ -40,7 +43,10 @@ export class Preferences extends Context.Service<
      * The block for a turn in the project, or undefined when there is none. Never fails and never
      * waits for git: a stale catalog is refreshed in the background for later turns.
      */
-    readonly instructions: (projectId: ProjectId) => Effect.Effect<string | undefined>;
+    readonly instructions: (
+      projectId: ProjectId,
+      threadId: ThreadId,
+    ) => Effect.Effect<string | undefined>;
     readonly propose: (
       input: PreferencesProposeInput,
     ) => Effect.Effect<TeamCatalogProposal, TeamCatalogError>;
@@ -48,6 +54,14 @@ export class Preferences extends Context.Service<
 >()("t3/preferences/Preferences") {}
 
 const SIGNED_OUT = "Sign in to the GitHub CLI with gh auth login to have personal preferences.";
+
+/** The board reads a thread from an issue's link attachments, so a comment alone is not enough. */
+const threadLinkInstructions = (link: string): string =>
+  [
+    "<thread_link>",
+    `This thread's link is ${link}. When you work on an issue on this project's Linear board, add this link to that issue once, as a link attachment (not only in a comment), so the board and teammates' agents can find this thread. Include it in the "agent:" comments you write there too.`,
+    "</thread_link>",
+  ].join("\n");
 
 /** Turns use the cached catalog; one older than this starts a background fetch. */
 const STALE_AFTER_MS = 10 * 60_000;
@@ -67,6 +81,7 @@ const make = Effect.gen(function* () {
   const teamCatalog = yield* TeamCatalog.TeamCatalog;
   const projects = yield* ProjectStore.ProjectStoreV2;
   const identities = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
+  const environmentId = yield* (yield* ServerEnvironment.ServerEnvironment).getEnvironmentId;
   const backgroundScope = yield* Scope.make();
   yield* Effect.addFinalizer(() => Scope.close(backgroundScope, Exit.void));
   let lastStaleRefreshMs = 0;
@@ -98,7 +113,7 @@ const make = Effect.gen(function* () {
     return { scope, file, label: target.label, text, unavailable: null };
   });
 
-  const read: Preferences["Service"]["read"] = Effect.fn("Preferences.read")(function* (projectId) {
+  const readWithProject = Effect.fn("Preferences.read")(function* (projectId: ProjectId) {
     const catalog = yield* teamCatalog.snapshot;
     const base = {
       source: catalog.source,
@@ -108,7 +123,8 @@ const make = Effect.gen(function* () {
       viewer: catalog.viewer,
     };
     if (catalog.source === null) {
-      return { ...base, documents: [], block: null, truncated: false };
+      const view: PreferencesView = { ...base, documents: [], block: null, truncated: false };
+      return { view, project: null };
     }
     const project = yield* catalogProject(catalog, projectId);
     const login = catalog.viewer.login;
@@ -129,13 +145,17 @@ const make = Effect.gen(function* () {
       documents,
       repository: hostedRepositoryOf(catalog.source),
     });
-    return {
+    const view: PreferencesView = {
       ...base,
       documents,
       block: block?.text ?? null,
       truncated: block?.truncated ?? false,
-    } satisfies PreferencesView;
+    };
+    return { view, project };
   });
+
+  const read: Preferences["Service"]["read"] = (projectId) =>
+    readWithProject(projectId).pipe(Effect.map(({ view }) => view));
 
   const changes: Preferences["Service"]["changes"] = (projectId) =>
     teamCatalog.changes.pipe(
@@ -157,9 +177,13 @@ const make = Effect.gen(function* () {
   const instructions: Preferences["Service"]["instructions"] = Effect.fn(
     "Preferences.instructions",
   )(
-    function* (projectId) {
+    function* (projectId, threadId) {
       yield* refreshWhenStale(yield* teamCatalog.snapshot);
-      return (yield* read(projectId)).block ?? undefined;
+      const { view, project } = yield* readWithProject(projectId);
+      if (project?.linear === undefined) return view.block ?? undefined;
+      const link = `${THREAD_LINK_PROTOCOL}://v2/${environmentId}/${threadId}`;
+      const threadLink = threadLinkInstructions(link);
+      return view.block === null ? threadLink : `${view.block}\n\n${threadLink}`;
     },
     // A cancelled run must stay cancelled; only a failed read degrades to no preferences.
     Effect.catchCauseIf(
