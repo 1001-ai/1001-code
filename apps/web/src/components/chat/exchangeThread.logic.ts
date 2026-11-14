@@ -50,13 +50,14 @@ function citedResponseIds(message: NonNullable<ExchangeRow["message"]>): string[
 
 /**
  * Groups message rows by the run that consumed them. A run's `userMessageId` and every steer
- * or promoted queued message carry its run id, so the run id is the exchange; runless (imported
- * or not yet committed) messages fall back to the user message they follow.
+ * or promoted queued message carry its run id, so the run id is the exchange. A runless
+ * (imported or not yet committed) reply belongs to the user message right before it.
  */
 export function deriveExchangeMap(rows: ReadonlyArray<ExchangeRow>): ExchangeMap {
   const drafts = new Map<string, ExchangeDraft>();
   const keyByRowId = new Map<string, string>();
-  let runlessKey: string | null = null;
+  let lastUserKey: string | null = null;
+  const keyByMessageId = new Map<string, string>();
   const draftFor = (key: string) => {
     let draft = drafts.get(key);
     if (!draft) {
@@ -70,15 +71,13 @@ export function deriveExchangeMap(rows: ReadonlyArray<ExchangeRow>): ExchangeMap
     const message = row.message;
     if (message === undefined || message.role === "system") continue;
     if (row.kind !== "message" && row.kind !== "assistant-meta") continue;
-    let key: string;
-    if (message.runId !== null) {
-      key = message.runId;
-    } else if (message.role === "user") {
-      key = `message:${message.id}`;
-      runlessKey = key;
-    } else {
-      key = runlessKey ?? `message:${message.id}`;
-    }
+    const key: string =
+      message.runId ??
+      (message.role === "user"
+        ? `message:${message.id}`
+        : (keyByMessageId.get(message.id) ?? lastUserKey ?? `message:${message.id}`));
+    if (message.role === "user") lastUserKey = key;
+    keyByMessageId.set(message.id, key);
     keyByRowId.set(row.id, key);
     if (row.kind !== "message") continue;
     const draft = draftFor(key);
