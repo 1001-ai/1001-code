@@ -125,16 +125,27 @@ export function threadCostSignal(projection: {
   >;
   readonly subagents: ReadonlyArray<Pick<OrchestrationV2Subagent, "status">>;
 }): string {
-  let tokens = 0;
-  let reports = 0;
-  for (const { status, turnTokenUsage } of projection.providerTurns) {
-    if (turnTokenUsage === undefined || status === "pending" || status === "running") continue;
-    reports += 1;
-    tokens += (turnTokenUsage.inputTokens ?? 0) + (turnTokenUsage.outputTokens ?? 0);
+  // Every priced field counts: a finished turn's report can be refined later (cache split, otherUsage, models).
+  const reports: string[] = [];
+  for (const { status, turnTokenUsage: u } of projection.providerTurns) {
+    if (u === undefined || status === "pending" || status === "running") continue;
+    reports.push(
+      [
+        u.usageStatus,
+        u.inputTokens,
+        u.outputTokens,
+        u.cachedInputTokens,
+        u.cacheCreationTokens,
+        u.reasoningTokens,
+        u.otherUsage?.inputTokens,
+        u.otherUsage?.outputTokens,
+        u.models?.join("+"),
+      ].join(","),
+    );
   }
   let settled = 0;
   for (const { status } of projection.subagents) {
     if (!isOrchestrationV2WorkActive(status)) settled += 1;
   }
-  return `${reports}:${tokens}:${settled}`;
+  return `${reports.join(";")}|${settled}`;
 }

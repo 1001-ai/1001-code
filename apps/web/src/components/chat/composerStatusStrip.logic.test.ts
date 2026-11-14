@@ -121,4 +121,20 @@ describe("threadCostSignal", () => {
       threadCostSignal({ ...base, subagents: [...base.subagents, { status: "running" }] }),
     ).toBe(signal);
   });
+
+  it("moves when a finished turn's report is refined after the fact", () => {
+    const signal = threadCostSignal({
+      providerTurns: [{ status: "completed", turnTokenUsage: usage(100) }],
+      subagents: [],
+    });
+    const refined = (extra: Partial<ReturnType<typeof usage>> & Record<string, unknown>) =>
+      threadCostSignal({
+        providerTurns: [{ status: "completed", turnTokenUsage: { ...usage(100), ...extra } }],
+        subagents: [],
+      });
+
+    expect(refined({ otherUsage: { inputTokens: 40, outputTokens: 5 } })).not.toBe(signal);
+    expect(refined({ cachedInputTokens: 60 })).not.toBe(signal);
+    expect(refined({ models: ["claude-haiku-5-5"] })).not.toBe(signal);
+  });
 });
