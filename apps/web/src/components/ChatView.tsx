@@ -4030,9 +4030,9 @@ export default function ChatView(props: ChatViewProps) {
           onAddPullRequests={addPullRequestsSurfaceStable}
           onAddDevice={addDeviceSurfaceStable}
           onAddSideChat={sideChatsOffered ? openSideChatStable : undefined}
-          onAddBoard={
+          onAddTeamSurface={
             activeProject !== null
-              ? () => useRightPanelStore.getState().open(activeThreadRef, "board")
+              ? (kind) => useRightPanelStore.getState().open(activeThreadRef, kind)
               : undefined
           }
           browserAvailable={canOperatePreview && browserAvailable}
