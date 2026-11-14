@@ -300,6 +300,7 @@ import {
 } from "./chat/PanelLayoutControls";
 import type { ExpandedImagePreview } from "./chat/ExpandedImagePreview";
 import { ThreadDetailsPanel } from "./chat/ThreadDetailsPanel";
+import { ComposerStatusStrip } from "./chat/ComposerStatusStrip";
 import { NoActiveThreadState } from "./NoActiveThreadState";
 import {
   resolveEffectiveEnvMode,
@@ -3814,6 +3815,16 @@ export default function ChatView(props: ChatViewProps) {
                           </div>
                         </div>
                       </ComposerSurface.Shell>
+                      <ComposerStatusStrip
+                        environmentId={environmentId}
+                        threadId={
+                          isServerThread && !isDraftHeroState && !embedded ? threadId : null
+                        }
+                        providerInstanceId={activeProviderInstanceId}
+                        providers={providerStatuses}
+                        sources={serverConfig?.usageLimitSources}
+                        contextWindow={activeContextWindow}
+                      />
                       {isDraftHeroState && composerBannerItems.length > 0 ? (
                         // Out of flow, like the headline, so a notice never moves the centered composer.
                         // Short windows pin the composer to the bottom, where an out-of-flow notice
