@@ -151,8 +151,9 @@ then cost and subagents, unless a window is nearly spent. Hover an item for deta
 a window resets or how old its reading is. Cost appears only for providers that report tokens per turn and includes the
 thread's subagents. It uses the same price table and custom prices as **Usage**, at base rates
 without long-context or fast-mode surcharges, so it is an estimate, not your subscription bill.
-To price it, the server downloads public model prices at most once a day. To hide the line,
-right-click it and choose **Hide status line**. Turn **Status line under composer** back on in
+To price it, the server downloads public model prices at most once a day. To hide or show the
+line, click the gauge button next to the composer's attach button. You can also right-click the line
+and choose **Hide status line**, or turn **Status line under composer** on or off in
 **Settings → Appearance → Thread details**. The thread details card shows the same estimate in its
 **Estimated cost** row, and running subagents in its **Running subagents** row.
 

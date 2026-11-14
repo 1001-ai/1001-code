@@ -3708,6 +3708,7 @@ export default function ChatView(props: ChatViewProps) {
                                 permissionsShownInStrip={
                                   showComposerContextStrip && !isServerThread
                                 }
+                                showStatusToggle={isServerThread && !isDraftHeroState && !embedded}
                                 promptRef={promptRef}
                                 composerImagesRef={composerImagesRef}
                                 composerFilesRef={composerFilesRef}
