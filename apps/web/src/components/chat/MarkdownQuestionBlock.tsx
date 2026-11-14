@@ -18,7 +18,7 @@ import { cn } from "~/lib/utils";
 import { environmentThreadDetails } from "../../state/threads";
 import {
   findQuestionAnswer,
-  parseQuestionBlock,
+  parseQuestionQuote,
   questionOptions,
   readAnswerLine,
   selectedMultiOptions,
@@ -61,34 +61,25 @@ const questionChangingFromAtomFamily = Atom.family((key: string) =>
 );
 
 /**
- * A `question` fence in an assistant message. Answering writes `<id>: answer` into the thread's
- * draft and never sends; the card reads as answered once a later user message carries that line.
+ * A blockquote in an assistant message, shown as a question card when its source is one. Answering
+ * writes `<id>: answer` into the thread's draft and never sends; the card reads as answered once a
+ * later user message carries that line. While the message streams, the quote shows as written.
  */
-export function MarkdownQuestionBlock({
-  code,
+export function MarkdownQuestionQuote({
+  source,
   threadRef,
   streaming,
   children,
 }: {
-  readonly code: string;
+  readonly source: string;
   readonly threadRef: ScopedThreadRef;
   readonly streaming: boolean;
-  /** The ordinary code block, shown when the fence is not a valid question. */
+  /** The ordinary blockquote. */
   readonly children: ReactNode;
 }) {
   const askedInItemId = use(QuestionAskedInItemContext);
-  if (askedInItemId === null) return children;
-  if (streaming) {
-    return (
-      <div
-        role="status"
-        className="my-4 rounded-xl border border-border/70 bg-card px-4 py-3 text-muted-foreground text-sm"
-      >
-        Writing a question…
-      </div>
-    );
-  }
-  const question = parseQuestionBlock(code);
+  if (askedInItemId === null || streaming) return children;
+  const question = parseQuestionQuote(source);
   if (question === null) return children;
   return <QuestionCard question={question} threadRef={threadRef} askedInItemId={askedInItemId} />;
 }
