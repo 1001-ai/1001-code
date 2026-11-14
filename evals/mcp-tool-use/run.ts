@@ -74,6 +74,8 @@ import { proxyConfig } from "../shared/proxy.ts";
 import { changeRequestsCreatedBy } from "../../apps/server/src/orchestration-v2/PullRequestSyncReactor.ts";
 import { DeviceExpect, gradeDevice } from "./device-grading.ts";
 import { FileLinksExpect, gradeFileLinks } from "./file-link-grading.ts";
+import { QuestionCardsExpect, gradeQuestionCards } from "./question-card-grading.ts";
+import { ShellInOrderExpect, gradeShellInOrder, withLiveAppCheckout } from "./live-checkout.ts";
 import {
   AGENT_DEVICE_SHELL,
   deviceFailure,
@@ -211,6 +213,8 @@ const McpToolUseExpect = Schema.Struct({
   shellMustNot: Schema.optional(Schema.Array(Schema.String)),
   /** Regexes that some shell command must match, each. */
   shellMust: Schema.optional(Schema.Array(Schema.String)),
+  /** Regexes that shell commands match in this order. See live-checkout.ts. */
+  shellInOrder: Schema.optional(ShellInOrderExpect),
   /** Case-sensitive regexes on the agent's visible text. */
   textMust: Schema.optional(Schema.Array(Schema.String)),
   textMustNot: Schema.optional(Schema.Array(Schema.String)),
@@ -229,6 +233,8 @@ const McpToolUseExpect = Schema.Struct({
   secret: Schema.optional(SecretExpect),
   /** File pills in the final answer resolve against the thread cwd to `world.files` entries. */
   fileLinks: Schema.optional(FileLinksExpect),
+  /** Question cards chat renders from the agent's text. See question-card-grading.ts. */
+  questionCards: Schema.optional(QuestionCardsExpect),
 });
 
 /**
@@ -298,6 +304,8 @@ export const McpToolUseCase = Schema.Struct({
     harness: Schema.optional(Schema.Literals(["claude", "codex"])),
     /** The Linked environments beta is on, so T3 lists its link tools. */
     linkedEnvironments: Schema.optional(Schema.Boolean),
+    /** T3 runs in dev mode from this git checkout, so its text tells agents how to show web changes. */
+    liveAppCheckout: Schema.optional(Schema.String),
     /** delegate_task `role` for a delegated child. T3 builds the child's first message from it. */
     delegateRole: Schema.optional(OrchestratorMcpTaskRole),
     context: Schema.optional(Schema.String),
@@ -1897,6 +1905,8 @@ export const gradeSample = (
     ),
   );
   checks.push(...gradeSecret(expect.secret, run, pasted));
+  checks.push(...gradeQuestionCards(expect.questionCards, run));
+  checks.push(...gradeShellInOrder(expect.shellInOrder, shell));
   return checks;
 };
 
@@ -2542,7 +2552,7 @@ const main = Effect.gen(function* () {
         );
   // Codex has no native subagents; its cases with that role run as top-level threads.
   const baseKey = ({ setup }: McpToolUseCase) =>
-    `${codex && setup.role === "native-subagent" ? "top" : setup.role}:${setup.world?.deviceAgentAccess !== false}:${setup.world?.browserAgentAccess !== false}:${setup.linkedEnvironments === true}`;
+    `${codex && setup.role === "native-subagent" ? "top" : setup.role}:${setup.world?.deviceAgentAccess !== false}:${setup.world?.browserAgentAccess !== false}:${setup.linkedEnvironments === true}${setup.liveAppCheckout ? `:${setup.liveAppCheckout}` : ""}`;
   const base = yield* buildFor("top", true, true, false);
   const bases = new Map<string, Base>([["top:true:true:false", base]]);
   for (const testCase of selected) {
@@ -2554,7 +2564,13 @@ const main = Effect.gen(function* () {
       string,
       string,
     ];
-    bases.set(key, yield* buildFor(role, device === "true", browser === "true", links === "true"));
+    bases.set(
+      key,
+      yield* withLiveAppCheckout(
+        testCase.setup.liveAppCheckout,
+        buildFor(role, device === "true", browser === "true", links === "true"),
+      ),
+    );
   }
   const baseFor = (testCase: McpToolUseCase) => bases.get(baseKey(testCase)) ?? base;
   const effort = flags.effort ?? base.codex?.reasoning.effort ?? "high";
