@@ -62,7 +62,7 @@ function Main({ className, ...props }: ComponentProps<"div">) {
         "not-supports-[((backdrop-filter:blur(1px))_or_(-webkit-backdrop-filter:blur(1px)))]:group-has-data-[composer-banner-surface=attached]/composer-surface:bg-(--chat-composer-glass-surface)",
         "group-has-data-[composer-banner-surface=attached]/composer-surface:**:data-[chat-composer-mobile-collapsed=true]:min-h-[calc(1rem+1px)]",
         // The status box (fork) hangs at the card's full width, so the card squares off where they meet.
-        "group-has-data-[slot=composer-status-box]/composer-surface:rounded-b-none",
+        "group-has-[[data-slot=composer-status-box][data-open]]/composer-surface:rounded-b-none group-has-[[data-slot=composer-status-box][data-animating]]/composer-surface:transition-[border-radius] group-has-[[data-slot=composer-status-box][data-animating]]/composer-surface:duration-200 group-has-[[data-slot=composer-status-box][data-animating]]/composer-surface:ease-drawer",
         className,
       )}
       {...props}
@@ -78,7 +78,7 @@ function ContextStrip({ className, ...props }: ComponentProps<"div">) {
       className={cn(
         "group/composer-context surface-glass relative flex w-full items-center gap-2 overflow-x-clip px-2 pt-2 text-muted-foreground",
         // In the status box (fork) the box paints the glass.
-        "group-has-data-[slot=composer-status-box]/composer-surface:bg-transparent group-has-data-[slot=composer-status-box]/composer-surface:backdrop-filter-none",
+        "group-has-[[data-slot=composer-status-box][data-open]]/composer-surface:bg-transparent group-has-[[data-slot=composer-status-box][data-open]]/composer-surface:backdrop-filter-none group-has-[[data-slot=composer-status-box][data-animating]]/composer-surface:transition-[background-color,backdrop-filter] group-has-[[data-slot=composer-status-box][data-animating]]/composer-surface:duration-200 group-has-[[data-slot=composer-status-box][data-animating]]/composer-surface:ease-drawer",
         className,
       )}
       {...props}
