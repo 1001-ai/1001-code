@@ -6585,6 +6585,68 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       ),
   );
 
+  // Fork: team preferences; see fork/README.md.
+  it.effect(
+    "reopens with resume when team preferences change between turns, but not over background work",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const harness = yield* makeWakeHarnessWithOptions({
+            freshQueueOnReopen: true,
+            close: (queue) => Queue.shutdown(queue),
+          });
+          const now = yield* DateTime.now;
+          const turn = (ordinal: number, teamPreferences: string) => ({
+            ...makeClaudeTestTurnInput({
+              threadId: harness.threadId,
+              providerThread: harness.providerThread,
+              now,
+              attemptId: RunAttemptId.make(`attempt-team-preferences:${ordinal}`),
+              text: `Request ${ordinal}`,
+              attachments: [],
+              providerTurnOrdinal: ordinal,
+            }),
+            teamPreferences,
+          });
+          const append = () =>
+            (harness.getOpenedOptions()?.systemPrompt as { readonly append?: string } | undefined)
+              ?.append ?? "";
+          const settle = Effect.gen(function* () {
+            yield* harness.offerAndWait(turnOneResult);
+            yield* Queue.take(harness.terminalReceipts);
+          });
+          yield* harness.runtime.startTurn(turn(1, "Prefer tabs."));
+          yield* settle;
+          assert.include(append(), "Prefer tabs.");
+          yield* harness.runtime.startTurn(turn(2, "Prefer tabs."));
+          yield* settle;
+          assert.equal(harness.processQueues.length, 1);
+
+          yield* harness.runtime.startTurn(turn(3, "Prefer spaces."));
+          assert.equal(harness.processQueues.length, 2);
+          assert.equal(harness.getOpenedOptions()?.resume, WAKE_NATIVE_SESSION);
+          assert.include(append(), "Prefer spaces.");
+          yield* harness.offerAndWait(wakeTaskStarted);
+          yield* settle;
+          assert.isTrue(yield* harness.hasPendingBackgroundWork);
+
+          yield* harness.runtime.startTurn(turn(4, "Prefer neither."));
+          yield* settle;
+          assert.equal(harness.processQueues.length, 2);
+          assert.notInclude(append(), "Prefer neither.");
+        }).pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              IdAllocator.layer,
+              McpProviderSessions.layer,
+              NodeServices.layer,
+              NodeCrypto.layer,
+            ),
+          ),
+        ),
+      ),
+  );
+
   // regression: #34549 a model change sent with a steer was shown but never applied to the turn.
   it.effect("applies a model change sent with a steer to the running turn", () =>
     Effect.scoped(

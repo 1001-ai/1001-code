@@ -68,8 +68,23 @@ export class TeamCatalog extends Context.Service<
     readonly propose: (
       input: TeamCatalogProposeInput,
     ) => Effect.Effect<TeamCatalogProposal, TeamCatalogError>;
+    /** A file of the last fetch, by its path in the catalog; null when it has none. */
+    readonly readFile: (file: string) => Effect.Effect<string | null>;
+    /** Proposes whole files, as `propose` does, under the GitHub CLI's login. */
+    readonly proposeFiles: (
+      input: TeamCatalogFilesProposal,
+    ) => Effect.Effect<TeamCatalogProposal, TeamCatalogError>;
   }
 >()("t3/teamCatalog/TeamCatalog") {}
+
+export interface TeamCatalogFilesProposal {
+  readonly baseRevision: string;
+  readonly files: ReadonlyArray<{ readonly file: string; readonly text: string }>;
+  readonly title: string;
+  readonly body: string;
+  /** Names the change; the commit is appended so retries never collide. */
+  readonly branchStem: string;
+}
 
 const FETCH_TIMEOUT = "90 seconds";
 const FRESH_FOR_MS = 30_000;
@@ -448,28 +463,14 @@ const make = Effect.gen(function* () {
       .pipe(Effect.andThen(refresh()), Effect.forkIn(backgroundScope));
   }
 
-  const propose = Effect.fn("TeamCatalog.propose")(function* (input: TeamCatalogProposeInput) {
-    const current = yield* SubscriptionRef.get(state);
-    if (current.source === null) {
-      return yield* new TeamCatalogError({ detail: "No team catalog is set." });
-    }
-    const source = current.source;
-    if (current.revision !== input.baseRevision) {
-      return yield* new TeamCatalogError({
-        detail: "The team catalog changed since you opened it. Review the project and save again.",
-      });
-    }
-    // Ownership is checked against the live login, never the one cached for display.
-    const viewer = yield* access.viewer;
-    yield* Ref.set(viewerRef, viewer);
-    const catalog = yield* Ref.get(catalogRef);
-    const projects = catalog.projects.map((entry) => entry.project);
-    const refusal = checkTeamCatalogProposal(projects, input.changes, viewer.login);
-    if (refusal !== null) return yield* new TeamCatalogError({ detail: refusal });
+  const failed = (detail: string) =>
+    new TeamCatalogError({ detail: detail.slice(0, MAX_ERROR_LENGTH) });
 
-    const fileOf = new Map(catalog.projects.map((entry) => [entry.project.key, entry.file]));
-    const failed = (detail: string) =>
-      new TeamCatalogError({ detail: detail.slice(0, MAX_ERROR_LENGTH) });
+  /** Commits the files on a temporary index, pushes a new branch and opens its pull request. */
+  const commitProposal = Effect.fn("TeamCatalog.commitProposal")(function* (
+    source: string,
+    input: TeamCatalogFilesProposal,
+  ) {
     const author = yield* access.author;
     const authorEnv = {
       GIT_AUTHOR_NAME: author.name,
@@ -479,31 +480,27 @@ const make = Effect.gen(function* () {
     };
     const index = path.join(root, `proposal-${input.baseRevision.slice(0, 12)}.index`);
     const indexEnv = { GIT_INDEX_FILE: index };
-    const commit = yield* Effect.gen(function* () {
+    const sha = yield* Effect.gen(function* () {
       yield* git(["-C", checkoutPath, "read-tree", input.baseRevision], { env: indexEnv });
-      const files: Array<string> = [];
-      const changed: Array<(typeof input.changes)[number]> = [];
-      for (const change of input.changes) {
-        const file = fileOf.get(change.key)!;
-        const original = yield* git(["-C", checkoutPath, "show", `${input.baseRevision}:${file}`]);
-        // A project sent only to show ownership of a matching declaration keeps its file as is.
-        const text = proposalFileText(original, change);
-        if (text === null) continue;
+      for (const edit of input.files) {
         const blob = yield* git(["-C", checkoutPath, "hash-object", "-w", "--stdin"], {
-          stdin: text,
+          stdin: edit.text,
         });
-        yield* git(["-C", checkoutPath, "update-index", "--cacheinfo", `100644,${blob},${file}`], {
-          env: indexEnv,
-        });
-        files.push(file);
-        changed.push(change);
+        yield* git(
+          [
+            "-C",
+            checkoutPath,
+            "update-index",
+            "--add",
+            "--cacheinfo",
+            `100644,${blob},${edit.file}`,
+          ],
+          { env: indexEnv },
+        );
       }
-      if (changed.length === 0) return null;
       const tree = yield* git(["-C", checkoutPath, "write-tree"], { env: indexEnv });
-      const text = proposalText(projects, changed);
-      const message = `${text.title}\n\n${text.body}\n`;
       // No terminal can unlock a signing key, and the catalog's pull request carries the review.
-      const sha = yield* git(
+      return yield* git(
         [
           "-C",
           checkoutPath,
@@ -515,20 +512,14 @@ const make = Effect.gen(function* () {
           "-F",
           "-",
         ],
-        { stdin: message, env: authorEnv },
+        { stdin: `${input.title}\n\n${input.body}\n`, env: authorEnv },
       );
-      return { sha, text, files };
     }).pipe(
       Effect.ensuring(fileSystem.remove(index).pipe(Effect.ignore)),
       Effect.mapError((cause) => failed(`The change could not be committed: ${cause.detail}`)),
     );
 
-    if (commit === null) {
-      return yield* new TeamCatalogError({
-        detail: "Nothing to propose: the links already match.",
-      });
-    }
-    const branch = `${commit.text.branchStem}-${commit.sha.slice(0, 7)}`;
+    const branch = `${input.branchStem}-${sha.slice(0, 7)}`;
     yield* git([
       "-C",
       checkoutPath,
@@ -536,32 +527,101 @@ const make = Effect.gen(function* () {
       "--quiet",
       "--",
       source,
-      `${commit.sha}:refs/heads/${branch}`,
+      `${sha}:refs/heads/${branch}`,
     ]).pipe(Effect.mapError((cause) => failed(`The branch could not be pushed: ${cause.detail}`)));
     const repository = hostedRepositoryOf(source);
     const pullRequest =
       repository === null
         ? { url: null, problem: null }
         : yield* access
-            .openPullRequest({
-              repository,
-              branch,
-              title: commit.text.title,
-              body: commit.text.body,
-            })
+            .openPullRequest({ repository, branch, title: input.title, body: input.body })
             .pipe(
               Effect.map((url) => ({ url, problem: null })),
               Effect.catch((error) => Effect.succeed({ url: null, problem: error.detail })),
             );
     return {
       branch,
-      commit: commit.sha,
+      commit: sha,
       remote: source,
-      files: commit.files,
+      files: input.files.map((edit) => edit.file),
       pullRequestUrl: pullRequest.url,
       pullRequestProblem: pullRequest.problem,
     } satisfies TeamCatalogProposal;
+  });
+
+  const currentSource = Effect.fn("TeamCatalog.currentSource")(function* (baseRevision: string) {
+    const current = yield* SubscriptionRef.get(state);
+    if (current.source === null) {
+      return yield* new TeamCatalogError({ detail: "No team catalog is set." });
+    }
+    if (current.revision !== baseRevision) {
+      return yield* new TeamCatalogError({
+        detail: "The team catalog changed since you opened it. Review it and save again.",
+      });
+    }
+    return current.source;
+  });
+
+  const propose = Effect.fn("TeamCatalog.propose")(function* (input: TeamCatalogProposeInput) {
+    const source = yield* currentSource(input.baseRevision);
+    // Ownership is checked against the live login, never the one cached for display.
+    const viewer = yield* access.viewer;
+    yield* Ref.set(viewerRef, viewer);
+    const catalog = yield* Ref.get(catalogRef);
+    const projects = catalog.projects.map((entry) => entry.project);
+    const refusal = checkTeamCatalogProposal(projects, input.changes, viewer.login);
+    if (refusal !== null) return yield* new TeamCatalogError({ detail: refusal });
+
+    const fileOf = new Map(catalog.projects.map((entry) => [entry.project.key, entry.file]));
+    const edits: Array<{ readonly file: string; readonly text: string }> = [];
+    const changed: Array<(typeof input.changes)[number]> = [];
+    for (const change of input.changes) {
+      const file = fileOf.get(change.key)!;
+      const original = yield* git([
+        "-C",
+        checkoutPath,
+        "show",
+        `${input.baseRevision}:${file}`,
+      ]).pipe(
+        Effect.mapError((cause) => failed(`The change could not be committed: ${cause.detail}`)),
+      );
+      // A project sent only to show ownership of a matching declaration keeps its file as is.
+      const text = proposalFileText(original, change);
+      if (text === null) continue;
+      edits.push({ file, text });
+      changed.push(change);
+    }
+    if (changed.length === 0) {
+      return yield* new TeamCatalogError({
+        detail: "Nothing to propose: the links already match.",
+      });
+    }
+    const text = proposalText(projects, changed);
+    return yield* commitProposal(source, {
+      baseRevision: input.baseRevision,
+      files: edits,
+      title: text.title,
+      body: text.body,
+      branchStem: text.branchStem,
+    });
   }, lock.withPermits(1));
+
+  const proposeFiles = Effect.fn("TeamCatalog.proposeFiles")(function* (
+    input: TeamCatalogFilesProposal,
+  ) {
+    const source = yield* currentSource(input.baseRevision);
+    return yield* commitProposal(source, input);
+  }, lock.withPermits(1));
+
+  const readFile: TeamCatalog["Service"]["readFile"] = (file) =>
+    SubscriptionRef.get(state).pipe(
+      Effect.flatMap((current) =>
+        current.source === null
+          ? Effect.succeed(null)
+          : fileSystem.readFileString(path.join(checkoutPath, file)),
+      ),
+      Effect.orElseSucceed(() => null),
+    );
 
   return TeamCatalog.of({
     snapshot: SubscriptionRef.get(state),
@@ -569,6 +629,8 @@ const make = Effect.gen(function* () {
     refresh,
     setSource,
     propose,
+    readFile,
+    proposeFiles,
   });
 });
 
