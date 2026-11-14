@@ -16,6 +16,7 @@ import {
   setReplyMarkersEnabled,
   shouldAttachThreadReply,
   splitReLines,
+  textAfterReLines,
   threadTriggerFocusSelectors,
   canRestoreFocusTo,
   threadExchangeKeys,
@@ -302,17 +303,29 @@ describe("splitReLines", () => {
       expected: { lines: ["Re: the script"], body: "    run it\n" },
     },
     {
-      name: "a reply that is only a Re: line stays text",
-      text: "**Re: yes, done.**",
-      expected: null,
+      name: "a Re: line still streaming is already a Re: line",
+      text: '**Re: "half a quo',
+      expected: { lines: ['Re: "half a quo'], body: "" },
     },
-    { name: "nothing after the Re: line", text: "Re: done\n\n  \n", expected: null },
+    {
+      name: "nothing after the Re: line yet",
+      text: "Re: done\n\n  \n",
+      expected: { lines: ["Re: done"], body: "" },
+    },
     { name: "an empty Re:", text: "Re:\nBody", expected: null },
     { name: "Re: later in the reply", text: "Done.\n\nRe: the rest", expected: null },
     { name: "a word that starts with Re", text: "Reading it now\nBody", expected: null },
     { name: "lowercase re:", text: "re: it\nBody", expected: null },
   ])("$name", ({ text, expected }) => {
     expect(splitReLines(text)).toEqual(expected);
+  });
+
+  it.each([
+    { text: '**Re: "fix it"**\nDone. Fixed.', opening: "Done. Fixed." },
+    { text: "Done. Fixed.", opening: "Done. Fixed." },
+    { text: "**Re: only this**", opening: "**Re: only this**" },
+  ])("a reply's opening skips Re: lines: $text", ({ text, opening }) => {
+    expect(textAfterReLines(text)).toBe(opening);
   });
 });
 

@@ -31,7 +31,7 @@ import { useV2ItemSupport } from "../../state/v2ItemSupport";
 import { TimelineRowCtx, TimelineRowActivityCtx, type TimelineRow } from "./timelineRowContext";
 import { MESSAGE_HEADING_LEVEL, MessageAuthorHeading } from "./TimelineRowParts";
 import { ExchangeReLines, ExchangeReplyMarker, useExchangeBubble } from "./ExchangeThread";
-import { splitReLines } from "./exchangeThread.logic";
+import { splitReLines, textAfterReLines } from "./exchangeThread.logic";
 
 export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
@@ -240,7 +240,7 @@ function AssistantReplyButton({ message, itemId }: { message: ChatMessage; itemI
         element.dataset.assistantCitationThread === threadRef.threadId &&
         element.dataset.assistantCitationEnvironment === threadRef.environmentId,
     );
-    const opening = captureAssistantMessageOpening(source ?? null, message.text);
+    const opening = captureAssistantMessageOpening(source ?? null, textAfterReLines(message.text));
     if (!opening) return;
     onReplyToResponse(
       responseContextRecord({

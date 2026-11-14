@@ -27,6 +27,7 @@ import {
   replyMarkersEnabled,
   sameExchangeStructure,
   shouldAttachThreadReply,
+  textAfterReLines,
   threadExchangeKeys,
   threadLatestReplyRowId,
   threadRowIds,
@@ -142,7 +143,7 @@ function replyRecord(
   const source = [
     ...document.querySelectorAll<HTMLElement>("[data-assistant-citation-source]"),
   ].find((element) => element.dataset.assistantCitationSource === message.id);
-  const opening = captureAssistantMessageOpening(source ?? null, message.text);
+  const opening = captureAssistantMessageOpening(source ?? null, textAfterReLines(message.text));
   if (!opening) return null;
   return responseContextRecord({
     citation: { version: 1, ...threadRef, messageId: message.id, ...opening },
@@ -254,7 +255,10 @@ export function useExchangeThread(input: {
   const composerOwned = input.awaitingUser === "input";
   const attachLatestReply = useStableCallback(() => attachReply(latestReplyReady, composerOwned));
 
+  // A pending bubble open, which any later pointer press, key press or open cancels.
+  const pendingBubbleRef = useRef<(() => void) | null>(null);
   const open = useStableCallback((trigger: ThreadTrigger) => {
+    pendingBubbleRef.current?.();
     const { rowId } = trigger;
     const key = map.keyByRowId.get(rowId);
     if (key === undefined) return;
@@ -299,16 +303,26 @@ export function useExchangeThread(input: {
     });
   });
 
-  const bubbleClickRef = useRef<number | null>(null);
+  const cancelBubbleOpen = useStableCallback(() => pendingBubbleRef.current?.());
   const openFromBubble = useStableCallback((event: MouseEvent<HTMLElement>, rowId: string) => {
-    if (bubbleClickRef.current !== null) window.clearTimeout(bubbleClickRef.current);
-    bubbleClickRef.current = null;
+    cancelBubbleOpen();
     if (event.detail > 1 || !isPlainBubbleClick(event)) return;
-    bubbleClickRef.current = window.setTimeout(() => {
-      bubbleClickRef.current = null;
+    const timer = window.setTimeout(() => {
+      cancel();
       if (!hasTextSelection()) open({ rowId, control: "bubble" });
     }, BUBBLE_CLICK_DELAY_MS);
+    const cancel = () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("pointerdown", cancel, true);
+      window.removeEventListener("keydown", cancel, true);
+      if (pendingBubbleRef.current === cancel) pendingBubbleRef.current = null;
+    };
+    window.addEventListener("pointerdown", cancel, true);
+    window.addEventListener("keydown", cancel, true);
+    pendingBubbleRef.current = cancel;
   });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- a bubble open still waiting when the timeline unmounts must not fire
+  useEffect(() => cancelBubbleOpen, [cancelBubbleOpen]);
 
   const restoreComposerReply = useStableCallback(() => {
     const reply = replyRef.current;

@@ -305,6 +305,7 @@ const RE_LINE = /^(?:\*\*|__|\*|_)?Re:\s*\S/;
 /**
  * Splits off the `Re:` lines an agent opens a reply with to say what it answers, often in bold.
  * The web client shows them as a link to the thread; the message text itself stays unchanged.
+ * A line counts as soon as it starts with `Re:`, so a streaming reply never restyles it.
  */
 export function splitReLines(
   text: string,
@@ -317,12 +318,17 @@ export function splitReLines(
     .slice(count)
     .join("\n")
     .replace(/^(?:[ \t]*\r?\n)+/, "");
-  if (body.trim() === "") return null;
   const lines = rows.slice(0, count).map((row) => {
     const line = row.replace(/\*\*|__/g, "").trim();
     return /^([*_]).*\1$/.test(line) ? line.slice(1, -1).trim() : line;
   });
   return { lines, body };
+}
+
+/** The text a reply's quoted opening starts from: the body after any `Re:` lines. */
+export function textAfterReLines(text: string): string {
+  const body = splitReLines(text)?.body ?? text;
+  return body.trim() === "" ? text : body;
 }
 
 // Stored in the free-form `threadDetailsItems` record, so no settings schema change.
