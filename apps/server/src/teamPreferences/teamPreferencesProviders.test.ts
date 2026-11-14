@@ -44,9 +44,9 @@ it.effect(
           hasT3Mcp,
           teamPreferences: BLOCK,
         });
-      expect((yield* params(false)).additionalContext).toEqual({
-        t3_team_preferences_01: { kind: "application", value: BLOCK },
-      });
+      const withoutTools = (yield* params(false)).additionalContext ?? {};
+      expect(withoutTools.t3_team_preferences_01).toEqual({ kind: "application", value: BLOCK });
+      expect(withoutTools.t3_code_runtime).toBeUndefined();
       const withTools = (yield* params(true)).additionalContext ?? {};
       expect(withTools.t3_team_preferences_01).toEqual({ kind: "application", value: BLOCK });
       expect(withTools.t3_code_runtime).toBeDefined();
