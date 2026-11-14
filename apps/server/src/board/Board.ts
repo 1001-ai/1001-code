@@ -15,11 +15,14 @@ import * as Context from "effect/Context";
 import * as Digest from "effect/crypto/Digest";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
+import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
@@ -59,7 +62,8 @@ import {
 /**
  * A team project's Linear board, read as the person who signed in to Linear on this environment.
  * The OAuth tokens live in the server secret store and never reach clients. Reads happen when a
- * client opens or refreshes a board; nothing polls Linear while no board is open.
+ * client opens or refreshes a board and every 30 seconds while one is open; nothing polls Linear
+ * while no board is open.
  */
 export class Board extends Context.Service<
   Board,
@@ -82,7 +86,7 @@ export class Board extends Context.Service<
       projectId: ProjectId,
       options?: { readonly refresh?: boolean },
     ) => Effect.Effect<BoardSnapshot>;
-    /** The board now, then again whenever it is refreshed or the connection changes. */
+    /** The board now, then again when it is refreshed, changes in Linear, or the sign-in changes. */
     readonly changes: (projectId: ProjectId) => Stream.Stream<BoardSnapshot>;
     readonly refresh: (projectId: ProjectId) => Effect.Effect<BoardSnapshot>;
   }
@@ -100,6 +104,10 @@ export const CLIENT_ID_ENV = "T3CODE_LINEAR_CLIENT_ID";
 const DEV_LINEAR_API_URL_ENV = "T3CODE_DEV_LINEAR_API_URL";
 
 const FRESH_FOR_MS = 30_000;
+/** How often an open board is read again; at least `FRESH_FOR_MS`, so each poll reaches Linear. */
+const POLL_INTERVAL = Duration.millis(FRESH_FOR_MS);
+/** How long polling waits after a rate limit that names no retry time. */
+const RATE_LIMIT_BACKOFF = Duration.minutes(5);
 const REQUEST_TIMEOUT = "20 seconds";
 /** Linear's access tokens last a day; refresh this long before one runs out. */
 const REFRESH_EARLY_MS = 5 * 60_000;
@@ -146,7 +154,28 @@ interface PendingSignIn {
 type Tokens = Pick<StoredCredential, "accessToken" | "refreshToken" | "expiresAt">;
 type TokenFailure = ReturnType<typeof tokenFailure>;
 
+/** The snapshot without its read time, so a poll that finds no change publishes nothing. */
+const pollFingerprint = (snapshot: BoardSnapshot) =>
+  JSON.stringify(
+    snapshot.status === "ready"
+      ? { ...snapshot, board: { ...snapshot.board, fetchedAt: "" } }
+      : snapshot,
+  );
+
+/** The wait before the next poll: after a rate limit, Linear's retry time or a long backoff. */
+const pollDelay = (snapshot: BoardSnapshot, spaced: Duration.Duration) => {
+  const failure = "failure" in snapshot ? snapshot.failure : null;
+  if (failure?.reason !== "rate-limited") return spaced;
+  return Duration.max(
+    spaced,
+    failure.retryAfterSeconds === undefined
+      ? RATE_LIMIT_BACKOFF
+      : Duration.seconds(failure.retryAfterSeconds),
+  );
+};
+
 const make = Effect.gen(function* () {
+  const layerScope = yield* Effect.scope;
   const secrets = yield* ServerSecretStore.ServerSecretStore;
   const httpClient = yield* HttpClient.HttpClient;
   const config = yield* ServerConfig.ServerConfig;
@@ -480,10 +509,74 @@ const make = Effect.gen(function* () {
     return published ? snapshot : yield* read(projectId);
   });
 
+  /**
+   * Reads an open board again every 30 seconds and publishes it when it changed. The first step
+   * only records the board the subscriber was just served, normally from the cache. Unlike
+   * `refresh`, a poll does not fetch the team catalog.
+   */
+  const poll = (projectId: ProjectId) => {
+    let previous: string | null = null;
+    const step = Effect.fn("Board.poll")(function* () {
+      const generation = credentialGeneration;
+      const snapshot = yield* read(projectId);
+      const fingerprint = pollFingerprint(snapshot);
+      if (previous !== null && fingerprint !== previous) {
+        yield* credentialLock.withPermits(1)(
+          Effect.suspend(() =>
+            generation === credentialGeneration
+              ? PubSub.publish(boardSignals, { projectId, snapshot })
+              : Effect.void,
+          ),
+        );
+      }
+      previous = fingerprint;
+      return snapshot;
+    });
+    return step().pipe(
+      Effect.repeat(
+        Schedule.spaced(POLL_INTERVAL).pipe(
+          Schedule.modifyDelay(({ input, duration }: Schedule.Metadata<number, BoardSnapshot>) =>
+            Effect.succeed(pollDelay(input, duration)),
+          ),
+        ),
+      ),
+    );
+  };
+
+  // One poll per project however many clients have its board open; the last to leave stops it.
+  const polls = new Map<ProjectId, { subscribers: number; fiber: Fiber.Fiber<number> }>();
+  const pollsLock = yield* Semaphore.make(1);
+
+  const openPoll = (projectId: ProjectId) =>
+    pollsLock.withPermits(1)(
+      Effect.gen(function* () {
+        const open = polls.get(projectId);
+        if (open !== undefined) {
+          open.subscribers += 1;
+          return;
+        }
+        const fiber = yield* poll(projectId).pipe(Effect.forkIn(layerScope));
+        polls.set(projectId, { subscribers: 1, fiber });
+      }),
+    );
+
+  const closePoll = (projectId: ProjectId) =>
+    pollsLock
+      .withPermits(1)(
+        Effect.sync(() => {
+          const open = polls.get(projectId);
+          if (open === undefined || --open.subscribers > 0) return null;
+          polls.delete(projectId);
+          return open.fiber;
+        }),
+      )
+      .pipe(Effect.flatMap((fiber) => (fiber === null ? Effect.void : Fiber.interrupt(fiber))));
+
   const changes: Board["Service"]["changes"] = (projectId) =>
     Stream.unwrap(
       Effect.gen(function* () {
         const subscription = yield* PubSub.subscribe(boardSignals);
+        yield* Effect.acquireRelease(openPoll(projectId), () => closePoll(projectId));
         return Stream.concat(
           Stream.fromEffect(read(projectId)),
           Stream.fromSubscription(subscription).pipe(

@@ -12,6 +12,7 @@ import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
+import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -105,6 +106,19 @@ interface Answer {
 
 const json = (request: HttpClientRequest.HttpClientRequest, body: unknown, status = 200) =>
   HttpClientResponse.fromWeb(request, Response.json(body, { status }));
+
+/**
+ * A response whose body is already read, so a woken poll runs to its next sleep without waiting on
+ * a promise and `TestClock.adjust` returns only once it has.
+ */
+const readyResponse = (
+  request: HttpClientRequest.HttpClientRequest,
+  body: unknown,
+  init: ResponseInit,
+): HttpClientResponse.HttpClientResponse =>
+  Object.create(HttpClientResponse.fromWeb(request, new Response(null, init)), {
+    json: { value: Effect.succeed(body) },
+  });
 
 const formBody = (request: HttpClientRequest.HttpClientRequest) =>
   Object.fromEntries(
@@ -203,13 +217,10 @@ const fakeLinear = (
       }
       const answered = answer(operation, body.variables, account);
       const result = Effect.isEffect(answered) ? yield* answered : answered;
-      return HttpClientResponse.fromWeb(
-        request,
-        Response.json(result.body, {
-          status: result.status ?? 200,
-          ...(result.headers === undefined ? {} : { headers: result.headers }),
-        }),
-      );
+      return readyResponse(request, result.body, {
+        status: result.status ?? 200,
+        ...(result.headers === undefined ? {} : { headers: result.headers }),
+      });
     }),
   );
   return {
@@ -319,6 +330,21 @@ const buildSecrets = () =>
       Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "t3-board-test-" })),
     ),
   );
+
+/** A secret store in memory, so a poll never waits on the file system. */
+const memorySecrets = () => {
+  const stored = new Map<string, Uint8Array>();
+  return Layer.build(
+    Layer.mergeAll(
+      Layer.mock(ServerSecretStore.ServerSecretStore)({
+        get: (name) => Effect.sync(() => Option.fromNullishOr(stored.get(name))),
+        set: (name, value) => Effect.sync(() => void stored.set(name, value)),
+        remove: (name) => Effect.sync(() => void stored.delete(name)),
+      }),
+      ServerConfig.layerTest(process.cwd(), { prefix: "t3-board-test-" }),
+    ),
+  );
+};
 
 /** Signs in through Linear's consent screen as `account`, as a person in a browser would. */
 const signIn = (board: Board.Board["Service"], linear: FakeLinear, account = GOOD) =>
@@ -916,5 +942,106 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Board", (it) => 
           operation === "BoardViewer" ? viewerAnswer : { status: 401, body: { errors: [] } },
       );
     }),
+  );
+
+  it.effect("an open board reads Linear every 30 seconds, once for all its viewers", () =>
+    Effect.gen(function* () {
+      let issues = [linearIssue("1", "s-todo")];
+      const linear = fakeLinear((operation, variables) =>
+        boardAnswers([issues])(operation, variables),
+      );
+      const board = yield* makeBoard({
+        client: linear.client,
+        catalog: catalog([catalogEntry({ team: "ENG" })]),
+        // A poll does not fetch the catalog; a forced fetch would find no Linear team.
+        fetchedCatalog: catalog([catalogEntry(undefined)]),
+        secrets: yield* memorySecrets(),
+      });
+      yield* signIn(board, linear);
+      const teamReads = () => linear.calls.filter((call) => call.operation === "BoardTeam").length;
+      const open = Effect.gen(function* () {
+        const scope = yield* Scope.make();
+        const updates = yield* Queue.unbounded<BoardSnapshot>();
+        yield* board.changes(PROJECT_ID).pipe(
+          Stream.runForEach((snapshot) => Queue.offer(updates, snapshot)),
+          Effect.forkIn(scope),
+        );
+        ready(yield* Queue.take(updates));
+        return { scope, updates };
+      });
+      const identifiers = (snapshot: BoardSnapshot) =>
+        ready(snapshot)?.board.columns.flatMap((column) =>
+          column.issues.map((issue) => issue.identifier),
+        );
+
+      const first = yield* open;
+      const second = yield* open;
+      expect(teamReads()).toBe(1);
+
+      yield* TestClock.adjust("30 seconds");
+      expect(teamReads()).toBe(2);
+      expect(yield* Queue.size(first.updates)).toBe(0);
+      expect(yield* Queue.size(second.updates)).toBe(0);
+
+      issues = [linearIssue("1", "s-todo"), linearIssue("2", "s-todo")];
+      yield* TestClock.adjust("30 seconds");
+      expect(teamReads()).toBe(3);
+      expect(identifiers(yield* Queue.take(first.updates))).toEqual(["ENG-1", "ENG-2"]);
+      expect(identifiers(yield* Queue.take(second.updates))).toEqual(["ENG-1", "ENG-2"]);
+
+      yield* Scope.close(first.scope, Exit.void);
+      yield* TestClock.adjust("30 seconds");
+      expect(teamReads()).toBe(4);
+      yield* Scope.close(second.scope, Exit.void);
+      yield* TestClock.adjust("5 minutes");
+      expect(teamReads()).toBe(4);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("polling keeps the board through a rate limit and waits as long as Linear asks", () =>
+    Effect.gen(function* () {
+      let limited = false;
+      const linear = fakeLinear((operation, variables) =>
+        limited && operation !== "BoardViewer"
+          ? { status: 429, body: { errors: [] }, headers: { "retry-after": "120" } }
+          : boardAnswers([[linearIssue("1", "s-todo")]])(operation, variables),
+      );
+      const board = yield* makeBoard({
+        client: linear.client,
+        catalog: catalog([catalogEntry({ team: "ENG" })]),
+        secrets: yield* memorySecrets(),
+      });
+      yield* signIn(board, linear);
+      const teamReads = () => linear.calls.filter((call) => call.operation === "BoardTeam").length;
+      const updates = yield* Queue.unbounded<BoardSnapshot>();
+      yield* board.changes(PROJECT_ID).pipe(
+        Stream.runForEach((snapshot) => Queue.offer(updates, snapshot)),
+        Effect.forkScoped,
+      );
+      const shown = ready(yield* Queue.take(updates))?.board;
+
+      limited = true;
+      yield* TestClock.adjust("30 seconds");
+      expect(yield* Queue.take(updates)).toEqual({
+        status: "ready",
+        board: shown,
+        failure: {
+          reason: "rate-limited",
+          detail: "Linear's rate limit was reached. Try again later.",
+          retryAfterSeconds: 120,
+        },
+      });
+      expect(teamReads()).toBe(2);
+
+      yield* TestClock.adjust("90 seconds");
+      expect(teamReads()).toBe(2);
+      yield* TestClock.adjust("30 seconds");
+      expect(teamReads()).toBe(3);
+      expect(yield* Queue.size(updates)).toBe(0);
+
+      limited = false;
+      yield* TestClock.adjust("120 seconds");
+      expect(yield* Queue.take(updates)).toMatchObject({ status: "ready", failure: null });
+    }).pipe(Effect.scoped),
   );
 });
