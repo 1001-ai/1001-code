@@ -40,6 +40,7 @@ import {
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPreferences";
 import { isSidebarUtilityPage, useNavigateToMainApp } from "./mainAppLocation";
+import { useTeamProjectsDrawerToggle } from "../teamProjects/teamProjectsDrawerState";
 import { SidebarThreadUndoNotice } from "./SidebarThreadUndoNotice";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
@@ -227,6 +228,7 @@ function SidebarUtilityItem({
 const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   const navigate = useNavigate();
   const navigateToMainApp = useNavigateToMainApp();
+  const teamProjectsDrawer = useTeamProjectsDrawerToggle();
   const { isMobile, setOpenMobile } = useSidebar();
   const isOnUtilityPage = useLocation({
     select: (location) => isSidebarUtilityPage(location.pathname),
@@ -294,7 +296,7 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
             label="Team projects"
             onClick={() => {
               closeMobileSidebar();
-              void navigate({ to: "/team-projects" });
+              teamProjectsDrawer.toggle();
             }}
           />
         </>

@@ -363,6 +363,7 @@ import { useAtomQueryRunner } from "../state/use-atom-query-runner";
 import { observeResize } from "~/lib/observeResize";
 import { ThreadVisitWatermark } from "./chat/ThreadVisitWatermark";
 import { ChatTerminalDrawers } from "./chat/ChatTerminalDrawers";
+import { TeamProjectsDrawer } from "./teamProjects/TeamProjectsDrawer";
 import { ChatRightPanel } from "./chat/ChatRightPanel";
 import { useDraftEnvironmentRouting } from "./chat/useDraftEnvironmentRouting";
 import { branchMismatchBannerItem, extensionStatusBannerItem } from "./chat/ThreadActivityBanners";
@@ -3960,6 +3961,9 @@ export default function ChatView(props: ChatViewProps) {
             keybindings={keybindings}
             onAddTerminalContext={addTerminalContextToDraftStable}
           />
+        )}
+        {embedded ? null : (
+          <TeamProjectsDrawer threadRef={activeThreadRef} composerHeight={composerReservedHeight} />
         )}
       </div>
 

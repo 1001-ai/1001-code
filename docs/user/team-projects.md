@@ -65,10 +65,15 @@ still loads.
 
 ## See all team projects
 
-Open **Team projects** from the sidebar footer or the command palette. Projects are drawn inside
-their parent's box. Dashed lines are read links and solid lines are write links; a write link
-only one side has declared is faded. A read link to a repository your git credentials cannot
-reach shows as **No access**.
+Select **Team projects** in the sidebar footer, or **Show team projects** in the command palette,
+to open the graph at the bottom of the thread, where the terminal opens. It stays open as you move
+between threads. The graph and a thread's terminal share that place: opening the terminal hides
+the graph until the terminal closes, and showing the graph closes the terminal. Away from a
+thread, such as on Pull requests, the graph opens in the last thread you were in.
+
+Projects are drawn inside their parent's box. Dashed lines are read links and solid lines are
+write links; a write link only one side has declared is faded. A read link to a repository your
+git credentials cannot reach shows as **No access**.
 
 Select a project to highlight what it links to and what links to it, open it, or add it here if
 it is not added yet.
@@ -76,8 +81,9 @@ it is not added yet.
 ## Change links and grouping
 
 A project's owners change its parent and links, either in the project's settings under **Team
-project** or from **Team projects**. Owners are matched against the GitHub login the GitHub CLI is
-signed in with on that environment (`gh auth login`); everyone else sees the links read-only.
+project** or by selecting it in the graph. Owners are matched against the GitHub login the GitHub
+CLI is signed in with on that environment (`gh auth login`); everyone else sees the links
+read-only.
 
 Saving never changes the catalog directly. **Propose change** pushes a new branch to the catalog
 repository with your own git credentials and, on GitHub, opens a pull request. Its commit is
