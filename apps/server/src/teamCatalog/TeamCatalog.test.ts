@@ -510,7 +510,7 @@ it.live("reads the fetched catalog's files and proposes whole files as a branch"
           files,
           title: "Update preferences",
           body: "Body.",
-          branchStem: "team-preferences/team",
+          branchStem: "preferences/team",
         }),
       );
       expect(stale.detail).toContain("changed since you opened it");
@@ -519,14 +519,14 @@ it.live("reads the fetched catalog's files and proposes whole files as a branch"
         files,
         title: "Update preferences",
         body: "Body.",
-        branchStem: "team-preferences/team",
+        branchStem: "preferences/team",
       });
       expect(proposal).toMatchObject({
         remote,
         files: ["preferences/team.md", "preferences/people/alice.md"],
         pullRequestUrl: null,
       });
-      expect(proposal.branch).toBe(`team-preferences/team-${proposal.commit.slice(0, 7)}`);
+      expect(proposal.branch).toBe(`preferences/team-${proposal.commit.slice(0, 7)}`);
       const show = (spec: string) =>
         runner
           .run({ command: "git", args: ["-C", remote, "show", spec] })

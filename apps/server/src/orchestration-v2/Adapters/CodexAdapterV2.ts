@@ -108,7 +108,7 @@ import { getCodexServiceTierOptionValue } from "../../codexModelOptions.ts";
 import { ServerConfig } from "../../config.ts";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import { buildCodexAdditionalContext } from "../../provider/CodexDeveloperInstructions.ts";
-import { codexTeamPreferencesContext } from "../../teamPreferences/teamPreferencesProviders.ts";
+import { codexPreferencesContext } from "../../preferences/preferencesProviders.ts";
 import {
   describeMcpElicitation,
   toMcpElicitationResponse,
@@ -785,7 +785,7 @@ export const buildCodexTurnStartParams = Effect.fn("CodexAdapterV2.buildCodexTur
     readonly appContext?: ProviderAdapter.ProviderAdapterV2TurnInput["appContext"];
     /** The user's `model_reasoning_summary` from the Codex config, when set. */
     readonly configuredReasoningSummary?: CodexSchema.V2TurnStartParams__ReasoningSummary;
-    readonly teamPreferences?: string | undefined;
+    readonly preferences?: string | undefined;
   }) {
     const runtimeModeDefaults = codexRuntimeModeTurnDefaults(input.runtimePolicy.runtimeMode);
     const approvalPolicy =
@@ -822,7 +822,7 @@ export const buildCodexTurnStartParams = Effect.fn("CodexAdapterV2.buildCodexTur
             },
           )
         : undefined;
-    const teamContext = codexTeamPreferencesContext(input.teamPreferences);
+    const teamContext = codexPreferencesContext(input.preferences);
     const additionalContext =
       t3Context === undefined && Object.keys({ ...appContext, ...teamContext }).length === 0
         ? undefined
@@ -7262,7 +7262,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               omitServiceTier: adapterOptions.resolveRuntime !== undefined,
               ...(turnInput.appContext === undefined ? {} : { appContext: turnInput.appContext }),
               ...(configuredReasoningSummary === undefined ? {} : { configuredReasoningSummary }),
-              teamPreferences: turnInput.teamPreferences,
+              preferences: turnInput.preferences,
             });
             yield* Ref.update(pendingRootTurns, (current) => {
               const updated = new Map(current);
