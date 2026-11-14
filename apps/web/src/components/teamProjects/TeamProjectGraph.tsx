@@ -14,6 +14,7 @@ import {
   ReactFlow,
   ReactFlowProvider,
   useReactFlow,
+  useStore,
 } from "@xyflow/react";
 import ElkConstructor, { type ELK, type ElkNode } from "elkjs/lib/elk-api.js";
 import elkWorkerUrl from "elkjs/lib/elk-worker.min.js?url";
@@ -238,7 +239,9 @@ export function TeamProjectGraph(props: TeamProjectGraphProps) {
 
 function GraphCanvas(props: TeamProjectGraphProps) {
   const { projects, links, captions, selectedKey, onSelect } = props;
-  const { fitView } = useReactFlow();
+  const { fitView, getInternalNode, getViewport, setCenter } = useReactFlow();
+  const canvasWidth = useStore((state) => state.width);
+  const canvasHeight = useStore((state) => state.height);
   const [flow, setFlow] = useState<TeamProjectFlow | null>(null);
   const [failed, setFailed] = useState(false);
   const fittedKeys = useRef<string | null>(null);
@@ -271,6 +274,25 @@ function GraphCanvas(props: TeamProjectGraphProps) {
     fittedKeys.current = flow.keys;
     void fitView(FIT_VIEW);
   }, [flow, fitView]);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- the side panel narrows the canvas after a selection; pan only if that hides the selected card.
+  useEffect(() => {
+    if (selectedKey === null || canvasWidth === 0) return;
+    const node = getInternalNode(selectedKey);
+    if (node === undefined) return;
+    const { x, y, zoom } = getViewport();
+    const width = (node.measured.width ?? 0) * zoom;
+    const height = (node.measured.height ?? 0) * zoom;
+    const left = node.internals.positionAbsolute.x * zoom + x;
+    const top = node.internals.positionAbsolute.y * zoom + y;
+    if (left >= 0 && top >= 0 && left + width <= canvasWidth && top + height <= canvasHeight)
+      return;
+    void setCenter(
+      node.internals.positionAbsolute.x + (node.measured.width ?? 0) / 2,
+      node.internals.positionAbsolute.y + (node.measured.height ?? 0) / 2,
+      { zoom, duration: 200 },
+    );
+  }, [selectedKey, canvasWidth, canvasHeight, getInternalNode, getViewport, setCenter]);
 
   const keys = new Set(projects.map((project) => project.key));
   const related = new Set<string>();
