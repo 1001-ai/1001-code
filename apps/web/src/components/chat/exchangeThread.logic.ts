@@ -224,6 +224,25 @@ export function shouldAttachThreadReply(input: {
   );
 }
 
+export type ThreadTriggerControl = "reply-link" | "reply-marker" | "view-thread";
+
+/** What opened the thread view, by identity, since the list can remount the control itself. */
+export interface ThreadTrigger {
+  readonly rowId: string;
+  readonly control: ThreadTriggerControl;
+}
+
+const attributeValue = (value: string) => `"${value.replace(/["\\]/g, "\\$&")}"`;
+
+/** Where focus goes back on close, in order: the control that opened the view, then its row. */
+export function threadTriggerFocusSelectors(trigger: ThreadTrigger): string[] {
+  const rowId = attributeValue(trigger.rowId);
+  return [
+    `[data-exchange-thread-control=${attributeValue(trigger.control)}][data-exchange-control-row=${rowId}]`,
+    `[data-timeline-row-id=${rowId}]`,
+  ];
+}
+
 /** Everything the exchange map reads from a row, so streamed text keeps the previous map. */
 export function sameExchangeStructure(
   previous: ReadonlyArray<ExchangeRow>,

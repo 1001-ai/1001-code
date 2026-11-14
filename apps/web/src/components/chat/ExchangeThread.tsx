@@ -31,7 +31,9 @@ import {
   threadLatestReplyRowId,
   threadRowIds,
   threadSummaryLabel,
+  threadTriggerFocusSelectors,
   type ExchangeMap,
+  type ThreadTrigger,
 } from "./exchangeThread.logic";
 import type { MessagesTimelineRow } from "./MessagesTimeline.logic";
 import { TimelineRowCtx } from "./timelineRowContext";
@@ -43,7 +45,7 @@ export interface ExchangeThreadContextValue {
   readonly map: ExchangeMap;
   readonly quotes: ReadonlyMap<string, string>;
   readonly markersEnabled: boolean;
-  readonly open: (rowId: string, trigger: HTMLElement | null) => void;
+  readonly open: (trigger: ThreadTrigger) => void;
 }
 
 /** Rows drawn inside the thread view already read in order, so they carry no markers. */
@@ -104,7 +106,7 @@ function replyRecord(
 interface OpenThread {
   readonly identity: string;
   readonly rowId: string;
-  readonly trigger: HTMLElement | null;
+  readonly trigger: ThreadTrigger;
   readonly sources: ReadonlyMap<string, DOMRect>;
   /** Where the list was, since attaching the composer reply moves it to its end. */
   readonly listScrollTop: number | null;
@@ -119,7 +121,7 @@ export interface ExchangeThreadState {
     readonly label: string;
     readonly sources: ReadonlyMap<string, DOMRect>;
     readonly listScrollTop: number | null;
-    readonly trigger: HTMLElement | null;
+    readonly trigger: ThreadTrigger;
     readonly closing: boolean;
     readonly close: () => void;
     readonly finishClose: () => void;
@@ -204,7 +206,8 @@ export function useExchangeThread(input: {
   const composerOwned = input.awaitingUser === "input";
   const attachLatestReply = useStableCallback(() => attachReply(latestReplyReady, composerOwned));
 
-  const open = useStableCallback((rowId: string, trigger: HTMLElement | null) => {
+  const open = useStableCallback((trigger: ThreadTrigger) => {
+    const { rowId } = trigger;
     const key = map.keyByRowId.get(rowId);
     if (key === undefined) return;
     const sources = new Map<string, DOMRect>();
@@ -322,9 +325,10 @@ export function ExchangeReplyMarker({ row }: { row: MessagesTimelineRow }) {
   return (
     <button
       type="button"
-      data-exchange-reply-marker=""
+      data-exchange-thread-control="reply-marker"
+      data-exchange-control-row={row.id}
       aria-label={`View thread, replying to: ${quote}`}
-      onClick={(event) => ctx.open(row.id, event.currentTarget)}
+      onClick={() => ctx.open({ rowId: row.id, control: "reply-marker" })}
       className="flex w-full min-w-0 cursor-pointer items-stretch gap-1.5 ps-2.5 pe-1 pt-0.5 text-start text-xs text-muted-foreground/70 transition-colors hover:text-muted-foreground focus-visible:outline-2 focus-visible:outline-ring"
     >
       <span
@@ -345,8 +349,9 @@ export function ExchangeReplyLink({ row }: { row: MessagesTimelineRow }) {
   return (
     <button
       type="button"
-      data-exchange-reply-link=""
-      onClick={(event) => ctx.open(row.id, event.currentTarget)}
+      data-exchange-thread-control="reply-link"
+      data-exchange-control-row={row.id}
+      onClick={() => ctx.open({ rowId: row.id, control: "reply-link" })}
       className="me-1 cursor-pointer rounded-sm text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
     >
       1 reply
@@ -367,7 +372,9 @@ export function ExchangeViewThreadButton({ rowId }: { rowId: string }) {
             size="xs"
             variant="ghost-muted"
             aria-label="View thread"
-            onClick={(event: MouseEvent<HTMLButtonElement>) => ctx.open(rowId, event.currentTarget)}
+            data-exchange-thread-control="view-thread"
+            data-exchange-control-row={rowId}
+            onClick={() => ctx.open({ rowId, control: "view-thread" })}
           />
         }
       >
@@ -376,6 +383,30 @@ export function ExchangeViewThreadButton({ rowId }: { rowId: string }) {
       <TooltipPopup side="top">View thread</TooltipPopup>
     </Tooltip>
   );
+}
+
+/** The control that opened the view, else its row, else the composer; any may have remounted. */
+function focusThreadTrigger(viewport: HTMLElement, overlay: HTMLElement, trigger: ThreadTrigger) {
+  const [controlSelector, rowSelector] = threadTriggerFocusSelectors(trigger);
+  const outside = (selector: string | undefined) =>
+    selector === undefined
+      ? undefined
+      : [...viewport.querySelectorAll<HTMLElement>(selector)].find(
+          (element) => !overlay.contains(element),
+        );
+  const control = outside(controlSelector);
+  if (control) return control.focus({ preventScroll: true });
+  const row = outside(rowSelector);
+  if (row) {
+    if (!row.hasAttribute("tabindex")) {
+      row.tabIndex = -1;
+      row.addEventListener("blur", () => row.removeAttribute("tabindex"), { once: true });
+    }
+    return row.focus({ preventScroll: true });
+  }
+  document
+    .querySelector<HTMLElement>('[data-testid="composer-editor"]')
+    ?.focus({ preventScroll: true });
 }
 
 function prefersReducedMotion() {
@@ -554,11 +585,10 @@ export function ExchangeThreadView({
     }
     void Promise.allSettled(fadeIns.map((animation) => animation.finished)).then(() => {
       if (isCancelled()) return;
-      const trigger = view.trigger;
       const focusInView =
         document.activeElement === document.body || overlay.contains(document.activeElement);
+      if (focusInView && viewport) focusThreadTrigger(viewport, overlay, view.trigger);
       finishClose();
-      if (focusInView && trigger?.isConnected) trigger.focus({ preventScroll: true });
     });
   });
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- moves each row back to where the list shows it and fades the list in, then unmounts

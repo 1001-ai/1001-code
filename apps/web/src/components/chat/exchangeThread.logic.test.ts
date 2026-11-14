@@ -15,6 +15,7 @@ import {
   sameExchangeStructure,
   setReplyMarkersEnabled,
   shouldAttachThreadReply,
+  threadTriggerFocusSelectors,
   threadExchangeKeys,
   threadLatestReplyRowId,
   threadRowIds,
@@ -206,6 +207,17 @@ describe("shouldAttachThreadReply", () => {
     },
   ])("$name", ({ input, attach }) => {
     expect(shouldAttachThreadReply(input)).toBe(attach);
+  });
+});
+
+describe("threadTriggerFocusSelectors", () => {
+  it("finds the control that opened the view by its row, then the row, quoting odd ids", () => {
+    expect(threadTriggerFocusSelectors({ rowId: 'message:a"b\\c', control: "reply-link" })).toEqual(
+      [
+        '[data-exchange-thread-control="reply-link"][data-exchange-control-row="message:a\\"b\\\\c"]',
+        '[data-timeline-row-id="message:a\\"b\\\\c"]',
+      ],
+    );
   });
 });
 
