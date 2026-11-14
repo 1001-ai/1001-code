@@ -25,7 +25,7 @@ Write each question as a short blockquote in your reply. It reads as plain markd
 
 - **First line:** `> **<id> · <prompt>**`, all in bold. The id is `Q` and a number. The separator is a space, a middle dot `·`, and a space. The prompt is one line of plain text, at most 500 characters, with no markdown.
 - **Pick one:** 2 to 8 lines `> - <option>`, each one line of plain text, at most 120 characters, all different.
-- **Pick any:** the same list, with ` (pick any)` after the bold first line. An option must not contain `, `.
+- **Pick any:** the same list, with ` (pick any)` at the end of the prompt, inside the bold. An option must not contain `, `.
 - **Yes or no:** exactly two options, `Yes` then `No`.
 - **Free text:** no list. One line `> _Reply with <id>: <what to write>._`
 - **Recommended:** end at most one option with ` _(recommended)_`.
@@ -48,7 +48,7 @@ A quote that breaks a rule renders as an ordinary quote, and the user gets no ca
 ```markdown
 Three things need your call before I wire up the export.
 
-> **Q3 · Which formats should the export offer?** (pick any)
+> **Q3 · Which formats should the export offer? (pick any)**
 >
 > - CSV _(recommended)_
 > - JSON
