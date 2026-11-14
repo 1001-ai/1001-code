@@ -564,7 +564,7 @@ export function ExchangeThreadView({
       // Layers stacked above the glass, such as the timeline minimap, would stay sharp on top of it.
       const above = Number.parseInt(getComputedStyle(child).zIndex, 10) > VIEW_Z_INDEX;
       const hidden = above
-        ? child.animate([{ opacity: 1 }, { opacity: 0 }], { ...timing, fill: "forwards" })
+        ? child.animate([{}, { opacity: 0 }], { ...timing, fill: "forwards" })
         : null;
       return [{ element: child, hidden }];
     });
@@ -662,7 +662,8 @@ export function ExchangeThreadView({
       element.removeAttribute("inert");
       if (!hidden) continue;
       hidden.cancel();
-      element.animate([{ opacity: 0 }, { opacity: 1 }], { duration, easing: MOTION_EASING });
+      // An empty keyframe is the layer's own CSS opacity, so a hover-only minimap returns hidden.
+      element.animate([{ opacity: 0 }, {}], { duration, easing: MOTION_EASING });
     }
     layersRef.current = [];
     const clearing = glassRef.current?.animate([{ opacity: 1 }, { opacity: 0 }], timing);
