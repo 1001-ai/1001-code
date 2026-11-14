@@ -32,11 +32,13 @@ function isVisibleText(value: string, max: number): boolean {
 const QUOTE_LINE = /^ {0,3}> ?(.*)$/;
 const QUOTE_HEADER = /^\*\*(Q[1-9][0-9]{0,5}) · (.+)\*\*( \(pick any\))?$/;
 const QUOTE_OPTION = /^- (.*)$/;
-// An item whose text starts a nested block (list, quote, heading, task box) is not a plain option.
-const NESTED_BLOCK_START = /^(?:[-*+>#]|\d+[.)](?:\s|$)|\[[ xX]\])/;
+// Text that CommonMark would read as a nested block (list, quote, heading, task box, code fence,
+// thematic break) is not a plain option; `-1`, `+5%`, `*args` and `#hash` stay plain text.
+const NESTED_BLOCK_START =
+  /^(?:[-*+](?:[ \t]|$)|>|#{1,6}(?:[ \t]|$)|\d{1,9}[.)](?:[ \t]|$)|\[[ xX]\](?:[ \t]|$)|`{3}|~{3}|(?:(?:-[ \t]*){3,}|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,})$)/;
 // Either emphasis marker, since markdown formatters rewrite `*x*` as `_x_`.
 const RECOMMENDED_SUFFIX = / (?:\*\(recommended\)\*|_\(recommended\)_)$/;
-const REPLY_HINT = /^(?:_Reply with [^_]+_|\*Reply with [^*]+\*)$/;
+const REPLY_HINT = /^(?:_Reply with .+_|\*Reply with .+\*)$/;
 
 /**
  * A blockquote's markdown source as a question, or null when it is an ordinary quote:

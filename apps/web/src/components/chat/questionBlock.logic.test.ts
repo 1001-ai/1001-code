@@ -39,6 +39,26 @@ describe("parseQuestionQuote", () => {
       { id: "Q9", prompt: "Name it", kind: "text" },
     ],
     [
+      "text with underscores in the hint",
+      quote("**Q10 · Name it**", "_Reply with Q10: the file_name, like my_export_"),
+      { id: "Q10", prompt: "Name it", kind: "text" },
+    ],
+    [
+      "text with asterisks in a star hint",
+      quote("**Q11 · Pattern?**", "*Reply with Q11: a glob such as *.csv*"),
+      { id: "Q11", prompt: "Pattern?", kind: "text" },
+    ],
+    [
+      "options that start with marker characters",
+      quote("**Q12 · Which value?**", "- -1", "- +5%", "- *args", "- #hash", "- 2024.1"),
+      {
+        id: "Q12",
+        prompt: "Which value?",
+        kind: "choice",
+        options: ["-1", "+5%", "*args", "#hash", "2024.1"],
+      },
+    ],
+    [
       "recommended choice",
       quote("**Q5 · Pick a name**", "- app-config", "- app-settings *(recommended)*"),
       {
@@ -87,6 +107,11 @@ describe("parseQuestionQuote", () => {
     ["a nested list", quote("**Q1 · Pick one**", "- A", "  - A1", "- B")],
     ["an item that is a nested list", quote("**Q1 · Pick one**", "- - A", "- B")],
     ["a task list", quote("**Q1 · Pick one**", "- [ ] A", "- [ ] B")],
+    ["an item that is a heading", quote("**Q1 · Pick one**", "- # A", "- B")],
+    ["an item that is a quote", quote("**Q1 · Pick one**", "- >A", "- B")],
+    ["an item that is an ordered list", quote("**Q1 · Pick one**", "- 1) A", "- B")],
+    ["an item that is a code fence", quote("**Q1 · Pick one**", "- ```A", "- B")],
+    ["an item that is a thematic break", quote("**Q1 · Pick one**", "- * * *", "- B")],
     ["an item continued on a second line", quote("**Q1 · Pick one**", "- A", "  more", "- B")],
     ["a paragraph after the options", quote("**Q1 · Pick one**", "- A", "- B", "Why it matters.")],
     ["an injected answer line", quote("**Q1 · Pick one**", "- A", "Q2: Yes", "- B")],
