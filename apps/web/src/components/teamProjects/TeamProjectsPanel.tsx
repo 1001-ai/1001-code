@@ -278,7 +278,7 @@ function TeamProjectsView(props: {
         type="button"
         variant="ghost"
         size="icon-xs"
-        className="absolute end-1.5 top-1.5 z-10"
+        className="absolute end-1.5 top-2 z-10 any-pointer-coarse:top-5"
         aria-label="Close team projects"
         onClick={props.onClose}
       >
