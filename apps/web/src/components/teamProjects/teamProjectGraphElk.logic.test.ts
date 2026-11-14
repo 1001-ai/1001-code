@@ -93,6 +93,9 @@ describe("teamProjectGraph", () => {
     expect(rects.get("suite")).toMatchObject({ x: suite.x, y: suite.y, width: suite.width });
     expect(rects.get("api")!.y).toBeGreaterThan(rects.get("suite")!.y);
     expect(rects.get("worker")!.y).toBeGreaterThan(rects.get("api")!.y);
+    for (const node of flow.nodes) {
+      expect(node.style?.pointerEvents, node.id).toBe(node.type === "project" ? "all" : "none");
+    }
   });
 
   it("draws a project with an unknown parent or a parent loop at the top level, once", () => {

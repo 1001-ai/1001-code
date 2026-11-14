@@ -39,10 +39,28 @@ const FIT_VIEW = { padding: 0.12, maxZoom: 1 };
 const NO_NODES: Array<TeamProjectFlowNode> = [];
 const NO_EDGES: Array<RoutedEdge> = [];
 
-let elk: ELK | null = null;
+interface ElkWorker {
+  readonly elk: ELK;
+  /** Rejects when the worker fails to load or crashes; elkjs itself never hears of it. */
+  readonly broken: Promise<never>;
+}
+
+let elkWorker: ElkWorker | null = null;
+function startElkWorker(): ElkWorker {
+  const worker = new Worker(elkWorkerUrl);
+  const broken = new Promise<never>((_, reject) => {
+    worker.addEventListener("error", (event) => {
+      elkWorker = null;
+      worker.terminate();
+      reject(new Error(event.message || "The layout worker failed."));
+    });
+  });
+  return { elk: new ElkConstructor({ workerFactory: () => worker }), broken };
+}
+
 function layOut(graph: ElkNode): Promise<ElkNode> {
-  elk ??= new ElkConstructor({ workerUrl: elkWorkerUrl });
-  return elk.layout(graph);
+  elkWorker ??= startElkWorker();
+  return Promise.race([elkWorker.elk.layout(graph), elkWorker.broken]);
 }
 
 interface GraphView {
@@ -162,7 +180,8 @@ function ZoomControls() {
   const { zoomIn, zoomOut, fitView } = useReactFlow();
   return (
     <Panel position="top-left" style={{ margin: 6 }}>
-      <div className="flex flex-col gap-0.5 rounded-lg border bg-background p-0.5 shadow-xs">
+      {/* Clears the drawer's taller resize handle on touch screens, as the close button does. */}
+      <div className="flex flex-col gap-0.5 rounded-lg border bg-background p-0.5 shadow-xs any-pointer-coarse:mt-3.5">
         <Button
           type="button"
           variant="ghost"
@@ -236,7 +255,9 @@ function GraphCanvas(props: TeamProjectGraphProps) {
         setFailed(false);
       },
       () => {
-        if (current) setFailed(true);
+        if (!current) return;
+        setFlow(null);
+        setFailed(true);
       },
     );
     return () => {
@@ -317,12 +338,13 @@ function GraphCanvas(props: TeamProjectGraphProps) {
             color="color-mix(in srgb, var(--color-foreground) 14%, transparent)"
           />
           <ZoomControls />
-          {failed ? (
-            <Panel position="top-center" className="text-sm text-muted-foreground">
-              The graph could not be laid out.
-            </Panel>
-          ) : null}
         </ReactFlow>
+        {failed ? (
+          // Centred, so the panel's catalog alerts along the top never cover it.
+          <p className="pointer-events-none absolute inset-0 grid place-items-center text-sm text-muted-foreground">
+            The graph could not be laid out.
+          </p>
+        ) : null}
       </GraphViewContext>
     </div>
   );

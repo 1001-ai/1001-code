@@ -173,6 +173,10 @@ export interface TeamProjectFlow {
   readonly keys: string;
 }
 
+// React Flow sets `pointer-events: none` on nodes that are neither selectable nor draggable and
+// have no node handlers; cards handle their own clicks, so they take pointer events back.
+const CARD_STYLE = { pointerEvents: "all" } as const;
+
 /**
  * React Flow nodes and edges from ELK's result. A box's header is the project's own card, a
  * child of the box at its top. Parents come before their children, as React Flow requires.
@@ -194,6 +198,7 @@ export function teamProjectFlow(laidOut: ElkNode): TeamProjectFlow {
         width,
         height: node.height ?? CARD_HEIGHT,
         zIndex: CARD_Z,
+        style: CARD_STYLE,
         data: { key: node.id, header: false },
         ...parent,
       });
@@ -220,6 +225,7 @@ export function teamProjectFlow(laidOut: ElkNode): TeamProjectFlow {
         width,
         height: CARD_HEIGHT,
         zIndex: CARD_Z,
+        style: CARD_STYLE,
         parentId: boxId,
         data: { key: node.id, header: true },
       },
