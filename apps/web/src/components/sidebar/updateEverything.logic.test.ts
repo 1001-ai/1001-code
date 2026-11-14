@@ -1,5 +1,17 @@
 import { EnvironmentId, type ServerSelfUpdateCapability } from "@t3tools/contracts";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
+
+// Fork: these tests cover updates this build turns off (fork/README.md), so they allow them.
+vi.mock(import("@t3tools/contracts"), async (original) => {
+  const actual = await original();
+  return {
+    ...actual,
+    managedUpdatesDenial: (summary) =>
+      summary?.limits?.updates?.mode === "off"
+        ? actual.managedUpdatesMessage(summary.organization)
+        : undefined,
+  };
+});
 
 import {
   collectChannelSwitchTargets,
