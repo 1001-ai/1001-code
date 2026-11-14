@@ -1,45 +1,129 @@
+import "@xyflow/react/dist/base.css";
+
 import { type TeamCatalogProject, type TeamProjectLink } from "@t3tools/contracts";
-import { type KeyboardEvent, useState } from "react";
-
-import { observeResize } from "~/lib/observeResize";
-import { cn } from "~/lib/utils";
 import {
-  edgePath,
-  type GraphNode,
-  layoutTeamProjectGraph,
-  NODE_HEIGHT,
-  NODE_WIDTH,
-} from "./teamProjectGraphLayout";
+  Background,
+  BackgroundVariant,
+  type EdgeProps,
+  type EdgeTypes,
+  Handle,
+  type NodeProps,
+  type NodeTypes,
+  Panel,
+  Position,
+  ReactFlow,
+  ReactFlowProvider,
+  useReactFlow,
+  useStore,
+} from "@xyflow/react";
+import ElkConstructor, { type ELK, type ElkNode } from "elkjs/lib/elk-api.js";
+import elkWorkerUrl from "elkjs/lib/elk-worker.min.js?url";
+import { ScanIcon, ZoomInIcon, ZoomOutIcon } from "lucide-react";
+import { createContext, type KeyboardEvent, use, useEffect, useRef, useState } from "react";
 
-const MAX_LABEL = 20;
+import { cn } from "~/lib/utils";
+import { Button } from "../ui/button";
+import {
+  type DrawnLink,
+  drawnTeamProjectLinks,
+  type ProjectCardNode,
+  type RoutedEdge,
+  roundedPath,
+  type TeamProjectFlow,
+  type TeamProjectFlowNode,
+  teamProjectElkGraph,
+  teamProjectFlow,
+} from "./teamProjectGraphElk";
 
-function clip(text: string): string {
-  return text.length > MAX_LABEL ? `${text.slice(0, MAX_LABEL - 1)}…` : text;
+const ARROW_ID = "team-project-arrow";
+const FIT_VIEW = { padding: 0.12, maxZoom: 1 };
+const NO_NODES: Array<TeamProjectFlowNode> = [];
+const NO_EDGES: Array<RoutedEdge> = [];
+
+interface ElkWorker {
+  readonly elk: ELK;
+  /** Rejects when the worker fails to load or crashes; elkjs itself never hears of it. */
+  readonly broken: Promise<never>;
 }
 
-interface DrawnEdge {
-  readonly id: string;
-  readonly from: GraphNode;
-  readonly to: GraphNode;
-  readonly link: TeamProjectLink;
-  /** Both projects declare this write link, so one edge stands for both. */
-  readonly mutual: boolean;
+let elkWorker: ElkWorker | null = null;
+function startElkWorker(): ElkWorker {
+  const worker = new Worker(elkWorkerUrl);
+  const broken = new Promise<never>((_, reject) => {
+    worker.addEventListener("error", (event) => {
+      elkWorker = null;
+      worker.terminate();
+      reject(new Error(event.message || "The layout worker failed."));
+    });
+  });
+  return { elk: new ElkConstructor({ workerFactory: () => worker }), broken };
 }
 
-function drawnEdges(
-  links: ReadonlyArray<TeamProjectLink>,
-  nodes: ReadonlyMap<string, GraphNode>,
-): ReadonlyArray<DrawnEdge> {
-  const edges: Array<DrawnEdge> = [];
-  for (const link of links) {
-    const from = nodes.get(link.from);
-    const to = nodes.get(link.to);
-    if (from === undefined || to === undefined) continue;
-    const mutual = link.access === "write" && link.status === "active";
-    if (mutual && link.from > link.to) continue;
-    edges.push({ id: `${link.from}>${link.to}:${link.access}`, from, to, link, mutual });
-  }
-  return edges;
+function layOut(graph: ElkNode): Promise<ElkNode> {
+  elkWorker ??= startElkWorker();
+  return Promise.race([elkWorker.elk.layout(graph), elkWorker.broken]);
+}
+
+interface GraphView {
+  readonly names: ReadonlyMap<string, string>;
+  readonly captions: ReadonlyMap<string, string>;
+  readonly links: ReadonlyMap<string, DrawnLink>;
+  readonly selectedKey: string | null;
+  /** The selected project and every project it links with either way. */
+  readonly related: ReadonlySet<string>;
+  readonly toggle: (key: string) => void;
+}
+
+const GraphViewContext = createContext<GraphView | null>(null);
+
+function useGraphView(): GraphView {
+  const view = use(GraphViewContext);
+  if (view === null) throw new Error("Team project graph nodes render inside TeamProjectGraph.");
+  return view;
+}
+
+function ProjectCard({ data }: NodeProps<ProjectCardNode>) {
+  const view = useGraphView();
+  const name = view.names.get(data.key) ?? data.key;
+  const selected = view.selectedKey === data.key;
+  const dimmed = view.selectedKey !== null && !view.related.has(data.key);
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    view.toggle(data.key);
+  };
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      aria-pressed={selected}
+      aria-label={name}
+      className={cn(
+        "flex size-full cursor-pointer flex-col justify-center gap-0.5 border bg-card px-3 outline-none hover:border-ring focus-visible:border-ring",
+        data.header ? "rounded-t-xl" : "rounded-lg",
+        selected ? "border-primary ring-1 ring-primary" : "border-border",
+        dimmed && "opacity-40",
+      )}
+      onClick={() => view.toggle(data.key)}
+      onKeyDown={onKeyDown}
+    >
+      <Handle type="target" position={Position.Top} isConnectable={false} className="invisible" />
+      <span className="truncate text-sm font-medium text-foreground">{name}</span>
+      <span className="truncate text-2xs text-muted-foreground">
+        {view.captions.get(data.key) ?? data.key}
+      </span>
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        isConnectable={false}
+        className="invisible"
+      />
+    </div>
+  );
+}
+
+function ProjectBox() {
+  return <div className="size-full rounded-xl border border-border bg-muted/40" />;
 }
 
 function edgeClass(link: TeamProjectLink): string {
@@ -49,30 +133,185 @@ function edgeClass(link: TeamProjectLink): string {
   return "stroke-foreground";
 }
 
-/**
- * Team projects as boxes grouped by parent, with read links dashed, write links solid and
- * pending write links faded. Static SVG: it repaints only when the catalog or selection changes.
- */
-export function TeamProjectGraph(props: {
+function edgeTitle(drawn: DrawnLink, names: ReadonlyMap<string, string>): string {
+  const { link, mutual } = drawn;
+  const verb = mutual ? "and" : link.access === "write" ? "writes" : "reads";
+  const note = mutual
+    ? " write to each other"
+    : link.status === "pending"
+      ? " (pending the other side)"
+      : link.status === "no-access"
+        ? " (no access)"
+        : "";
+  return `${names.get(link.from) ?? link.from} ${verb} ${names.get(link.to) ?? link.to}${note}`;
+}
+
+function LinkEdge({ id, data }: EdgeProps<RoutedEdge>) {
+  const view = useGraphView();
+  const drawn = view.links.get(id);
+  if (drawn === undefined || data === undefined) return null;
+  const { link } = drawn;
+  const highlighted =
+    view.selectedKey !== null && (link.from === view.selectedKey || link.to === view.selectedKey);
+  const faded = view.selectedKey !== null && !highlighted;
+  return (
+    <path
+      d={roundedPath(data.points)}
+      fill="none"
+      className={cn(
+        "[pointer-events:visibleStroke]",
+        highlighted ? "stroke-primary" : edgeClass(link),
+        link.status === "pending" && "opacity-35",
+        faded && "opacity-15",
+      )}
+      strokeWidth={link.access === "write" ? 2 : 1.25}
+      strokeDasharray={link.access === "read" ? "5 4" : undefined}
+      markerEnd={`url(#${ARROW_ID})`}
+      markerStart={drawn.mutual ? `url(#${ARROW_ID})` : undefined}
+    >
+      <title>{edgeTitle(drawn, view.names)}</title>
+    </path>
+  );
+}
+
+const NODE_TYPES: NodeTypes = { project: ProjectCard, projectBox: ProjectBox };
+const EDGE_TYPES: EdgeTypes = { routed: LinkEdge };
+
+function ZoomControls(props: { readonly follow: (on: boolean) => void }) {
+  const { zoomIn, zoomOut, fitView } = useReactFlow();
+  return (
+    <Panel position="top-left" style={{ margin: 6 }}>
+      {/* Clears the drawer's taller resize handle on touch screens, as the close button does. */}
+      <div className="flex flex-col gap-0.5 rounded-lg border bg-background p-0.5 shadow-xs any-pointer-coarse:mt-3.5">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          aria-label="Zoom in"
+          onClick={() => {
+            props.follow(false);
+            void zoomIn();
+          }}
+        >
+          <ZoomInIcon />
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          aria-label="Zoom out"
+          onClick={() => {
+            props.follow(false);
+            void zoomOut();
+          }}
+        >
+          <ZoomOutIcon />
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          aria-label="Fit to view"
+          onClick={() => {
+            props.follow(true);
+            void fitView(FIT_VIEW);
+          }}
+        >
+          <ScanIcon />
+        </Button>
+      </div>
+    </Panel>
+  );
+}
+
+interface TeamProjectGraphProps {
   readonly projects: ReadonlyArray<TeamCatalogProject>;
   readonly links: ReadonlyArray<TeamProjectLink>;
   /** One short line under each project's name, such as whether it is added here. */
   readonly captions: ReadonlyMap<string, string>;
   readonly selectedKey: string | null;
   readonly onSelect: (key: string | null) => void;
-}) {
-  const { projects, links, captions, selectedKey, onSelect } = props;
-  const [width, setWidth] = useState(960);
-  const measure = (element: HTMLDivElement | null) => {
-    if (element === null) return;
-    return observeResize(element, (entries) => {
-      const entry = entries.at(-1);
-      if (entry !== undefined) setWidth(Math.round(entry.contentRect.width));
-    });
-  };
+}
 
-  const layout = layoutTeamProjectGraph(projects, width);
-  const edges = drawnEdges(links, layout.nodes);
+/**
+ * Team projects as boxes grouped by parent, laid out by ELK in a worker, with read links dashed,
+ * write links solid and pending write links faded. It lays out again only when the projects or
+ * links change; selecting never moves anything.
+ */
+export function TeamProjectGraph(props: TeamProjectGraphProps) {
+  return (
+    <ReactFlowProvider>
+      <GraphCanvas {...props} />
+    </ReactFlowProvider>
+  );
+}
+
+function GraphCanvas(props: TeamProjectGraphProps) {
+  const { projects, links, captions, selectedKey, onSelect } = props;
+  const { fitView, getInternalNode, getViewport, setCenter } = useReactFlow();
+  const canvasWidth = useStore((state) => state.width);
+  const canvasHeight = useStore((state) => state.height);
+  const [flow, setFlow] = useState<TeamProjectFlow | null>(null);
+  const [failed, setFailed] = useState(false);
+  const fittedKeys = useRef<string | null>(null);
+  // The view refits as the canvas resizes (the drawer slides open) until the reader moves it.
+  const following = useRef(true);
+  const follow = (on: boolean) => {
+    following.current = on;
+  };
+  const signature = JSON.stringify(teamProjectElkGraph(projects, links));
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- ELK lays the graph out in a worker, so the result arrives asynchronously.
+  useEffect(() => {
+    let current = true;
+    const graph: ElkNode = JSON.parse(signature);
+    layOut(graph).then(
+      (laidOut) => {
+        if (!current) return;
+        setFlow(teamProjectFlow(laidOut));
+        setFailed(false);
+      },
+      () => {
+        if (!current) return;
+        setFlow(null);
+        setFailed(true);
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [signature]);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- fits React Flow's viewport to new projects and to the canvas size until the reader pans, zooms or selects.
+  useEffect(() => {
+    if (flow === null || canvasWidth === 0 || canvasHeight === 0) return;
+    if (fittedKeys.current !== flow.keys) {
+      fittedKeys.current = flow.keys;
+      following.current = true;
+    }
+    if (following.current) void fitView(FIT_VIEW);
+  }, [flow, canvasWidth, canvasHeight, fitView]);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- the side panel narrows the canvas after a selection; pan only if that hides the selected card.
+  useEffect(() => {
+    if (selectedKey === null || canvasWidth === 0) return;
+    const node = getInternalNode(selectedKey);
+    if (node === undefined) return;
+    const { x, y, zoom } = getViewport();
+    const width = (node.measured.width ?? 0) * zoom;
+    const height = (node.measured.height ?? 0) * zoom;
+    const left = node.internals.positionAbsolute.x * zoom + x;
+    const top = node.internals.positionAbsolute.y * zoom + y;
+    if (left >= 0 && top >= 0 && left + width <= canvasWidth && top + height <= canvasHeight)
+      return;
+    void setCenter(
+      node.internals.positionAbsolute.x + (node.measured.width ?? 0) / 2,
+      node.internals.positionAbsolute.y + (node.measured.height ?? 0) / 2,
+      { zoom, duration: 200 },
+    );
+  }, [selectedKey, canvasWidth, canvasHeight, getInternalNode, getViewport, setCenter]);
+
+  const keys = new Set(projects.map((project) => project.key));
   const related = new Set<string>();
   if (selectedKey !== null) {
     related.add(selectedKey);
@@ -81,128 +320,78 @@ export function TeamProjectGraph(props: {
       if (link.to === selectedKey) related.add(link.from);
     }
   }
-  const names = new Map(projects.map((project) => [project.key, project.name]));
-  const touchesSelection = (edge: DrawnEdge) =>
-    selectedKey !== null && (edge.link.from === selectedKey || edge.link.to === selectedKey);
-
-  const onNodeKey = (event: KeyboardEvent<SVGGElement>, key: string) => {
-    if (event.key !== "Enter" && event.key !== " ") return;
-    event.preventDefault();
-    onSelect(selectedKey === key ? null : key);
+  const view: GraphView = {
+    names: new Map(projects.map((project) => [project.key, project.name])),
+    captions,
+    links: new Map(drawnTeamProjectLinks(links, keys).map((drawn) => [drawn.id, drawn])),
+    selectedKey,
+    related,
+    toggle: (key) => {
+      follow(false);
+      onSelect(selectedKey === key ? null : key);
+    },
   };
 
   return (
-    <div ref={measure} className="min-w-0">
-      <svg
-        width={layout.width}
-        height={layout.height}
-        viewBox={`0 0 ${layout.width} ${layout.height}`}
-        className="block select-none"
-        role="group"
-        aria-label="Team projects and their links"
-        onClick={(event) => {
-          if (event.target === event.currentTarget) onSelect(null);
-        }}
-      >
-        <defs>
-          <marker
-            id="team-project-arrow"
-            viewBox="0 0 10 10"
-            refX="9"
-            refY="5"
-            markerWidth="7"
-            markerHeight="7"
-            orient="auto-start-reverse"
-          >
-            <path d="M0,1 L9,5 L0,9 z" fill="context-stroke" />
-          </marker>
-        </defs>
-
-        {layout.clusters.map((cluster) => (
-          <rect
-            key={cluster.key}
-            x={cluster.x}
-            y={cluster.y}
-            width={cluster.width}
-            height={cluster.height}
-            rx={14}
-            className="pointer-events-none fill-muted/40 stroke-border"
-            strokeWidth={1}
+    <div className="absolute inset-0">
+      <GraphViewContext value={view}>
+        <svg aria-hidden className="absolute size-0">
+          <defs>
+            <marker
+              id={ARROW_ID}
+              viewBox="0 0 10 10"
+              refX="9"
+              refY="5"
+              markerWidth="7"
+              markerHeight="7"
+              orient="auto-start-reverse"
+            >
+              <path d="M0,1 L9,5 L0,9 z" fill="context-stroke" />
+            </marker>
+          </defs>
+        </svg>
+        <ReactFlow<TeamProjectFlowNode, RoutedEdge>
+          aria-label="Team projects and their links"
+          nodes={flow?.nodes ?? NO_NODES}
+          edges={flow?.edges ?? NO_EDGES}
+          nodeTypes={NODE_TYPES}
+          edgeTypes={EDGE_TYPES}
+          zIndexMode="manual"
+          nodesDraggable={false}
+          nodesConnectable={false}
+          nodesFocusable={false}
+          edgesFocusable={false}
+          elementsSelectable={false}
+          disableKeyboardA11y
+          deleteKeyCode={null}
+          selectionKeyCode={null}
+          multiSelectionKeyCode={null}
+          panOnScroll
+          zoomOnDoubleClick={false}
+          minZoom={0.2}
+          maxZoom={2}
+          onPaneClick={() => onSelect(null)}
+          // onMoveStart also fires on a plain click; onMove only once the view really moves.
+          onMove={(event) => {
+            if (event !== null) follow(false);
+          }}
+          proOptions={{ hideAttribution: true }}
+        >
+          <Background
+            variant={BackgroundVariant.Dots}
+            gap={20}
+            size={2}
+            color="color-mix(in srgb, var(--color-foreground) 14%, transparent)"
           />
-        ))}
-
-        {edges.map((edge) => {
-          const highlighted = touchesSelection(edge);
-          const faded = selectedKey !== null && !highlighted;
-          return (
-            <path
-              key={edge.id}
-              d={edgePath(edge.from, edge.to)}
-              fill="none"
-              className={cn(
-                highlighted ? "stroke-primary" : edgeClass(edge.link),
-                edge.link.status === "pending" && "opacity-35",
-                faded && "opacity-15",
-              )}
-              strokeWidth={edge.link.access === "write" ? 2 : 1.25}
-              strokeDasharray={edge.link.access === "read" ? "5 4" : undefined}
-              markerEnd="url(#team-project-arrow)"
-              markerStart={edge.mutual ? "url(#team-project-arrow)" : undefined}
-            >
-              <title>
-                {`${names.get(edge.link.from) ?? edge.link.from} ${
-                  edge.mutual ? "and" : edge.link.access === "write" ? "writes" : "reads"
-                } ${names.get(edge.link.to) ?? edge.link.to}${
-                  edge.mutual
-                    ? " write to each other"
-                    : edge.link.status === "pending"
-                      ? " (pending the other side)"
-                      : edge.link.status === "no-access"
-                        ? " (no access)"
-                        : ""
-                }`}
-              </title>
-            </path>
-          );
-        })}
-
-        {projects.map((project) => {
-          const node = layout.nodes.get(project.key);
-          if (node === undefined) return null;
-          const selected = selectedKey === project.key;
-          const dimmed = selectedKey !== null && !related.has(project.key);
-          return (
-            <g
-              key={project.key}
-              transform={`translate(${node.x},${node.y})`}
-              role="button"
-              tabIndex={0}
-              aria-pressed={selected}
-              aria-label={project.name}
-              className={cn("group cursor-pointer outline-none", dimmed && "opacity-40")}
-              onClick={() => onSelect(selected ? null : project.key)}
-              onKeyDown={(event) => onNodeKey(event, project.key)}
-            >
-              <rect
-                width={NODE_WIDTH}
-                height={NODE_HEIGHT}
-                rx={9}
-                className={cn(
-                  "fill-card group-hover:stroke-ring group-focus-visible:stroke-ring",
-                  selected ? "stroke-primary" : "stroke-border",
-                )}
-                strokeWidth={selected ? 2 : 1}
-              />
-              <text x={12} y={20} className="fill-foreground text-sm font-medium">
-                {clip(project.name)}
-              </text>
-              <text x={12} y={37} className="fill-muted-foreground text-2xs">
-                {clip(captions.get(project.key) ?? project.key)}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
+          <ZoomControls follow={follow} />
+        </ReactFlow>
+        {failed ? (
+          // Centred, so the panel's catalog alerts along the top never cover it.
+          <p className="pointer-events-none absolute inset-0 grid place-items-center text-sm text-muted-foreground">
+            The graph could not be laid out.
+          </p>
+        ) : null}
+      </GraphViewContext>
     </div>
   );
 }
