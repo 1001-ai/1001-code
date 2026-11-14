@@ -371,7 +371,8 @@ function GraphCanvas(props: TeamProjectGraphProps) {
           minZoom={0.2}
           maxZoom={2}
           onPaneClick={() => onSelect(null)}
-          onMoveStart={(event) => {
+          // onMoveStart also fires on a plain click; onMove only once the view really moves.
+          onMove={(event) => {
             if (event !== null) follow(false);
           }}
           proOptions={{ hideAttribution: true }}
