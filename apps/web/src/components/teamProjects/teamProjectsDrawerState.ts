@@ -1,4 +1,5 @@
-import type { ScopedThreadRef } from "@t3tools/contracts";
+import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
+import { useEffect } from "react";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
@@ -21,11 +22,14 @@ interface TeamProjectsDrawerState {
    */
   readonly open: boolean | null;
   readonly height: number;
+  /** Whether each environment had a catalog source when last read, so the default decides at once. */
+  readonly catalogSetByEnvironment: Readonly<Record<string, boolean>>;
   /** Set by a "show" off a thread; the thread it lands in closes its terminal. Not persisted. */
   readonly closeTerminalOnArrival: boolean;
   readonly setOpen: (open: boolean) => void;
   readonly setCloseTerminalOnArrival: (close: boolean) => void;
   readonly setHeight: (height: number) => void;
+  readonly rememberCatalogSet: (environmentId: EnvironmentId, catalogSet: boolean) => void;
 }
 
 export const useTeamProjectsDrawerStore = create<TeamProjectsDrawerState>()(
@@ -33,29 +37,54 @@ export const useTeamProjectsDrawerStore = create<TeamProjectsDrawerState>()(
     (set) => ({
       open: null,
       height: DEFAULT_THREAD_TERMINAL_HEIGHT,
+      catalogSetByEnvironment: {},
       closeTerminalOnArrival: false,
       setOpen: (open) => set({ open }),
       setCloseTerminalOnArrival: (closeTerminalOnArrival) => set({ closeTerminalOnArrival }),
       setHeight: (height) => set({ height }),
+      rememberCatalogSet: (environmentId, catalogSet) =>
+        set((state) => ({
+          catalogSetByEnvironment: {
+            ...state.catalogSetByEnvironment,
+            [environmentId]: catalogSet,
+          },
+        })),
     }),
     {
       name: "t3code:team-projects-drawer:v2",
       storage: createJSONStorage(() =>
         resolveStorage(typeof window !== "undefined" ? window.localStorage : undefined),
       ),
-      partialize: (state) => ({ open: state.open, height: state.height }),
+      partialize: (state) => ({
+        open: state.open,
+        height: state.height,
+        catalogSetByEnvironment: state.catalogSetByEnvironment,
+      }),
     },
   ),
 );
 
 /**
  * Whether the graph is on. Until the user chooses, it is on where the environment has a catalog,
- * so the catalog is subscribed only then; an explicit choice needs no catalog read.
+ * so the catalog is subscribed only then; an explicit choice needs no catalog read. While the
+ * catalog loads, what the environment had last time decides, so the drawer does not pop open.
  */
 export function useTeamProjectsDrawerOpen(threadRef: ScopedThreadRef | null): boolean {
   const stored = useTeamProjectsDrawerStore((state) => state.open);
-  const snapshot = useTeamCatalog(stored === null ? (threadRef?.environmentId ?? null) : null);
-  return resolveTeamProjectsDrawerOpen(stored, snapshot?.source != null);
+  const environmentId = stored === null ? (threadRef?.environmentId ?? null) : null;
+  const snapshot = useTeamCatalog(environmentId);
+  const remembered = useTeamProjectsDrawerStore((state) =>
+    environmentId === null ? undefined : state.catalogSetByEnvironment[environmentId],
+  );
+  const rememberCatalogSet = useTeamProjectsDrawerStore((state) => state.rememberCatalogSet);
+  const catalogSet = snapshot === null ? null : snapshot.source !== null;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- records the server's catalog source so the next load decides the default before the catalog arrives
+  useEffect(() => {
+    if (environmentId !== null && catalogSet !== null && catalogSet !== remembered) {
+      rememberCatalogSet(environmentId, catalogSet);
+    }
+  }, [catalogSet, environmentId, remembered, rememberCatalogSet]);
+  return resolveTeamProjectsDrawerOpen(stored, catalogSet, remembered);
 }
 
 /** The thread's terminal drawer has the bottom area while it is open. */

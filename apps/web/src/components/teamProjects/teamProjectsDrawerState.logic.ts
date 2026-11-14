@@ -13,10 +13,14 @@ export function teamProjectsDrawerToggle(input: {
   return { open: !visible, closeTerminal: !visible && input.terminalOpen, leaveForThread: false };
 }
 
-/** A choice the user made wins; until then the graph is on where a catalog is set. */
+/**
+ * A choice the user made wins; until then the graph is on where a catalog is set. While the
+ * catalog loads (`catalogSet` null), what the environment had last time decides.
+ */
 export function resolveTeamProjectsDrawerOpen(
   stored: boolean | null,
-  catalogSet: boolean,
+  catalogSet: boolean | null,
+  rememberedCatalogSet: boolean | undefined,
 ): boolean {
-  return stored ?? catalogSet;
+  return stored ?? catalogSet ?? rememberedCatalogSet ?? false;
 }
