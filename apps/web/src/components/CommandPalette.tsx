@@ -249,7 +249,7 @@ import {
 import { useTeamProjectPaletteGroups } from "./teamProjects/useTeamProjectPaletteGroups";
 import { useTeamProjectsDrawerToggle } from "./teamProjects/teamProjectsDrawerState";
 import { boardPaletteAction } from "./board/boardSurface";
-import { teamPreferencesPaletteAction } from "./teamPreferences/teamPreferencesSurface";
+import { preferencesPaletteAction } from "./preferences/preferencesSurface";
 import { useCommandPaletteThreadItems } from "./CommandPaletteThreadItems";
 import { useCommandPaletteThemeItems } from "./CommandPaletteThemeItems";
 import {
@@ -1493,7 +1493,7 @@ function OpenCommandPaletteDialog(props: {
   if (activeThread !== null) {
     actionItems.push(
       boardPaletteAction(scopeThreadRef(activeThread.environmentId, activeThread.id)),
-      teamPreferencesPaletteAction(scopeThreadRef(activeThread.environmentId, activeThread.id)),
+      preferencesPaletteAction(scopeThreadRef(activeThread.environmentId, activeThread.id)),
     );
   }
 

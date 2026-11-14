@@ -4,10 +4,10 @@ import {
   type ProjectId,
   type ScopedThreadRef,
   type TeamCatalogProposal,
-  TEAM_PREFERENCES_MAX_BYTES,
-  type TeamPreferencesDocument,
-  type TeamPreferencesScope,
-  type TeamPreferencesView,
+  PREFERENCES_MAX_BYTES,
+  type PreferencesDocument,
+  type PreferencesScope,
+  type PreferencesView,
 } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import {
@@ -22,7 +22,7 @@ import { useState } from "react";
 import { useOpenLink } from "~/browser/useOpenLink";
 import { useEnvironmentScope } from "~/state/session";
 import { teamCatalogRefresh } from "~/state/teamCatalog";
-import { teamPreferencesPropose, useTeamPreferences } from "~/state/teamPreferences";
+import { preferencesPropose, usePreferences } from "~/state/preferences";
 import { useAtomCommand } from "~/state/use-atom-command";
 import ChatMarkdown from "../ChatMarkdown";
 import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
@@ -34,41 +34,41 @@ import { Textarea } from "../ui/textarea";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
-const SCOPE_LABEL: Record<TeamPreferencesScope, string> = {
+const SCOPE_LABEL: Record<PreferencesScope, string> = {
   team: "Team",
   project: "Project",
   personal: "Personal",
 };
 
-const SCOPE_DESCRIPTION: Record<TeamPreferencesScope, string> = {
+const SCOPE_DESCRIPTION: Record<PreferencesScope, string> = {
   team: "Every teammate's agents, in every project.",
   project: "Agents in this project's threads.",
   personal: "Only your own agents.",
 };
 
 /** Revision, size and an approximate token count, at about four bytes a token. */
-function blockStatus(view: TeamPreferencesView): string {
+function blockStatus(view: PreferencesView): string {
   const revision =
     view.revision === null ? "not fetched yet" : `revision ${view.revision.slice(0, 7)}`;
   if (view.block === null) return `Nothing is sent yet · ${revision}`;
   const bytes = new TextEncoder().encode(view.block).length;
-  const size = `About ${Math.ceil(bytes / 4).toLocaleString()} tokens (${(bytes / 1024).toFixed(1)} of ${TEAM_PREFERENCES_MAX_BYTES / 1024} KB)`;
+  const size = `About ${Math.ceil(bytes / 4).toLocaleString()} tokens (${(bytes / 1024).toFixed(1)} of ${PREFERENCES_MAX_BYTES / 1024} KB)`;
   return `${size} · ${revision}${view.truncated ? " · over the limit, so the end is left out" : ""}`;
 }
 
 interface Draft {
-  readonly scope: TeamPreferencesScope;
+  readonly scope: PreferencesScope;
   readonly baseRevision: string;
   readonly text: string;
 }
 
-/** The project's team preferences in the right panel: markdown read in place, edited as a pull request. */
-export default function TeamPreferencesPanel(props: {
+/** The project's preferences in the right panel: markdown read in place, edited as a pull request. */
+export default function PreferencesPanel(props: {
   readonly threadRef: ScopedThreadRef;
   readonly projectId: ProjectId | null;
 }) {
   const environmentId = props.threadRef.environmentId;
-  const view = useTeamPreferences(environmentId, props.projectId);
+  const view = usePreferences(environmentId, props.projectId);
   const refresh = useAtomCommand(teamCatalogRefresh);
   const navigate = useNavigate();
 
@@ -91,7 +91,7 @@ export default function TeamPreferencesPanel(props: {
     return (
       <PreferencesMessage
         title="No team catalog"
-        description="Team preferences live in the team catalog repository, under preferences/. Set the catalog in Settings."
+        description="Preferences live in the team catalog repository, under preferences/. Set the catalog in Settings."
       >
         <Button
           size="sm"
@@ -117,20 +117,20 @@ export default function TeamPreferencesPanel(props: {
 function PreferencesDocuments(props: {
   readonly threadRef: ScopedThreadRef;
   readonly projectId: ProjectId;
-  readonly view: TeamPreferencesView;
+  readonly view: PreferencesView;
   readonly onRefresh: () => void;
 }) {
   const { view } = props;
   const environmentId = props.threadRef.environmentId;
   const canPush = useEnvironmentScope(environmentId, AuthSourceControlWriteScope);
-  const propose = useAtomCommand(teamPreferencesPropose, { reportFailure: false });
+  const propose = useAtomCommand(preferencesPropose, { reportFailure: false });
   const openLink = useOpenLink(props.threadRef);
-  const [scope, setScope] = useState<TeamPreferencesScope>("team");
+  const [scope, setScope] = useState<PreferencesScope>("team");
   const [draft, setDraft] = useState<Draft | null>(null);
   const [saving, setSaving] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const [proposals, setProposals] = useState<
-    Partial<Record<TeamPreferencesScope, TeamCatalogProposal>>
+    Partial<Record<PreferencesScope, TeamCatalogProposal>>
   >({});
 
   const document = view.documents.find((candidate) => candidate.scope === scope);
@@ -193,7 +193,7 @@ function PreferencesDocuments(props: {
               <Button
                 size="icon-xs"
                 variant="ghost"
-                aria-label="Refresh team preferences"
+                aria-label="Refresh preferences"
                 disabled={view.refreshing}
                 aria-busy={view.refreshing}
                 onClick={props.onRefresh}
@@ -232,7 +232,7 @@ function PreferencesDocuments(props: {
                   aria-label={`${SCOPE_LABEL[scope]} preferences`}
                   rows={16}
                   value={editing.text}
-                  maxLength={TEAM_PREFERENCES_MAX_BYTES}
+                  maxLength={PREFERENCES_MAX_BYTES}
                   onChange={(event) => setDraft({ ...editing, text: event.target.value })}
                   placeholder={"- One preference per line, in plain words.\n- Another one."}
                 />
@@ -329,7 +329,7 @@ function PreferencesDocuments(props: {
 }
 
 function DocumentHeading(props: {
-  readonly document: TeamPreferencesDocument;
+  readonly document: PreferencesDocument;
   readonly editing: boolean;
   readonly editBlocked: string | null;
   readonly onEdit: () => void;

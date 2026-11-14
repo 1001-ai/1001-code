@@ -13,7 +13,7 @@ export function teamSurfaceActions(onAdd: ((kind: TeamSurfaceKind) => void) | un
     ? [
         ...boardSurfaceActions(() => onAdd("board")),
         {
-          label: "Team preferences",
+          label: "Preferences",
           description: "What agents are told about how the team works.",
           icon: ScrollTextIcon,
           shortcut: "E",
@@ -25,17 +25,17 @@ export function teamSurfaceActions(onAdd: ((kind: TeamSurfaceKind) => void) | un
     : [];
 }
 
-export function TeamPreferencesSurfaceIcon() {
+export function PreferencesSurfaceIcon() {
   return <ScrollTextIcon className="size-3 shrink-0" />;
 }
 
-/** The command palette's way to the team preferences of the open thread's project. */
-export function teamPreferencesPaletteAction(threadRef: ScopedThreadRef): CommandPaletteActionItem {
+/** The command palette's way to the preferences of the open thread's project. */
+export function preferencesPaletteAction(threadRef: ScopedThreadRef): CommandPaletteActionItem {
   return {
     kind: "action",
-    value: "action:open-team-preferences",
-    searchTerms: ["team preferences", "preferences", "instructions", "rules", "agents"],
-    title: "Open team preferences",
+    value: "action:open-preferences",
+    searchTerms: ["preferences", "instructions", "rules", "agents"],
+    title: "Open preferences",
     icon: <ScrollTextIcon className={ITEM_ICON_CLASS} />,
     run: async () => {
       useRightPanelStore.getState().open(threadRef, "preferences");
