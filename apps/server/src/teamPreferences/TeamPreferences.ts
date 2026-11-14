@@ -164,12 +164,12 @@ const make = Effect.gen(function* () {
       return (yield* read(projectId)).block ?? undefined;
     },
     // A cancelled run must stay cancelled; only a failed read degrades to no preferences.
-    Effect.catchCause((cause) =>
-      Cause.hasInterrupts(cause)
-        ? Effect.failCause(cause)
-        : Effect.logWarning("Team preferences could not be read.", { cause }).pipe(
-            Effect.as(undefined),
-          ),
+    Effect.catchCauseIf(
+      (cause) => !Cause.hasInterrupts(cause),
+      (cause) =>
+        Effect.logWarning("Team preferences could not be read.", { cause }).pipe(
+          Effect.as(undefined),
+        ),
     ),
   );
 
