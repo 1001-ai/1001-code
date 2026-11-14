@@ -1,14 +1,18 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import * as Context from "effect/Context";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as Ref from "effect/Ref";
 import { ChildProcessSpawner } from "effect/process";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
 
 import * as ServerConfig from "../config.ts";
 import * as ProcessRunner from "../processRunner.ts";
@@ -37,6 +41,11 @@ const git = (cwd: string, args: ReadonlyArray<string>) =>
 
 const project = (key: string, repo: string) => ({ key, name: key.toUpperCase(), repo, owners: [] });
 
+interface FetchHold {
+  readonly started: Deferred.Deferred<void>;
+  readonly release: Deferred.Deferred<void>;
+}
+
 type Services =
   | FileSystem.FileSystem
   | Path.Path
@@ -51,6 +60,8 @@ const withCatalog = <A, E>(
     readonly commit: (files: Record<string, unknown>) => Effect.Effect<void, Error>;
     readonly service: TeamCatalog.TeamCatalog["Service"];
     readonly start: Effect.Effect<TeamCatalog.TeamCatalog["Service"], Error, Services>;
+    /** Holds the service's next `git fetch` until `release`; `started` completes when it is held. */
+    readonly holdNextFetch: Effect.Effect<FetchHold>;
   }) => Effect.Effect<A, E, Services>,
 ) =>
   Effect.gen(function* () {
@@ -80,9 +91,29 @@ const withCatalog = <A, E>(
         Effect.provideService(FileSystem.FileSystem, fileSystem),
         Effect.provideService(ProcessRunner.ProcessRunner, runner),
       );
+    const nextFetchHold = yield* Ref.make(Option.none<FetchHold>());
+    const holdNextFetch = Effect.gen(function* () {
+      const hold = { started: yield* Deferred.make<void>(), release: yield* Deferred.make<void>() };
+      yield* Ref.set(nextFetchHold, Option.some(hold));
+      return hold;
+    });
+    const serviceRunner = ProcessRunner.ProcessRunner.of({
+      run: (input) =>
+        Effect.gen(function* () {
+          const hold = input.args.includes("fetch")
+            ? yield* Ref.getAndSet(nextFetchHold, Option.none())
+            : Option.none<FetchHold>();
+          if (Option.isSome(hold)) {
+            yield* Deferred.succeed(hold.value.started, undefined);
+            yield* Deferred.await(hold.value.release);
+          }
+          return yield* runner.run(input);
+        }),
+    });
     const layer = TeamCatalog.layer.pipe(
       Layer.provide(
         Layer.mergeAll(
+          Layer.succeed(ProcessRunner.ProcessRunner, serviceRunner),
           ServerConfig.layerTest(temp, path.join(temp, "home")),
           RepositoryIdentityResolver.layer,
           ServerSettings.layerTest(),
@@ -98,7 +129,7 @@ const withCatalog = <A, E>(
       Effect.provideService(Scope.Scope, yield* Scope.Scope),
     );
     const service = yield* start;
-    return yield* test({ catalog, projectsRoot, commit, service, start });
+    return yield* test({ catalog, projectsRoot, commit, service, start, holdNextFetch });
   }).pipe(
     Effect.scoped,
     Effect.provide(ProcessRunner.layer.pipe(Layer.provideMerge(NodeServices.layer))),
@@ -215,6 +246,28 @@ it.live("serves the last fetch at once after a restart, even with the catalog un
       expect(failed.error).not.toBeNull();
       expect(failed.fetchedAt).toBe(Option.getOrThrow(restored).fetchedAt);
       expect(failed.projects.map((entry) => entry.project.key)).toEqual(["web"]);
+    }),
+  ),
+);
+
+it.effect("counts freshness from when a fetch finishes, not when it starts", () =>
+  withCatalog(({ catalog, commit, service, holdNextFetch }) =>
+    Effect.gen(function* () {
+      yield* commit({ "web.json": project("web", "example.com/acme/web") });
+      yield* service.setSource(catalog);
+
+      const hold = yield* holdNextFetch;
+      const slowFetch = yield* service.refresh({ force: true }).pipe(Effect.forkChild);
+      yield* Deferred.await(hold.started);
+      yield* TestClock.adjust("40 seconds");
+      yield* Deferred.succeed(hold.release, undefined);
+      const fetched = yield* Fiber.join(slowFetch);
+
+      yield* commit({ "api.json": project("api", "example.com/acme/api") });
+      const recent = yield* service.refresh();
+      expect(recent.revision).toBe(fetched.revision);
+      expect(recent.fetchedAt).toBe(fetched.fetchedAt);
+      expect(recent.projects.map((entry) => entry.project.key)).toEqual(["web"]);
     }),
   ),
 );
