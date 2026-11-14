@@ -26,6 +26,8 @@ A textual conflict costs an agent minutes. A fork change that nobody can explain
 4. **Test what you add.** Upstream's tests do not know about our features. Without a test, a fork feature breaks silently the day upstream changes something under it.
 5. **Record every divergence below, in the pull request that makes it.** The entry is what lets an agent, months later, resolve a conflict in your code the way you would have.
 
+When an agent needs the user to decide something, it asks with the [ask-the-user skill](../.agents/skills/ask-the-user/SKILL.md), which the web and desktop clients render as answer controls.
+
 ## Divergences
 
 One entry for each place this fork changes a file upstream owns, or replaces something upstream does. Files that only exist here need no entry.
@@ -106,3 +108,10 @@ One entry for each place this fork changes a file upstream owns, or replaces som
 - **Why:** the desktop, web and mobile apps show the 1001 mark instead of T3's. The blueprint annotations measure the new mark. The PNG and ICO files were rendered without Icon Composer, so `vp run icons:check` reports them until a native export replaces them, as `assets/README.md` says.
 - **On conflict:** keep ours for every binary icon. If upstream changes the artwork (a background, a variant's layers, sizes or the export script), take its other layers, keep our `text.svg`, `annotations.svg` and `logo.svg`, and regenerate per `assets/README.md`: `vp run icons:export`, `vp run icons:export:android`, and the Icon Composer macOS exports. Never take upstream's generated PNG or ICO files, which carry the T3 mark. In `assets/README.md`, take upstream's text and put back the fork paragraphs and the "1001 mark" wording.
 - **Check:** `grep -L "M19.665 47.547" assets/*/app-icon.icon/Assets/text.svg assets/prod/logo.svg` prints nothing; `cmp apps/web/public/favicon.ico assets/dev/blueprint-web-favicon.ico` prints nothing; opening `assets/prod/black-macos-1024.png`, `apps/web/public/icon-512x512.png` and `apps/mobile/assets/android-icon-foreground.png` shows the 1001 mark.
+
+### Answer controls for `question` blocks
+
+- **Where:** `apps/web/src/components/ChatMarkdown.tsx` (an import, `threadRef` in the `pre` renderer's context read, and an `if (language === "question" && threadRef)` branch just before its final `MarkdownCodeBlock` return), `apps/web/src/components/chat/TimelineAssistantRows.tsx` (`AssistantTimelineRow` renders `AssistantQuestionMarkdown`, which takes an `askedInItemId` prop, in place of `ChatMarkdown`, whose import goes). The rest is in fork-only files in `apps/web/src/components/chat/`: `MarkdownQuestionBlock.tsx`, `AssistantQuestionMarkdown.tsx`, `questionBlockScope.ts` and `questionBlock.logic.ts`.
+- **Why:** an agent can ask the user a decision question inline, with a `question` fence in its reply, and the user answers in the message that asks, whenever they read it. Answering only writes `<id>: answer` into the thread's draft; the card reads as answered from a later user message. Nothing is stored, so there is no server, contract or database change. The wrapper sets the asking item only where the reader can reply (`onReplyToResponse` is set), so the guest page and every other `ChatMarkdown` keep showing the fence as code, as does mobile.
+- **On conflict:** take upstream's code, then put the `question` branch back in the `pre` renderer before the plain code block, and render `AssistantQuestionMarkdown` for the assistant message's markdown again. If upstream moves assistant markdown out of `AssistantTimelineRow`, wrap it where it went. If upstream changes how the draft or the quiet visible turn items are read, update `MarkdownQuestionBlock.tsx`.
+- **Check:** `grep -rn "MarkdownQuestionBlock\|AssistantQuestionMarkdown" apps/web/src --include=*.tsx` shows the branch in `ChatMarkdown.tsx` and the wrapper in `TimelineAssistantRows.tsx`; `vp test run apps/web/src/components/chat/questionBlock.logic.test.ts` passes.

@@ -198,6 +198,7 @@ import { MarkdownCodeBlock, SuspenseShikiCodeBlock } from "./chat/MarkdownCodeBl
 import { createMarkdownRenderer } from "./chat/markdownRenderer";
 import { splitMarkdownBlocks } from "./chat/markdownStreamBlocks";
 import { MarkdownMermaidCodeBlock } from "./chat/MarkdownMermaidCodeBlock";
+import { MarkdownQuestionBlock } from "./chat/MarkdownQuestionBlock";
 import { MarkdownTable } from "./chat/MarkdownTable";
 import { MarkdownDetails } from "./chat/MarkdownDetails";
 import {
@@ -1655,6 +1656,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
       onRunShellCommand,
       inline,
       mathEnabled,
+      threadRef,
     } = use(ChatMarkdownRendererContext);
     const text = use(ChatMarkdownTextContext);
     const codeBlock = extractCodeBlock(children);
@@ -1710,6 +1712,25 @@ const CHAT_MARKDOWN_COMPONENTS = {
         >
           {highlightedCode}
         </MarkdownMermaidCodeBlock>
+      );
+    }
+    if (language === "question" && threadRef) {
+      return (
+        <MarkdownQuestionBlock
+          code={codeBlock.code}
+          threadRef={threadRef}
+          streaming={isStreaming && !isClosedCodeFence(node, text, codeBlock.code)}
+        >
+          <MarkdownCodeBlock
+            code={codeBlock.code}
+            language={language}
+            fenceTitle={fenceTitle}
+            theme={resolvedTheme}
+            isStreaming={isStreaming}
+          >
+            {highlightedCode}
+          </MarkdownCodeBlock>
+        </MarkdownQuestionBlock>
       );
     }
     return (
