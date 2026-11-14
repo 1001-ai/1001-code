@@ -126,7 +126,18 @@ export function toggleMultiOption(
 }
 
 interface TurnItemLike {
-  readonly item: { readonly id: string; readonly type: string; readonly text?: unknown };
+  readonly item: {
+    readonly id: string;
+    readonly type: string;
+    readonly text?: unknown;
+    readonly messageId?: string;
+  };
+}
+
+export interface QuestionAnswer {
+  readonly answer: string;
+  /** The user message whose `<id>: answer` line gave it. */
+  readonly messageId: string;
 }
 
 /**
@@ -137,14 +148,14 @@ export function findQuestionAnswer(
   items: ReadonlyArray<TurnItemLike>,
   askedInItemId: string,
   questionId: string,
-): string | null {
+): QuestionAnswer | null {
   const askedAt = items.findIndex((entry) => entry.item.id === askedInItemId);
   if (askedAt < 0) return null;
   for (let index = items.length - 1; index > askedAt; index -= 1) {
-    const item = items[index]!.item;
-    if (item.type !== "user_message" || typeof item.text !== "string") continue;
-    const answer = readAnswerLine(item.text, questionId);
-    if (answer !== null) return answer;
+    const { type, text, messageId } = items[index]!.item;
+    if (type !== "user_message" || typeof text !== "string" || messageId === undefined) continue;
+    const answer = readAnswerLine(text, questionId);
+    if (answer !== null) return { answer, messageId };
   }
   return null;
 }

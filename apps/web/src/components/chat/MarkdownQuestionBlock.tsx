@@ -1,9 +1,9 @@
 import { parseScopedThreadKey, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { ScopedThreadRef } from "@t3tools/contracts";
-import { useAtomValue } from "@effect/atom-react";
+import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { Atom } from "effect/reactivity";
 import { CheckIcon } from "lucide-react";
-import { use, useId, useState, type FormEvent, type ReactNode } from "react";
+import { use, useId, type FormEvent, type ReactNode } from "react";
 
 import { useComposerDraftStore } from "~/composerDraftStore";
 import { environmentThreadDetails } from "../../state/threads";
@@ -19,6 +19,7 @@ import {
   selectedMultiOptions,
   toggleMultiOption,
   writeAnswerLine,
+  type QuestionAnswer,
   type QuestionBlock,
 } from "./questionBlock.logic";
 import { QuestionAskedInItemContext } from "./questionBlockScope";
@@ -26,16 +27,33 @@ import { QuestionAskedInItemContext } from "./questionBlockScope";
 const questionAnswerAtomFamily = Atom.family((key: string) => {
   const [thread = "", askedInItemId = "", questionId = ""] = key.split("\u0000");
   const threadRef = parseScopedThreadKey(thread);
-  return Atom.make((get) =>
-    threadRef === null
-      ? null
-      : findQuestionAnswer(
-          get(environmentThreadDetails.quietVisibleTurnItemsAtom(threadRef)),
-          askedInItemId,
-          questionId,
-        ),
-  ).pipe(Atom.setIdleTTL(0));
+  let previous: QuestionAnswer | null = null;
+  return Atom.make((get) => {
+    const next =
+      threadRef === null
+        ? null
+        : findQuestionAnswer(
+            get(environmentThreadDetails.timelineVisibleTurnItemsAtom(threadRef)),
+            askedInItemId,
+            questionId,
+          );
+    if (next?.messageId !== previous?.messageId || next?.answer !== previous?.answer) {
+      previous = next;
+    }
+    return previous;
+  }).pipe(Atom.setIdleTTL(0));
 });
+
+// Kept alive so typing and an open "Change answer" survive the card remounting when streaming ends.
+const questionFreeTextAtomFamily = Atom.family((key: string) =>
+  Atom.make("").pipe(Atom.keepAlive, Atom.withLabel(`question-free-text:${key}`)),
+);
+const questionChangingFromAtomFamily = Atom.family((key: string) =>
+  Atom.make<string | null>(null).pipe(
+    Atom.keepAlive,
+    Atom.withLabel(`question-changing-from:${key}`),
+  ),
+);
 
 /**
  * A `question` fence in an assistant message. Answering writes `<id>: answer` into the thread's
@@ -80,14 +98,13 @@ function QuestionCard({
   readonly askedInItemId: string;
 }) {
   const promptId = useId();
-  // Holds the answer being changed, so a newer answer closes the controls without an effect.
-  const [changingFrom, setChangingFrom] = useState<string | null>(null);
-  const [freeText, setFreeText] = useState("");
-  const answer = useAtomValue(
-    questionAnswerAtomFamily(
-      `${scopedThreadKey(threadRef)}\u0000${askedInItemId}\u0000${question.id}`,
-    ),
-  );
+  const cardKey = `${scopedThreadKey(threadRef)}\u0000${askedInItemId}\u0000${question.id}`;
+  // The message whose answer is being changed, so a newer answering message closes the controls.
+  const changingFrom = useAtomValue(questionChangingFromAtomFamily(cardKey));
+  const setChangingFrom = useAtomSet(questionChangingFromAtomFamily(cardKey));
+  const freeText = useAtomValue(questionFreeTextAtomFamily(cardKey));
+  const setFreeText = useAtomSet(questionFreeTextAtomFamily(cardKey));
+  const answer = useAtomValue(questionAnswerAtomFamily(cardKey));
   const draftAnswer = useComposerDraftStore((store) => {
     const prompt = store.getComposerDraft(threadRef)?.prompt;
     return prompt ? readAnswerLine(prompt, question.id) : null;
@@ -107,7 +124,7 @@ function QuestionCard({
   const options = questionOptions(question);
   const selectedMulti =
     question.kind === "multi" ? selectedMultiOptions(options, draftAnswer) : new Set<string>();
-  const changing = changingFrom !== null && changingFrom === answer;
+  const changing = answer !== null && changingFrom === answer.messageId;
   const showControls = answer === null || changing;
 
   return (
@@ -129,14 +146,14 @@ function QuestionCard({
           <CheckIcon aria-hidden className="size-3.5 text-success-foreground" />
           <span className="min-w-0 [overflow-wrap:anywhere]">
             <span className="text-muted-foreground">Answered: </span>
-            {answer}
+            {answer.answer}
           </span>
           {changing ? null : (
             <Button
               type="button"
               variant="ghost-muted"
               size="xs"
-              onClick={() => setChangingFrom(answer)}
+              onClick={() => setChangingFrom(answer.messageId)}
             >
               Change answer
             </Button>

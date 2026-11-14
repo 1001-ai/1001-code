@@ -110,12 +110,14 @@ describe("multi answers", () => {
 });
 
 describe("findQuestionAnswer", () => {
-  const user = (id: string, text: string) => ({ item: { id, type: "user_message", text } });
+  const user = (id: string, text: string) => ({
+    item: { id, type: "user_message", text, messageId: `m-${id}` },
+  });
   const assistant = (id: string) => ({ item: { id, type: "assistant_message" } });
 
   it("reads the answer from a later user message", () => {
     const items = [assistant("a1"), user("u1", "Q1: Yes")];
-    expect(findQuestionAnswer(items, "a1", "Q1")).toBe("Yes");
+    expect(findQuestionAnswer(items, "a1", "Q1")).toEqual({ answer: "Yes", messageId: "m-u1" });
   });
 
   it("ignores answers from before the question", () => {
@@ -123,10 +125,17 @@ describe("findQuestionAnswer", () => {
     expect(findQuestionAnswer(items, "a1", "Q1")).toBeNull();
   });
 
-  it("takes the latest answer to a stable id", () => {
-    const items = [assistant("a1"), user("u1", "Q1: Yes"), assistant("a2"), user("u2", "Q1: No")];
-    expect(findQuestionAnswer(items, "a1", "Q1")).toBe("No");
-    expect(findQuestionAnswer(items, "a2", "Q1")).toBe("No");
+  it("takes the latest answering message, even with the same answer", () => {
+    const items = [assistant("a1"), user("u1", "Q1: Yes"), assistant("a2"), user("u2", "Q1: Yes")];
+    expect(findQuestionAnswer(items, "a1", "Q1")).toEqual({ answer: "Yes", messageId: "m-u2" });
+    expect(findQuestionAnswer([...items, user("u3", "Q1: No")], "a2", "Q1")).toEqual({
+      answer: "No",
+      messageId: "m-u3",
+    });
+    expect(findQuestionAnswer([...items, user("u3", "Thanks")], "a1", "Q1")).toEqual({
+      answer: "Yes",
+      messageId: "m-u2",
+    });
   });
 
   it("ignores lines in assistant messages and unknown items", () => {
