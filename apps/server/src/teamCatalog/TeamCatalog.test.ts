@@ -48,13 +48,14 @@ const project = (
   extra: { readonly owners?: ReadonlyArray<string>; readonly links?: ReadonlyArray<unknown> } = {},
 ) => ({ key, name: key.toUpperCase(), repo, owners: [], ...extra });
 
-/** Signed in as alice; repositories with "private" in their name are out of reach. */
-const accessTest = Layer.mock(TeamCatalogAccess.TeamCatalogAccess)({
-  viewer: Effect.succeed({ login: "alice", problem: null }),
-  author: Effect.succeed({ name: "alice", email: "7+alice@users.noreply.github.com" }),
-  canReach: (cloneUrl) => Effect.succeed(!cloneUrl.includes("private")),
-  openPullRequest: () => Effect.fail(new TeamCatalogError({ detail: "No pull requests here." })),
-});
+/** Signed in as `login` (alice to start); repositories with "private" in their name are out of reach. */
+const accessTest = (login: Ref.Ref<string>) =>
+  Layer.mock(TeamCatalogAccess.TeamCatalogAccess)({
+    viewer: Ref.get(login).pipe(Effect.map((current) => ({ login: current, problem: null }))),
+    author: Effect.succeed({ name: "alice", email: "7+alice@users.noreply.github.com" }),
+    canReach: (cloneUrl) => Effect.succeed(!cloneUrl.includes("private")),
+    openPullRequest: () => Effect.fail(new TeamCatalogError({ detail: "No pull requests here." })),
+  });
 
 interface FetchHold {
   readonly started: Deferred.Deferred<void>;
@@ -78,6 +79,8 @@ const withCatalog = <A, E>(
     readonly start: Effect.Effect<TeamCatalog.TeamCatalog["Service"], Error, Services>;
     /** Holds the service's next `git fetch` until `release`; `started` completes when it is held. */
     readonly holdNextFetch: Effect.Effect<FetchHold>;
+    /** Switches the GitHub CLI login the service sees. */
+    readonly signIn: (login: string) => Effect.Effect<void>;
   }) => Effect.Effect<A, E, Services>,
 ) =>
   Effect.gen(function* () {
@@ -126,6 +129,7 @@ const withCatalog = <A, E>(
           return yield* runner.run(input);
         }),
     });
+    const login = yield* Ref.make("alice");
     const configLayer = ServerConfig.layerTest(temp, path.join(temp, "home"));
     const stateDir = yield* ServerConfig.ServerConfig.pipe(
       Effect.map((config) => config.stateDir),
@@ -136,7 +140,7 @@ const withCatalog = <A, E>(
         Layer.mergeAll(
           Layer.succeed(ProcessRunner.ProcessRunner, serviceRunner),
           configLayer,
-          accessTest,
+          accessTest(login),
           RepositoryIdentityResolver.layer,
           ServerSettings.layerTest(),
           Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
@@ -159,6 +163,7 @@ const withCatalog = <A, E>(
       service,
       start,
       holdNextFetch,
+      signIn: (next) => Ref.set(login, next),
     });
   }).pipe(
     Effect.scoped,
@@ -312,7 +317,7 @@ it.effect("counts freshness from when a fetch finishes, not when it starts", () 
 it.live(
   "proposes a link change as a branch on the catalog remote, never on the local catalog",
   () =>
-    withCatalog(({ catalog, stateDir, commit, service }) =>
+    withCatalog(({ catalog, stateDir, commit, service, signIn }) =>
       Effect.gen(function* () {
         const runner = yield* ProcessRunner.ProcessRunner;
         yield* commit({
@@ -341,6 +346,15 @@ it.live(
           }),
         );
         expect(notOwner.detail).toBe("Only the owners of api can change its parent and links.");
+        yield* signIn("bob");
+        const switched = yield* Effect.flip(
+          service.propose({
+            baseRevision: fetched.revision!,
+            changes: [{ key: "web", parent: null, links: [] }],
+          }),
+        );
+        expect(switched.detail).toBe("Only the owners of web can change its parent and links.");
+        yield* signIn("alice");
 
         const proposal = yield* service.propose({
           baseRevision: fetched.revision!,

@@ -426,11 +426,9 @@ const make = Effect.gen(function* () {
         detail: "The team catalog changed since you opened it. Review the project and save again.",
       });
     }
-    let viewer = yield* Ref.get(viewerRef);
-    if (viewer.login === null) {
-      viewer = yield* access.viewer;
-      yield* Ref.set(viewerRef, viewer);
-    }
+    // Ownership is checked against the live login, never the one cached for display.
+    const viewer = yield* access.viewer;
+    yield* Ref.set(viewerRef, viewer);
     const catalog = yield* Ref.get(catalogRef);
     const projects = catalog.projects.map((entry) => entry.project);
     const refusal = checkTeamCatalogProposal(projects, input.changes, viewer.login);
