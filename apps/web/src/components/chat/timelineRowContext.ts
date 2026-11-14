@@ -17,6 +17,7 @@ import {
   type TurnItemId,
 } from "@t3tools/contracts";
 import type { AsyncResult, Atom } from "effect/reactivity";
+import type { ExchangeThreadContextValue } from "./ExchangeThread";
 import type { CommandOutputView } from "@t3tools/client-runtime/state/command-output";
 import type { WorkflowOpening } from "@t3tools/client-runtime/state/subagentRuntime";
 import { useEffect, useRef, createContext, type MouseEvent, type ReactNode } from "react";
@@ -53,6 +54,7 @@ export interface TimelineRowSharedState {
   citationRequest: AssistantCitationTarget | null;
   /** Absent hides "Reply", as in the guest view. */
   onReplyToResponse: ((response: ResponseContextRecord) => boolean) | undefined;
+  exchangeThread?: ExchangeThreadContextValue;
   listRef: React.RefObject<LegendListRef | null>;
   timestampFormat: TimestampFormat;
   routeThreadKey: string;

@@ -139,6 +139,7 @@ import { useThreadFindPositionReader } from "./useThreadFindPositionReader";
 import { ThreadActivityAnnouncer } from "./ThreadActivityAnnouncer";
 import { useStableHandoffRuns, useIncrementalTimelineRows, useStableRows } from "./useTimelineRows";
 import { useClientSettings } from "../../hooks/useSettings";
+import { ExchangeThreadView, useExchangeThread } from "./ExchangeThread";
 
 function timelineListStateFor(identity: string): {
   readonly identity: string;
@@ -825,6 +826,15 @@ const ConversationTimeline = memo(function ConversationTimeline({
   const [timelineViewportElement, setTimelineViewportElement] = useState<HTMLDivElement | null>(
     null,
   );
+  const exchangeThread = useExchangeThread({
+    rows,
+    identity: listIdentityKey,
+    viewport: timelineViewportElement,
+    threadRef: citationThreadRef,
+    onReplyToResponse,
+    suspended: findActive,
+    awaitingUser,
+  });
   const {
     target: readyCitationRequest,
     positioning: citationPositioning,
@@ -1092,6 +1102,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     onRespondToApproval,
     citationRequest: readyCitationRequest,
     onReplyToResponse,
+    exchangeThread: exchangeThread.context,
     listRef,
     timestampFormat,
     routeThreadKey,
@@ -1483,6 +1494,16 @@ const ConversationTimeline = memo(function ConversationTimeline({
                 });
               }}
             />
+            {exchangeThread.view ? (
+              <ExchangeThreadView
+                key={exchangeThread.view.session}
+                view={exchangeThread.view}
+                viewport={timelineViewportElement}
+                bottomInset={contentInsetEndAdjustment}
+                topFadeEnabled={topFadeEnabled}
+                renderRow={(row) => renderItem({ item: row })}
+              />
+            ) : null}
           </TooltipScrollDismissArea>
         </TimelineRowActivityCtx>
       </MarkdownFindContext>

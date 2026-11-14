@@ -93,6 +93,7 @@ import {
   resolvePreviewAnnotationImage,
   userMessageFileLabel,
 } from "./TimelineUserMessageRow.logic";
+import { ExchangeReplyLink, ExchangeViewThreadButton } from "./ExchangeThread";
 
 // Drawn inside the media so dark screenshots keep an edge on the dark background.
 const MEDIA_EDGE_CLASS_NAME =
@@ -836,6 +837,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             variant="ghost"
           />
         )}
+        <ExchangeViewThreadButton rowId={row.id} />
       </div>
     </div>
   );
@@ -1047,6 +1049,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
         ) : null}
       </div>
       <UserMessageProjectedStatus row={row} />
+      <ExchangeReplyLink row={row} />
       {!folded || expanded ? (
         <div
           className={cn(

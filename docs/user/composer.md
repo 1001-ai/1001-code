@@ -90,6 +90,16 @@ other action for a single message. From a hardware keyboard, `Cmd+Return`
 (`Ctrl+Shift+Return`) when Return inserts a new line. The button only offers
 Steer when the running agent supports it.
 
+## See which message a reply answers
+
+On web and desktop, a reply that answers more than the message right above it, such as
+after a steer, shows a faded quote of the earlier message it answers, and that message
+shows **1 reply**. Select either, or **View thread** in a message's actions, to see just
+that exchange: your messages and the reply that answered them, together. Messages you send
+while it is open reply to that exchange and join it. Press `Esc`, select **Done**, or
+click outside the messages to return to the full conversation where you left it. Turn
+the quotes off under **Settings → Chat → Reply markers**.
+
 ## Queue messages offline on mobile
 
 Mobile keeps local copies of draft attachments, so you can preview them and queue
