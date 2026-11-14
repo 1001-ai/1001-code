@@ -1,3 +1,4 @@
+import { buildRuntimeInstructions } from "@t3tools/provider-core/server/runtimeInstructions";
 import { fromMarkdown } from "mdast-util-from-markdown";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -263,6 +264,17 @@ describe("questionCardsInMarkdown", () => {
   it("finds every card in a message, in order", () => {
     const text = `Two things.\n\n${card("Q1", "Ship it?")}\n\n${card("Q2", "Keep it?")}\n\nThanks.`;
     expect(questionCardsInMarkdown(text).map((question) => question.id)).toEqual(["Q1", "Q2"]);
+  });
+
+  it("renders the examples in the instructions agents get as cards of every kind", () => {
+    const cards = questionCardsInMarkdown(buildRuntimeInstructions({ harness: "Codex" }));
+    expect(cards.map(({ id, kind }) => `${id} ${kind}`)).toEqual([
+      "Q1 choice",
+      "Q2 multi",
+      "Q3 boolean",
+      "Q4 text",
+    ]);
+    expect(cards[0]?.recommended).toBeDefined();
   });
 
   it.each([

@@ -1235,10 +1235,12 @@ describe("AntigravityAdapterV2 session system prompt", () => {
         assert.include(sent, "through the Antigravity harness, as gemini-test-low");
         if (agentVersion === "1.4.5") {
           assert.include(append, "pull_request_linking");
+          assert.include(append, "asking_the_user");
           assert.notInclude(sent, "<pull_request_linking>");
         } else {
           assert.notInclude(append, "systemPrompt");
           assert.include(sent, "<pull_request_linking>");
+          assert.include(sent, "<asking_the_user>");
         }
       }).pipe(Effect.provide(layerSession), Effect.scoped),
   );
