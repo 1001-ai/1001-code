@@ -118,7 +118,7 @@ interface DrawerLayout {
   composerHeight?: number;
 }
 
-function resolveTerminalDrawerMaxHeight(input: DrawerLayout): number {
+export function resolveTerminalDrawerMaxHeight(input: DrawerLayout): number {
   const windowCap = Math.max(
     MIN_DRAWER_HEIGHT,
     Math.floor(input.viewportHeight * MAX_DRAWER_HEIGHT_RATIO),
@@ -134,16 +134,16 @@ function resolveTerminalDrawerMaxHeight(input: DrawerLayout): number {
 
 const DRAG_HEIGHT_PROPERTY = "--terminal-drawer-drag-height";
 
-function clampDrawerHeight(height: number, maxHeight: number): number {
+export function clampDrawerHeight(height: number, maxHeight: number): number {
   const safeHeight = Number.isFinite(height) ? height : DEFAULT_THREAD_TERMINAL_HEIGHT;
   return Math.min(Math.max(Math.round(safeHeight), MIN_DRAWER_HEIGHT), maxHeight);
 }
 
-function chatColumnOf(drawer: HTMLElement | null): HTMLElement | null {
+export function chatColumnOf(drawer: HTMLElement | null): HTMLElement | null {
   return drawer?.closest<HTMLElement>("[data-chat-column]") ?? null;
 }
 
-function readDrawerLayout(column: HTMLElement | null): Omit<DrawerLayout, "composerHeight"> {
+export function readDrawerLayout(column: HTMLElement | null): Omit<DrawerLayout, "composerHeight"> {
   const viewportHeight = typeof window === "undefined" ? 0 : window.innerHeight;
   if (!column) return { viewportHeight };
   return {

@@ -146,6 +146,10 @@ around it.
 Select the quote in a draft or sent message to return to its source. If the source
 is unavailable or has changed, the saved quote remains readable.
 
+When selecting a quote, or a question id an agent's reply mentions, jumps the chat to another
+message, a **Back** button appears beside **Scroll to end** and returns you to where you were
+reading.
+
 The chip shows your comment when it has one, or a short quote preview otherwise. Use the pencil
 button to add or change the comment. To remove the citation, place the caret beside its chip and
 delete it like other inline context. Copying, reloading, and restoring a

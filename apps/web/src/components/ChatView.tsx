@@ -363,6 +363,7 @@ import { useAtomQueryRunner } from "../state/use-atom-query-runner";
 import { observeResize } from "~/lib/observeResize";
 import { ThreadVisitWatermark } from "./chat/ThreadVisitWatermark";
 import { ChatTerminalDrawers } from "./chat/ChatTerminalDrawers";
+import { TeamProjectsDrawer } from "./teamProjects/TeamProjectsDrawer";
 import { ChatRightPanel } from "./chat/ChatRightPanel";
 import { useDraftEnvironmentRouting } from "./chat/useDraftEnvironmentRouting";
 import { branchMismatchBannerItem, extensionStatusBannerItem } from "./chat/ThreadActivityBanners";
@@ -370,6 +371,7 @@ import { ThreadNow } from "./chat/ThreadNow";
 import type { ThreadStructure } from "@t3tools/client-runtime/state/shell";
 import { useDelayedStatus } from "../hooks/useDelayedStatus";
 import { useTimelineFollow } from "./chat/useTimelineFollow";
+import { useJumpBack } from "./chat/JumpBack";
 import {
   type EnvironmentUnavailableState,
   useSystemComposerBanners,
@@ -2138,6 +2140,13 @@ export default function ChatView(props: ChatViewProps) {
     timelineAnchorMessageId,
     setTimelineAnchor,
   });
+  const jumpBack = useJumpBack({
+    legendListRef,
+    threadKey: displayedTimelineKey,
+    thread: { environmentId, threadId },
+    attachTimelineViewport,
+    scrollToEnd,
+  });
 
   useFocusComposerOnThreadOpen(
     activeThread?.id,
@@ -3490,7 +3499,7 @@ export default function ChatView(props: ChatViewProps) {
                   contentInsetEndAdjustment={composerTimelineInset}
                   liveFollowEnabled={timelineLiveFollowEnabled}
                   onIsAtEndChange={onIsAtEndChangeStable}
-                  onViewportAttach={attachTimelineViewport}
+                  onViewportAttach={jumpBack.attachViewport}
                   onFooterGrow={onTimelineFooterGrowStable}
                   hideEmptyPlaceholder={isDraftHeroState || threadDetailLoading}
                   emptyPlaceholderInset={composerReservedHeight}
@@ -3506,8 +3515,12 @@ export default function ChatView(props: ChatViewProps) {
                   bottom={scrollToEndClearance + 4}
                   summary={scrollToEndSummary}
                   onScrollToEnd={() => scrollToEnd(true)}
+                  leading={jumpBack.backButton}
                 />
               )}
+              {!showScrollToBottom &&
+                !isThreadFindActive &&
+                jumpBack.backRow(scrollToEndClearance + 4)}
             </div>
 
             <div
@@ -3708,6 +3721,7 @@ export default function ChatView(props: ChatViewProps) {
                                 permissionsShownInStrip={
                                   showComposerContextStrip && !isServerThread
                                 }
+                                showStatusToggle={isServerThread && !isDraftHeroState && !embedded}
                                 promptRef={promptRef}
                                 composerImagesRef={composerImagesRef}
                                 composerFilesRef={composerFilesRef}
@@ -3960,6 +3974,9 @@ export default function ChatView(props: ChatViewProps) {
             keybindings={keybindings}
             onAddTerminalContext={addTerminalContextToDraftStable}
           />
+        )}
+        {embedded ? null : (
+          <TeamProjectsDrawer threadRef={activeThreadRef} composerHeight={composerReservedHeight} />
         )}
       </div>
 
