@@ -69,6 +69,16 @@ const cases: ReadonlyArray<readonly [string, ReadonlyArray<Message>, number | nu
     [user(1), user(3, "Also check the docs"), { ...assistant(2, card("Q1")), finished: 4 }],
     4,
   ],
+  [
+    "a question that finished after the user wrote twice mid-stream",
+    [
+      user(1),
+      user(3, "Also check the docs"),
+      user(4, "And the tests"),
+      { ...assistant(2, card("Q1")), finished: 5 },
+    ],
+    5,
+  ],
   ["a quote that is not a card", [user(1), assistant(2, "> **Q1 · Ship it?**")], null],
 ];
 
