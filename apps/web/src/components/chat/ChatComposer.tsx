@@ -208,6 +208,7 @@ import {
   ComposerQueuedAttachmentRow,
   ComposerRestingImagePreviews,
 } from "./ComposerAttachmentStrip";
+import { ComposerStatusToggle } from "./ComposerStatusStrip";
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
 import { ComposerFooterPrimaryActions } from "./ComposerFooterControls";
 import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
@@ -440,6 +441,8 @@ export interface ChatComposerProps {
   onComposerOverlayHeightChange: (height: number) => void;
   /** The new-thread strip names the permissions, so the controls row hides its chip. */
   permissionsShownInStrip: boolean;
+  /** The status box (fork) can show under this composer, so the footer offers its toggle. */
+  showStatusToggle?: boolean;
 
   promptRef: React.RefObject<string>;
   composerImagesRef: React.RefObject<ComposerImageAttachment[]>;
@@ -3632,8 +3635,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     "hidden sm:flex",
                 )}
               >
-                {composerAttachButton && !dictationTakesFooter ? (
-                  <div className="me-2">{composerAttachButton}</div>
+                {(composerAttachButton || props.showStatusToggle) && !dictationTakesFooter ? (
+                  <div className="me-2 flex items-center gap-0.5">
+                    {composerAttachButton}
+                    {props.showStatusToggle ? <ComposerStatusToggle /> : null}
+                  </div>
                 ) : null}
                 <div
                   data-chat-composer-actions="right"
