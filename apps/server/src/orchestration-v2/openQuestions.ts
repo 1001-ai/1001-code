@@ -8,13 +8,13 @@ interface QuestionCandidate {
   readonly role: string;
   readonly text: string;
   readonly streaming: boolean;
-  readonly createdAt: DateTime.Utc;
   readonly updatedAt: DateTime.Utc;
 }
 
 /**
- * When the newest finished assistant message since the user's own latest message asked question
- * cards, or null. Any later message the user writes answers or passes on them; wakes do not.
+ * When the newest assistant message that finished after the user's own latest message asked
+ * question cards, or null. Cards exist once the message finishes, so a reply the user wrote into
+ * mid-stream still asks. Any later message the user writes answers or passes on them; wakes do not.
  */
 export function openQuestionsAt(input: {
   readonly messages: Iterable<QuestionCandidate>;
@@ -25,7 +25,7 @@ export function openQuestionsAt(input: {
     if (message.role !== "assistant" || message.streaming) continue;
     if (
       input.latestUserAuthoredMessageAt !== null &&
-      !DateTime.isGreaterThan(message.createdAt, input.latestUserAuthoredMessageAt)
+      !DateTime.isGreaterThan(message.updatedAt, input.latestUserAuthoredMessageAt)
     ) {
       continue;
     }
@@ -40,7 +40,6 @@ const decodeCandidates = Schema.decodeUnknownOption(
     Schema.Array(
       Schema.Struct({
         text: Schema.String,
-        createdAt: Schema.DateTimeUtcFromString,
         updatedAt: Schema.DateTimeUtcFromString,
       }),
     ),
@@ -65,16 +64,16 @@ export function openQuestionsAtFromCandidates(
 }
 
 /**
- * Finished assistant messages since the thread's latest user-authored one that may hold cards, as a
- * JSON array. Both scans walk the (thread_id, created_at) index from the newest message, so a
- * thread costs only its messages since the user last wrote.
+ * Finished assistant messages that may hold cards, as a JSON array; `openQuestionsAt` keeps those
+ * that finished after the user's latest message. The scan starts at the user's second-latest
+ * message, so a reply already streaming when the user last wrote is included, and both scans walk
+ * the (thread_id, created_at) index from the newest message: a thread costs its last two turns.
  */
 export function openQuestionCandidatesColumn(sql: SqlClient.SqlClient, threadId: string) {
   const thread = sql.literal(threadId);
   return sql`(
     SELECT json_group_array(json_object(
       'text', json_extract(candidate.payload_json, '$.text'),
-      'createdAt', candidate.created_at,
       'updatedAt', candidate.updated_at
     ))
     FROM orchestration_v2_projection_messages candidate
@@ -89,7 +88,7 @@ export function openQuestionCandidatesColumn(sql: SqlClient.SqlClient, threadId:
           AND authored.role = 'user'
           AND json_extract(authored.payload_json, '$.createdBy') = 'user'
         ORDER BY authored.created_at DESC, authored.message_id DESC
-        LIMIT 1
+        LIMIT 1 OFFSET 1
       ), '')
   )`;
 }

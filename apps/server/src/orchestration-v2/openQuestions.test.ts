@@ -22,6 +22,7 @@ type Message = {
   readonly createdBy: "user" | "agent";
   readonly text: string;
   readonly second: number;
+  readonly finished?: number;
   readonly streaming?: boolean;
 };
 const user = (second: number, text = "Go"): Message => ({
@@ -63,6 +64,11 @@ const cases: ReadonlyArray<readonly [string, ReadonlyArray<Message>, number | nu
     3,
   ],
   ["a question still streaming", [user(1), assistant(2, card("Q1"), true)], null],
+  [
+    "a question that finished after the user wrote mid-stream",
+    [user(1), user(3, "Also check the docs"), { ...assistant(2, card("Q1")), finished: 4 }],
+    4,
+  ],
   ["a quote that is not a card", [user(1), assistant(2, "> **Q1 · Ship it?**")], null],
 ];
 
@@ -116,7 +122,7 @@ describe("thread shell openQuestionsAt", () => {
             id: EventId.make(`event:open-questions:${key}:message:${index}`),
             type: "message.updated",
             threadId,
-            occurredAt: at(message.second),
+            occurredAt: at(message.finished ?? message.second),
             payload: {
               createdBy: message.createdBy,
               creationSource: message.createdBy === "user" ? "web" : "server",
@@ -129,7 +135,7 @@ describe("thread shell openQuestionsAt", () => {
               attachments: [],
               streaming: message.streaming ?? false,
               createdAt: at(message.second),
-              updatedAt: at(message.second),
+              updatedAt: at(message.finished ?? message.second),
             },
           });
         }
