@@ -177,7 +177,7 @@ export function RightPanelSurfaceContent(props: {
     case "board":
       return (
         <Suspense fallback={null}>
-          <BoardPanel threadRef={threadRef} projectId={props.files.projectId ?? null} />
+          <BoardPanel threadRef={threadRef} projectId={props.pullRequest.projectId} />
         </Suspense>
       );
     case "side-chat":

@@ -370,6 +370,60 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Board", (it) => 
     }).pipe(Effect.scoped),
   );
 
+  it.effect("an open board never shows a refresh read with a key since disconnected", () =>
+    Effect.gen(function* () {
+      const reading = yield* Deferred.make<void>();
+      const released = yield* Deferred.make<void>();
+      let hold = false;
+      const linear = fakeLinear((operation, variables, apiKey) => {
+        const answered = boardAnswers([[linearIssue(apiKey === GOOD_KEY ? "1" : "2", "s-todo")]])(
+          operation,
+          variables,
+        );
+        return operation === "BoardIssues" && hold
+          ? Deferred.succeed(reading, undefined).pipe(
+              Effect.andThen(Deferred.await(released)),
+              Effect.as(answered),
+            )
+          : answered;
+      });
+      const board = yield* makeBoard({
+        client: linear.client,
+        catalog: catalog([catalogEntry({ team: "ENG" })]),
+        secrets: yield* buildSecrets(),
+      });
+      yield* board.connect(GOOD_KEY);
+      const updates = yield* Queue.unbounded<BoardSnapshot>();
+      yield* board.changes(PROJECT_ID).pipe(
+        Stream.runForEach((snapshot) => Queue.offer(updates, snapshot)),
+        Effect.forkScoped,
+      );
+      ready(yield* Queue.take(updates));
+
+      hold = true;
+      const refreshing = yield* board.refresh(PROJECT_ID).pipe(Effect.forkChild);
+      yield* Deferred.await(reading);
+      hold = false;
+      yield* board.disconnect;
+      yield* Deferred.succeed(released, undefined);
+      expect((yield* Fiber.join(refreshing)).status).toBe("not-connected");
+
+      yield* board.connect(OTHER_KEY);
+      const seen: Array<string> = [];
+      while (!seen.includes("ENG-2")) {
+        const snapshot = yield* Queue.take(updates);
+        seen.push(
+          snapshot.status === "ready"
+            ? snapshot.board.columns
+                .flatMap((column) => column.issues.map((issue) => issue.identifier))
+                .join()
+            : snapshot.status,
+        );
+      }
+      expect(seen).toEqual(["not-connected", "ENG-2"]);
+    }).pipe(Effect.scoped),
+  );
+
   it.effect("reads every page of the team's issues into its columns, then serves the cache", () => {
     const answer = boardAnswers([
       [linearIssue("1", "s-todo"), linearIssue("2", "s-done")],

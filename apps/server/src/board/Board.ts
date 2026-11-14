@@ -130,6 +130,9 @@ const make = Effect.gen(function* () {
   const boardSignals = yield* PubSub.unbounded<BoardSignal>();
   const cache = new Map<string, CachedBoard>();
   const readLock = yield* Semaphore.make(1);
+  // Bumped on every key change; a refresh publishes only if no change happened while it read.
+  let credentialGeneration = 0;
+  const credentialLock = yield* Semaphore.make(1);
 
   const linear = Effect.fn("Board.linear")(function* <S extends Schema.Top>(
     apiKey: string,
@@ -297,10 +300,17 @@ const make = Effect.gen(function* () {
   const refresh: Board["Service"]["refresh"] = Effect.fn("Board.refresh")(function* (projectId) {
     // A catalog edit, such as a new `linear` field, should count on the next refresh.
     yield* teamCatalog.refresh({ force: true });
+    const generation = credentialGeneration;
     const snapshot = yield* read(projectId, { refresh: true });
     // Open boards get this snapshot itself: a re-read would hit the cache and drop its failure.
-    yield* PubSub.publish(boardSignals, { projectId, snapshot });
-    return snapshot;
+    const published = yield* credentialLock.withPermits(1)(
+      Effect.suspend(() =>
+        generation === credentialGeneration
+          ? PubSub.publish(boardSignals, { projectId, snapshot })
+          : Effect.succeed(false),
+      ),
+    );
+    return published ? snapshot : yield* read(projectId);
   });
 
   const changes: Board["Service"]["changes"] = (projectId) =>
@@ -319,22 +329,24 @@ const make = Effect.gen(function* () {
       }),
     );
 
-  const setCredential = Effect.fn("Board.setCredential")(function* (
-    credential: StoredCredential | null,
-  ) {
-    if (credential === null) {
-      yield* secrets.remove(CREDENTIAL_SECRET_NAME).pipe(Effect.orDie);
-    } else {
-      yield* secrets
-        .set(CREDENTIAL_SECRET_NAME, new TextEncoder().encode(encodeCredential(credential)))
-        .pipe(Effect.orDie);
-    }
-    cache.clear();
-    const connection = toConnection(credential);
-    yield* SubscriptionRef.set(connectionState, connection);
-    yield* PubSub.publish(boardSignals, null);
-    return connection;
-  });
+  const setCredential = Effect.fn("Board.setCredential")(
+    function* (credential: StoredCredential | null) {
+      if (credential === null) {
+        yield* secrets.remove(CREDENTIAL_SECRET_NAME).pipe(Effect.orDie);
+      } else {
+        yield* secrets
+          .set(CREDENTIAL_SECRET_NAME, new TextEncoder().encode(encodeCredential(credential)))
+          .pipe(Effect.orDie);
+      }
+      cache.clear();
+      credentialGeneration += 1;
+      const connection = toConnection(credential);
+      yield* SubscriptionRef.set(connectionState, connection);
+      yield* PubSub.publish(boardSignals, null);
+      return connection;
+    },
+    (effect) => credentialLock.withPermits(1)(effect),
+  );
 
   const connect: Board["Service"]["connect"] = Effect.fn("Board.connect")(function* (rawKey) {
     const apiKey = rawKey.trim();
