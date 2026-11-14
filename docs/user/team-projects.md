@@ -15,6 +15,10 @@ Clear the field to stop using a catalog.
 The setting belongs to the environment, like other server settings. Set it on each machine you
 add projects on.
 
+An administrator can set a default catalog for everyone with the `T3CODE_TEAM_CATALOG`
+environment variable on the server. Each environment uses it until someone sets or clears the
+catalog there, and **Use default** goes back to it.
+
 ## Add a team project
 
 Open **Add project** from the sidebar or the command palette. Below the usual sources, **Team

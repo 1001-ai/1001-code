@@ -55,6 +55,7 @@ const catalog = (
   source: string | null = "git@github.com:acme/catalog.git",
 ): TeamCatalogSnapshot => ({
   source,
+  defaultSource: null,
   revision: "abc",
   fetchedAt: null,
   refreshing: false,
