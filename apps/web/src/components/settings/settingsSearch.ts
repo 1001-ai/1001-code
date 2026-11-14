@@ -496,6 +496,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     ],
   },
   {
+    id: "reply-markers",
+    title: "Reply markers",
+    to: "/settings/chat",
+    searchTerms: ["reply quote thread exchange which message answers steer queued view thread"],
+  },
+  {
     id: "guest-links",
     title: "Guest links",
     to: "/settings/labs",
