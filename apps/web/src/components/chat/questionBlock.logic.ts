@@ -31,6 +31,7 @@ function isVisibleText(value: string, max: number): boolean {
 // Up to 3 spaces before `>`, as CommonMark allows; deeper or lazy lines belong to something else.
 const QUOTE_LINE = /^ {0,3}> ?(.*)$/;
 const QUOTE_HEADER = /^\*\*(Q[1-9][0-9]{0,5}) · (.+)\*\*( \(pick any\))?$/;
+const PICK_ANY_SUFFIX = " (pick any)";
 const QUOTE_OPTION = /^- (.*)$/;
 // Text that CommonMark would read as a nested block (list, quote, heading, task box, code fence,
 // thematic break) is not a plain option; `-1`, `+5%`, `*args` and `#hash` stay plain text.
@@ -42,8 +43,8 @@ const REPLY_HINT = /^(?:_Reply with .+_|\*Reply with .+\*)$/;
 
 /**
  * A blockquote's markdown source as a question, or null when it is an ordinary quote:
- * a bold `**Q<n> · prompt**` line, optionally ` (pick any)`, then 2 to 8 `- option` items
- * (one may end ` _(recommended)_`) or a single `_Reply with …_` line for free text.
+ * a bold `**Q<n> · prompt**` line, which may end ` (pick any)` inside or after the bold, then
+ * 2 to 8 `- option` items (one may end ` _(recommended)_`) or one `_Reply with …_` line for text.
  */
 export function parseQuestionQuote(source: string): QuestionBlock | null {
   if (source.length > 4_000) return null;
@@ -56,12 +57,15 @@ export function parseQuestionQuote(source: string): QuestionBlock | null {
   const [header = "", ...body] = lines;
   const heading = QUOTE_HEADER.exec(header);
   if (!heading) return null;
-  const [, id = "", prompt = "", pickAny] = heading;
+  const [, id = "", boldText = "", pickAnyAfterBold] = heading;
+  const pickAnyInBold = boldText.endsWith(PICK_ANY_SUFFIX);
+  const prompt = pickAnyInBold ? boldText.slice(0, -PICK_ANY_SUFFIX.length) : boldText;
+  const pickAny = pickAnyInBold || pickAnyAfterBold !== undefined;
   if (prompt.includes("**") || !isVisibleText(prompt, 500)) return null;
 
   const [hint] = body;
   if (body.length === 1 && hint !== undefined && REPLY_HINT.test(hint)) {
-    if (pickAny !== undefined || !isVisibleText(hint, 500)) return null;
+    if (pickAny || !isVisibleText(hint, 500)) return null;
     return { id, prompt, kind: "text" };
   }
 
@@ -81,7 +85,7 @@ export function parseQuestionQuote(source: string): QuestionBlock | null {
   }
   if (options.length < 2 || options.length > 8) return null;
   const recommendation = recommended === undefined ? {} : { recommended };
-  if (pickAny !== undefined) {
+  if (pickAny) {
     // A multi answer joins options with the separator, so an option containing it can't round-trip.
     if (options.some((option) => option.includes(MULTI_SEPARATOR))) return null;
     return { id, prompt, kind: "multi", options, ...recommendation };

@@ -24,6 +24,16 @@ describe("parseQuestionQuote", () => {
       { id: "Q2", prompt: "Which formats?", kind: "multi", options: ["CSV", "JSON", "Parquet"] },
     ],
     [
+      "multi marked inside the bold",
+      quote("**Q25 · Which items should be visible? (pick any)**", "- Limits", "- Cost"),
+      {
+        id: "Q25",
+        prompt: "Which items should be visible?",
+        kind: "multi",
+        options: ["Limits", "Cost"],
+      },
+    ],
+    [
       "boolean",
       quote("**Q3 · Keep it?**", "- Yes *(recommended)*", "- No"),
       { id: "Q3", prompt: "Keep it?", kind: "boolean", recommended: "Yes" },
@@ -121,6 +131,11 @@ describe("parseQuestionQuote", () => {
     ["two recommendations", quote("**Q1 · Pick**", "- A *(recommended)*", "- B _(recommended)_")],
     ["a reply hint with options", quote("**Q1 · Pick one**", "- A", "- B", "_Reply with Q1: A_")],
     ["a reply hint on pick any", quote("**Q1 · Pick any** (pick any)", "_Reply with Q1: A_")],
+    [
+      "a reply hint on pick any in the bold",
+      quote("**Q1 · Pick (pick any)**", "_Reply with Q1: A_"),
+    ],
+    ["pick any as the whole prompt", quote("**Q1 ·  (pick any)**", "- A", "- B")],
     ["a reply hint that is not italic", quote("**Q1 · Name it**", "Reply with Q1: the name.")],
     ["a prompt over 500 characters", quote(`**Q1 · ${"a".repeat(501)}**`, "- A", "- B")],
     ["an option over 120 characters", quote("**Q1 · Pick one**", `- ${"a".repeat(121)}`, "- B")],
