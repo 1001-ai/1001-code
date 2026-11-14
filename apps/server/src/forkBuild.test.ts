@@ -3,16 +3,19 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import { FORK_RELEASE_DOWNLOAD_MESSAGE, FORK_UPDATES_MESSAGE } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as Config from "effect/Config";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
 
 import { runUpdate } from "./cli/update.ts";
 import * as BootService from "./cloud/bootService.ts";
+import { hostedAppUrlConfig } from "./cloud/publicConfig.ts";
 import { ensurePinnedRuntimeInstalled } from "./cloud/pinnedRuntime.ts";
 import * as ServerConfig from "./config.ts";
 import * as ManagedPolicy from "./policy/ManagedPolicy.ts";
@@ -68,6 +71,20 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("fork build defau
         ),
       );
       assert.equal(urls.length, sent);
+    }),
+  );
+
+  it.effect("names no hosted app for agents' thread links unless one is configured", () =>
+    Effect.gen(function* () {
+      const hostedAppUrl = (env: Record<string, string>) =>
+        Config.option(hostedAppUrlConfig).pipe(
+          Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env }))),
+        );
+      assert.deepEqual(yield* hostedAppUrl({}), Option.none());
+      assert.deepEqual(
+        yield* hostedAppUrl({ T3CODE_HOSTED_APP_URL: "https://hosted.example.test" }),
+        Option.some("https://hosted.example.test"),
+      );
     }),
   );
 
