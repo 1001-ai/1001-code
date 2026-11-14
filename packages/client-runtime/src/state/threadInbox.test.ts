@@ -200,6 +200,44 @@ describe("createInboxReturnTracker", () => {
     ]);
   });
 
+  it("returns a working thread that asked unseen questions after the grace, and shelves it once read", () => {
+    const tracker = createInboxReturnTracker();
+    const asked = {
+      ...thread("a", true),
+      openQuestionsAt: "2026-06-01T00:00:05.000Z",
+      lastVisitedAt: "2026-06-01T00:00:01.000Z",
+    };
+    tracker.observe([thread("a", true)]);
+    tracker.observe([asked]);
+    // The grace lets the visit of someone already reading the thread land first.
+    expect(tracker.isWorking(asked)).toBe(true);
+    vi.advanceTimersByTime(2_000);
+    expect(tracker.isWorking(asked)).toBe(false);
+    expect(tracker.returnedAt(asked)).toBe(12_000);
+    const read = { ...asked, lastVisitedAt: "2026-06-01T00:00:06.000Z" };
+    tracker.observe([read]);
+    expect(tracker.isWorking(read)).toBe(true);
+  });
+
+  it("orders a thread by when it asked questions", () => {
+    const finished = {
+      ...thread("finished", false),
+      latestRun: {
+        runId: RunId.make("run:finished"),
+        status: "completed" as const,
+        requestedAt: "2026-06-01T01:00:00.000Z",
+        startedAt: "2026-06-01T01:00:00.000Z",
+        completedAt: "2026-06-01T02:00:00.000Z",
+        assistantMessageId: null,
+      },
+    };
+    const asked = { ...thread("asked", true), openQuestionsAt: "2026-06-01T03:00:00.000Z" };
+    expect(sortInboxThreadsByReturn([finished, asked]).map((entry) => entry.id)).toEqual([
+      "asked",
+      "finished",
+    ]);
+  });
+
   it("cancels pending timers for removed threads and disabled shelves", () => {
     const tracker = createInboxReturnTracker();
     const notify = vi.fn();

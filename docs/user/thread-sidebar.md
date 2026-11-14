@@ -140,6 +140,10 @@ there. A thread returns to the top of the active list when it finishes, fails, o
 answer. The Working section lists the thread you last sent work to first. Pinned threads stay in
 the pinned section.
 
+A thread also comes back when the agent asks you questions in its reply while it keeps working. It
+shows **Input** until you open it or reply, then returns to the Working section if work is still
+running.
+
 This is on by default. Turn it off with **Settings → General → Working section** on web and desktop,
 or **Settings → General → Working section** on iOS and Android. Each device keeps its own
 choice.
