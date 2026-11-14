@@ -2,6 +2,7 @@ import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { lazy, Suspense, useEffect } from "react";
 
+import { cn } from "../../lib/utils";
 import { usePanelAnimationSettings, usePanelPresence } from "../../panelAnimations";
 import { useTerminalUiStateStore } from "../../terminalUiStateStore";
 import {
@@ -26,13 +27,11 @@ export function TeamProjectsDrawer(props: {
   const terminalOpen = useThreadTerminalOpen(threadRef);
   // The terminal drawer stays in layout while it collapses; mounting the graph then would stack both.
   const { active: animated, durationMs } = usePanelAnimationSettings();
-  const terminal = usePanelPresence(
-    terminalOpen,
-    true,
-    animated,
-    threadRef === null ? null : scopedThreadKey(threadRef),
-    durationMs,
-  );
+  const threadKey = threadRef === null ? null : scopedThreadKey(threadRef);
+  const terminal = usePanelPresence(terminalOpen, true, animated, threadKey, durationMs);
+  const shown = threadRef !== null && open && !terminal.present;
+  // Stays mounted while it collapses, like the terminal drawer.
+  const drawer = usePanelPresence(shown, true, animated, threadKey, durationMs);
   const closeTerminalOnArrival = useTeamProjectsDrawerStore(
     (state) => state.closeTerminalOnArrival,
   );
@@ -47,13 +46,24 @@ export function TeamProjectsDrawer(props: {
     setTerminalOpen(threadRef, false);
   }, [closeTerminalOnArrival, setCloseTerminalOnArrival, setTerminalOpen, threadRef]);
 
-  if (threadRef === null || !open || terminal.present) return null;
+  if (threadRef === null || !drawer.present) return null;
   return (
-    <Suspense fallback={null}>
-      <TeamProjectsDrawerPanel
-        threadEnvironmentId={threadRef.environmentId}
-        composerHeight={props.composerHeight}
-      />
-    </Suspense>
+    <div
+      className={cn(
+        "grid shrink-0 overflow-clip",
+        shown ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
+        "[[data-panel-animations=true]_&]:transition-[grid-template-rows] [[data-panel-animations=true]_&]:duration-(--panel-animation-duration) [[data-panel-animations=true]_&]:ease-out",
+        shown && "[[data-panel-animations=true]_&]:starting:grid-rows-[0fr]!",
+      )}
+    >
+      <div className="min-h-0 overflow-clip">
+        <Suspense fallback={null}>
+          <TeamProjectsDrawerPanel
+            threadEnvironmentId={threadRef.environmentId}
+            composerHeight={props.composerHeight}
+          />
+        </Suspense>
+      </div>
+    </div>
   );
 }
