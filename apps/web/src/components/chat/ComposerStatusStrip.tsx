@@ -17,6 +17,7 @@ import {
   paceOf,
   remainingPercent,
 } from "@t3tools/shared/usageLimits";
+import { createLucideIcon, GaugeIcon } from "lucide-react";
 import { memo, useState, type ReactNode } from "react";
 
 import {
@@ -25,10 +26,12 @@ import {
   useClientSettings,
   usePrimarySettings,
 } from "../../hooks/useSettings";
+import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { formatContextWindowTokens } from "../../lib/contextWindow";
 import { cn } from "../../lib/utils";
 import { useThreadCostEstimate, useThreadTurnSubagents } from "../../state/threadCost";
 import { formatUpcomingTimestamp } from "../../timestampFormat";
+import { Button } from "../ui/button";
 import { Menu, MenuItem, MenuPopup } from "../ui/menu";
 import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -81,12 +84,18 @@ export const ComposerStatusStrip = memo(function ComposerStatusStrip(
   props: ComposerStatusStripProps,
 ) {
   const visible = useClientSettings(selectVisible);
-  const threadId = visible ? props.threadId : null;
+  const reduceMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
+  // A toggle animates: the box stays mounted until it has slid shut, and slides open only then.
+  const [lastVisible, setLastVisible] = useState(visible);
+  const [animating, setAnimating] = useState(false);
+  if (lastVisible !== visible) {
+    setLastVisible(visible);
+    setAnimating(!reduceMotion);
+  }
+  const threadId = visible || animating ? props.threadId : null;
   const subagents = useThreadTurnSubagents(props.environmentId, threadId);
   const cost = useThreadCostEstimate(props.environmentId, threadId);
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
-  if (threadId === null) return null;
-
   const limits = resolveInstanceLimits(
     props.providerInstanceId,
     props.providers,
@@ -100,7 +109,12 @@ export const ComposerStatusStrip = memo(function ComposerStatusStrip(
       : null;
   const liveSubagents = subagents?.liveCount ?? 0;
   const costUsd = cost?.costUsd ?? null;
-  if (windows.length === 0 && context === null && liveSubagents === 0 && costUsd === null) {
+  if (
+    threadId === null ||
+    (windows.length === 0 && context === null && liveSubagents === 0 && costUsd === null)
+  ) {
+    // Nothing is mounted to finish a transition, so a toggle here settles at once.
+    if (animating) setAnimating(false);
     return null;
   }
 
@@ -111,96 +125,139 @@ export const ComposerStatusStrip = memo(function ComposerStatusStrip(
       data-slot="composer-status-box"
       // Marks an attached surface, so the composer card paints its own glass as it does for a banner.
       data-composer-banner-surface="attached"
-      className={BOX_CLASS}
+      data-open={visible || undefined}
+      data-animating={animating || undefined}
+      inert={!visible}
+      className={cn(BOX_CLASS, animating && visible && BOX_OPENING_CLASS)}
+      onTransitionEnd={(event) => {
+        if (event.target === event.currentTarget && event.propertyName === "grid-template-rows") {
+          setAnimating(false);
+        }
+      }}
       onContextMenu={(event) => {
         event.preventDefault();
         setMenuPosition({ x: event.clientX, y: event.clientY });
       }}
     >
-      {/* Fixed height and wrapping: items that do not fit drop to a clipped second line, last first. */}
-      <div className="pointer-events-auto flex h-7 min-w-0 flex-wrap content-start items-center gap-x-4 overflow-hidden px-4 text-xs whitespace-nowrap tabular-nums @max-[29rem]/status:gap-x-3">
-        {limits
-          ? windows.map((window, index) => {
-              const left = remainingPercent(window);
-              const tone = limitTone(left);
-              return (
-                <StatusItem
-                  key={window.id}
-                  label={`${window.label} limit: ${left}% left`}
-                  tooltip={<LimitsTooltip limits={limits} windows={windows} />}
-                  // Narrow boxes keep the first window and context; a window near its limit stays.
-                  className={index > 0 && tone === null ? "@max-[29rem]/status:hidden" : undefined}
-                >
-                  <StatusMeter
-                    label={shortWindowLabel(window)}
-                    fill={left}
-                    tone={tone}
-                    value={`${left}% left`}
-                  />
-                </StatusItem>
-              );
-            })
-          : null}
-        {context ? (
-          <StatusItem
-            label={`Context window: ${contextUsed !== null ? `${contextUsed}% used` : `${formatContextWindowTokens(context.usedTokens)} tokens used`}`}
-            tooltip={<ContextTooltip usage={context} />}
-          >
-            <StatusMeter
-              label="Context"
-              fill={contextUsed}
-              tone={contextTone(contextUsed)}
-              value={
-                contextUsed !== null
-                  ? `${contextUsed}% used`
-                  : `${formatContextWindowTokens(context.usedTokens)} used`
-              }
-            />
-          </StatusItem>
-        ) : null}
-        {showSubagents ? (
-          <StatusItem
-            label={`${subagentLabel(liveSubagents)} running`}
-            tooltip={<SubagentsTooltip turn={subagents} />}
-            className="ms-auto"
-          >
-            <StatusMeter
-              label="Subagents"
-              fill={null}
-              tone={null}
-              value={`${liveSubagents} running`}
-            />
-          </StatusItem>
-        ) : null}
-        {cost && costUsd !== null ? (
-          <StatusItem
-            label={`Estimated cost ${formatCostUsd(costUsd)}`}
-            tooltip={<CostTooltip estimate={cost} costUsd={costUsd} />}
-            className={showSubagents ? undefined : "ms-auto"}
-          >
-            <StatusMeter label="Cost" fill={null} tone={null} value={formatCostUsd(costUsd)} />
-          </StatusItem>
-        ) : null}
-      </div>
-
-      <Menu open={menuPosition !== null} onOpenChange={(open) => !open && setMenuPosition(null)}>
-        <MenuPopup
-          anchor={
-            menuPosition
-              ? {
-                  getBoundingClientRect: () => new DOMRect(menuPosition.x, menuPosition.y, 0, 0),
+      <div className="min-h-0 overflow-hidden">
+        {/* Fixed height and wrapping: items that do not fit drop to a clipped second line, last first. */}
+        <div className={cn(LINE_CLASS, animating && visible && LINE_OPENING_CLASS)}>
+          {limits
+            ? windows.map((window, index) => {
+                const left = remainingPercent(window);
+                const tone = limitTone(left);
+                return (
+                  <StatusItem
+                    key={window.id}
+                    label={`${window.label} limit: ${left}% left`}
+                    tooltip={<LimitsTooltip limits={limits} windows={windows} />}
+                    // Narrow boxes keep the first window and context; a window near its limit stays.
+                    className={
+                      index > 0 && tone === null ? "@max-[29rem]/status:hidden" : undefined
+                    }
+                  >
+                    <StatusMeter
+                      label={shortWindowLabel(window)}
+                      fill={left}
+                      tone={tone}
+                      value={`${left}% left`}
+                    />
+                  </StatusItem>
+                );
+              })
+            : null}
+          {context ? (
+            <StatusItem
+              label={`Context window: ${contextUsed !== null ? `${contextUsed}% used` : `${formatContextWindowTokens(context.usedTokens)} tokens used`}`}
+              tooltip={<ContextTooltip usage={context} />}
+            >
+              <StatusMeter
+                label="Context"
+                fill={contextUsed}
+                tone={contextTone(contextUsed)}
+                value={
+                  contextUsed !== null
+                    ? `${contextUsed}% used`
+                    : `${formatContextWindowTokens(context.usedTokens)} used`
                 }
-              : undefined
-          }
-          align="start"
-          side="top"
-        >
-          <MenuItem onClick={hideStatusLine}>Hide status line</MenuItem>
-        </MenuPopup>
-      </Menu>
+              />
+            </StatusItem>
+          ) : null}
+          {showSubagents ? (
+            <StatusItem
+              label={`${subagentLabel(liveSubagents)} running`}
+              tooltip={<SubagentsTooltip turn={subagents} />}
+              className="ms-auto"
+            >
+              <StatusMeter
+                label="Subagents"
+                fill={null}
+                tone={null}
+                value={`${liveSubagents} running`}
+              />
+            </StatusItem>
+          ) : null}
+          {cost && costUsd !== null ? (
+            <StatusItem
+              label={`Estimated cost ${formatCostUsd(costUsd)}`}
+              tooltip={<CostTooltip estimate={cost} costUsd={costUsd} />}
+              className={showSubagents ? undefined : "ms-auto"}
+            >
+              <StatusMeter label="Cost" fill={null} tone={null} value={formatCostUsd(costUsd)} />
+            </StatusItem>
+          ) : null}
+        </div>
+
+        <Menu open={menuPosition !== null} onOpenChange={(open) => !open && setMenuPosition(null)}>
+          <MenuPopup
+            anchor={
+              menuPosition
+                ? {
+                    getBoundingClientRect: () => new DOMRect(menuPosition.x, menuPosition.y, 0, 0),
+                  }
+                : undefined
+            }
+            align="start"
+            side="top"
+          >
+            <MenuItem onClick={hideStatusLine}>Hide status line</MenuItem>
+          </MenuPopup>
+        </Menu>
+      </div>
     </div>
   );
 }, sameStripProps);
+
+const GaugeOffIcon = createLucideIcon("gauge-off", [
+  ["path", { d: "m12 14 4-4", key: "9kzdfg" }],
+  ["path", { d: "M3.34 19a10 10 0 1 1 17.32 0", key: "19p75a" }],
+  ["path", { d: "m2 2 20 20", key: "1ooewy" }],
+]);
+
+/** The composer footer's switch for the status box, beside the attach button. */
+export function ComposerStatusToggle() {
+  const visible = useClientSettings(selectVisible);
+  const label = visible ? "Hide status line" : "Show status line";
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            onPointerDown={(event) => event.preventDefault()}
+            onClick={() => void setStatusLine(!visible)}
+            aria-label={label}
+          />
+        }
+      >
+        {visible ? <GaugeIcon /> : <GaugeOffIcon />}
+      </TooltipTrigger>
+      <TooltipPopup>{label}</TooltipPopup>
+    </Tooltip>
+  );
+}
 
 function setStatusLine(visible: boolean) {
   return updateClientSettings({
@@ -243,7 +300,9 @@ function sameStripProps(previous: ComposerStatusStripProps, next: ComposerStatus
 // against the wrapper this sits in (the context row's), with its top 1rem tucked under the card and
 // masked out so the card's own glass is not doubled.
 const BOX_CLASS = cn(
-  "@container/status pb-1.5",
+  "@container/status group/status-box grid grid-rows-[0fr] data-open:grid-rows-[1fr]",
+  // Hiding collapses the box up under the card and fades its glass; showing reverses it.
+  "transition-[grid-template-rows] duration-200 ease-drawer before:transition-opacity before:duration-200 before:ease-drawer not-data-open:before:opacity-0 motion-reduce:transition-none motion-reduce:before:transition-none",
   "before:pointer-events-none before:absolute before:inset-x-0 before:-top-[calc(1rem+1px)] before:bottom-0 before:-z-1",
   "before:rounded-b-2xl before:border before:border-(--chat-composer-outline) before:mask-b-from-transparent before:mask-b-from-4 before:mask-b-to-black before:mask-b-to-4",
   "before:bg-(--chat-composer-glass-surface)/(--glass-opacity) before:backdrop-blur-(--glass-blur) before:backdrop-saturate-(--glass-saturation)",
@@ -251,6 +310,15 @@ const BOX_CLASS = cn(
   "dark:supports-[(backdrop-filter:blur(1px))_or_(-webkit-backdrop-filter:blur(1px))]:before:bg-composer-seam-below",
   "not-supports-[((backdrop-filter:blur(1px))_or_(-webkit-backdrop-filter:blur(1px)))]:before:bg-(--chat-composer-glass-surface)",
 );
+
+const LINE_CLASS = cn(
+  "pointer-events-auto mb-1.5 flex h-7 min-w-0 flex-wrap content-start items-center gap-x-4 overflow-hidden px-4 text-xs whitespace-nowrap tabular-nums @max-[29rem]/status:gap-x-3",
+  "-translate-y-full opacity-0 transition-[opacity,translate] duration-200 ease-drawer group-data-open/status-box:translate-y-0 group-data-open/status-box:opacity-100 motion-reduce:transition-none",
+);
+
+// A box shown by a toggle mounts closed, so it slides open instead of appearing.
+const BOX_OPENING_CLASS = "starting:grid-rows-[0fr]! starting:before:opacity-0!";
+const LINE_OPENING_CLASS = "starting:-translate-y-full! starting:opacity-0!";
 
 /** A label, a small bar and a value, coloured only near a limit. Matches the thread details rows. */
 function StatusMeter({
