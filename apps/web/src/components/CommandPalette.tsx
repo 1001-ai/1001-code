@@ -247,6 +247,7 @@ import {
   sourceControlHostIcon,
 } from "./CommandPaletteAddProject";
 import { useTeamProjectPaletteGroups } from "./teamProjects/useTeamProjectPaletteGroups";
+import { useTeamProjectsDrawerToggle } from "./teamProjects/teamProjectsDrawerState";
 import { boardPaletteAction } from "./board/boardSurface";
 import { useCommandPaletteThreadItems } from "./CommandPaletteThreadItems";
 import { useCommandPaletteThemeItems } from "./CommandPaletteThemeItems";
@@ -1236,6 +1237,7 @@ function OpenCommandPaletteDialog(props: {
     environmentId: teamProjectEnvironmentId,
     closePalette: () => setOpen(false),
   });
+  const teamProjectsDrawer = useTeamProjectsDrawerToggle();
 
   const openAddProjectFlow = () => {
     switch (addProjectEntry.kind) {
@@ -1707,10 +1709,10 @@ function OpenCommandPaletteDialog(props: {
     kind: "action",
     value: "action:team-projects",
     searchTerms: ["team", "projects", "catalog", "graph", "links", "owners", "access"],
-    title: "Open team projects",
+    title: teamProjectsDrawer.visible ? "Hide team projects" : "Show team projects",
     icon: <NetworkIcon className={ITEM_ICON_CLASS} />,
     run: async () => {
-      await navigate({ to: "/team-projects" });
+      teamProjectsDrawer.toggle();
     },
   });
 
