@@ -1,7 +1,6 @@
 import type { ResponseContextRecord, ScopedThreadRef } from "@t3tools/contracts";
 import { resolveUserMessagePresentation } from "@t3tools/client-runtime/user-message";
 import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
-import { MessageSquareQuoteIcon } from "lucide-react";
 import {
   createContext,
   use,
@@ -10,6 +9,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type CSSProperties,
   type MouseEvent,
   type ReactNode,
 } from "react";
@@ -17,11 +17,11 @@ import { captureAssistantMessageOpening } from "~/lib/assistantTextSelection";
 import { responseContextRecord } from "~/lib/composerContextRecords";
 import { useStableCallback } from "~/hooks/useStableCallback";
 import { observeResize } from "~/lib/observeResize";
+import { cn } from "~/lib/utils";
 import { useComposerDraftStore } from "../../composerDraftStore";
 import { useClientSettings } from "../../hooks/useSettings";
 import { readResponseSubagents } from "../../state/entities";
 import { Button } from "../ui/button";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   deriveExchangeMap,
   replyMarkersEnabled,
@@ -41,12 +41,38 @@ import { TimelineRowCtx } from "./timelineRowContext";
 
 const MOTION_MS = 240;
 const MOTION_EASING = "cubic-bezier(0.25, 0.8, 0.25, 1)";
+/** A bubble click waits this long, so a double click that selects a word does not open the view. */
+const BUBBLE_CLICK_DELAY_MS = 250;
+/** Inside a bubble, clicks on these do their own thing. */
+const BUBBLE_INTERACTIVE_SELECTOR = [
+  "a[href]",
+  "button",
+  "input",
+  "textarea",
+  "select",
+  "summary",
+  "label",
+  "audio",
+  "video",
+  "iframe",
+  "[role=button]",
+  "[role=link]",
+  "[role=checkbox]",
+  "[role=radio]",
+  "[role=switch]",
+  "[role=tab]",
+  "[role=menuitem]",
+  "[contenteditable]:not([contenteditable=false])",
+  "[tabindex]:not([tabindex='-1'])",
+  "[data-chat-markdown-question]",
+].join(", ");
 
 export interface ExchangeThreadContextValue {
   readonly map: ExchangeMap;
   readonly quotes: ReadonlyMap<string, string>;
   readonly markersEnabled: boolean;
   readonly open: (trigger: ThreadTrigger) => void;
+  readonly openFromBubble: (event: MouseEvent<HTMLElement>, rowId: string) => void;
 }
 
 /** Rows drawn inside the thread view already read in order, so they carry no markers. */
@@ -68,6 +94,27 @@ function deriveStructure(identity: string, rows: ReadonlyArray<MessagesTimelineR
       quotes.set(row.id, messageQuote(row));
   }
   return { identity, rows, map: deriveExchangeMap(rows), quotes };
+}
+
+function hasTextSelection() {
+  return document.getSelection()?.isCollapsed === false;
+}
+
+/** A plain click on the bubble itself: not a selection, a modified click or one of its controls. */
+function isPlainBubbleClick(event: MouseEvent<HTMLElement>) {
+  if (event.defaultPrevented || event.button !== 0) return false;
+  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return false;
+  if (!(event.target instanceof Element) || hasTextSelection()) return false;
+  const control = event.target.closest(BUBBLE_INTERACTIVE_SELECTOR);
+  if (control !== null && event.currentTarget.contains(control)) return false;
+  // The bubble can hold controls drawn outside its edges, such as floating message actions.
+  const rect = event.currentTarget.getBoundingClientRect();
+  return (
+    event.clientX >= rect.left &&
+    event.clientX <= rect.right &&
+    event.clientY >= rect.top &&
+    event.clientY <= rect.bottom
+  );
 }
 
 function timelineRowElement(viewport: HTMLElement, rowId: string): HTMLElement | null {
@@ -252,6 +299,17 @@ export function useExchangeThread(input: {
     });
   });
 
+  const bubbleClickRef = useRef<number | null>(null);
+  const openFromBubble = useStableCallback((event: MouseEvent<HTMLElement>, rowId: string) => {
+    if (bubbleClickRef.current !== null) window.clearTimeout(bubbleClickRef.current);
+    bubbleClickRef.current = null;
+    if (event.detail > 1 || !isPlainBubbleClick(event)) return;
+    bubbleClickRef.current = window.setTimeout(() => {
+      bubbleClickRef.current = null;
+      if (!hasTextSelection()) open({ rowId, control: "bubble" });
+    }, BUBBLE_CLICK_DELAY_MS);
+  });
+
   const restoreComposerReply = useStableCallback(() => {
     const reply = replyRef.current;
     replyRef.current = null;
@@ -287,6 +345,7 @@ export function useExchangeThread(input: {
     quotes,
     markersEnabled,
     open,
+    openFromBubble,
   };
   if (!opened || rootKey === undefined) return { context, view: null };
   const shownIds = threadRowIds(map, keys);
@@ -342,55 +401,76 @@ export function ExchangeReplyMarker({ row }: { row: MessagesTimelineRow }) {
   );
 }
 
-/** "1 reply" under a message whose reply landed further down. */
+/**
+ * "1 reply" under a message whose reply landed further down. Otherwise a View thread button
+ * that shows only on keyboard focus, since a click on the bubble opens the thread.
+ */
 export function ExchangeReplyLink({ row }: { row: MessagesTimelineRow }) {
   const { ctx, exchange } = useExchange(row.id);
-  if (!ctx || !ctx.markersEnabled || !exchange) return null;
-  if (exchange.replyRowId === null || !exchange.earlierRowIds.includes(row.id)) return null;
+  if (!ctx || !exchange) return null;
+  const replyLink =
+    ctx.markersEnabled && exchange.replyRowId !== null && exchange.earlierRowIds.includes(row.id);
+  const control = replyLink ? "reply-link" : "view-thread";
   return (
     <button
       type="button"
-      data-exchange-thread-control="reply-link"
+      data-exchange-thread-control={control}
       data-exchange-control-row={row.id}
-      onClick={() => ctx.open({ rowId: row.id, control: "reply-link" })}
-      className="me-1 cursor-pointer rounded-sm text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+      onClick={() => ctx.open({ rowId: row.id, control })}
+      className={cn(
+        "me-1 cursor-pointer rounded-sm text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring",
+        !replyLink && "sr-only focus-visible:not-sr-only",
+      )}
     >
-      1 reply
+      {replyLink ? "1 reply" : "View thread"}
     </button>
   );
 }
 
-/** The hover action that opens a message's exchange in the thread view. */
-export function ExchangeViewThreadButton({ rowId }: { rowId: string }) {
+/** What a message bubble spreads on itself so a click on it opens its exchange. */
+export function useExchangeBubble(rowId: string): {
+  onClick?: (event: MouseEvent<HTMLElement>) => void;
+  style?: CSSProperties;
+} {
   const { ctx, exchange } = useExchange(rowId);
-  if (!ctx || !exchange || exchange.userRowIds.length === 0) return null;
+  if (!ctx || !exchange || exchange.userRowIds.length === 0) return {};
+  const { openFromBubble } = ctx;
+  return {
+    onClick: (event) => openFromBubble(event, rowId),
+    style: { cursor: "pointer" },
+  };
+}
+
+/** An agent's opening "Re:" lines, drawn small and muted; they open the thread they answer. */
+export function ExchangeReLines({ rowId, lines }: { rowId: string; lines: ReadonlyArray<string> }) {
+  const { ctx, exchange } = useExchange(rowId);
+  const className =
+    "mb-1.5 block max-w-full text-start text-xs whitespace-pre-line text-muted-foreground [overflow-wrap:anywhere]";
+  const content = lines.join("\n");
+  if (!ctx || !exchange || exchange.userRowIds.length === 0) {
+    return <p className={className}>{content}</p>;
+  }
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            type="button"
-            size="xs"
-            variant="ghost-muted"
-            aria-label="View thread"
-            data-exchange-thread-control="view-thread"
-            data-exchange-control-row={rowId}
-            onClick={() => ctx.open({ rowId, control: "view-thread" })}
-          />
-        }
-      >
-        <MessageSquareQuoteIcon className="size-3" />
-      </TooltipTrigger>
-      <TooltipPopup side="top">View thread</TooltipPopup>
-    </Tooltip>
+    <button
+      type="button"
+      data-exchange-thread-control="re-line"
+      data-exchange-control-row={rowId}
+      onClick={() => ctx.open({ rowId, control: "re-line" })}
+      className={cn(
+        className,
+        "cursor-pointer rounded-sm transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring",
+      )}
+    >
+      {content}
+    </button>
   );
 }
 
 /** The control that opened the view, else its row, else the composer; any may have remounted. */
 function focusThreadTrigger(viewport: HTMLElement, overlay: HTMLElement, trigger: ThreadTrigger) {
-  const [controlSelector, rowSelector] = threadTriggerFocusSelectors(trigger);
-  const outside = (selector: string | undefined) =>
-    selector === undefined
+  const selectors = threadTriggerFocusSelectors(trigger);
+  const outside = (selector: string | null) =>
+    selector === null
       ? undefined
       : [...viewport.querySelectorAll<HTMLElement>(selector)].find((element) => {
           if (overlay.contains(element)) return false;
@@ -403,9 +483,9 @@ function focusThreadTrigger(viewport: HTMLElement, overlay: HTMLElement, trigger
             height: rect.height,
           });
         });
-  const control = outside(controlSelector);
+  const control = outside(selectors.control);
   if (control) return control.focus({ preventScroll: true });
-  const row = outside(rowSelector);
+  const row = outside(selectors.row);
   if (row) {
     if (!row.hasAttribute("tabindex")) {
       row.tabIndex = -1;

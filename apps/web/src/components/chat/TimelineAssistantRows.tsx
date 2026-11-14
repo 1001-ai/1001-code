@@ -30,7 +30,8 @@ import { formatChatTimestampTooltip, formatDayAwareTimestamp } from "../../times
 import { useV2ItemSupport } from "../../state/v2ItemSupport";
 import { TimelineRowCtx, TimelineRowActivityCtx, type TimelineRow } from "./timelineRowContext";
 import { MESSAGE_HEADING_LEVEL, MessageAuthorHeading } from "./TimelineRowParts";
-import { ExchangeReplyMarker, ExchangeViewThreadButton } from "./ExchangeThread";
+import { ExchangeReLines, ExchangeReplyMarker, useExchangeBubble } from "./ExchangeThread";
+import { splitReLines } from "./exchangeThread.logic";
 
 export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
@@ -42,13 +43,17 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
   const text = liveText ?? row.message.text;
   const messageText =
     text || (row.message.streaming || row.suppressEmptyResponse ? "" : "(empty response)");
+  const reLines = splitReLines(messageText);
+  const bodyText = reLines?.body ?? messageText;
+  const exchangeBubble = useExchangeBubble(row.id);
 
   return (
     <>
       <ExchangeReplyMarker row={row} />
       <div className="relative min-w-0 px-1 py-0.5">
         <MessageAuthorHeading>T3 Code</MessageAuthorHeading>
-        <div data-thread-find-text="true">
+        <div data-thread-find-text="true" {...exchangeBubble}>
+          {reLines ? <ExchangeReLines rowId={row.id} lines={reLines.lines} /> : null}
           <AssistantCitationSource
             messageId={row.message.id}
             {...(ctx.threadRef ? { threadRef: ctx.threadRef } : {})}
@@ -58,12 +63,12 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
           >
             <AssistantQuestionMarkdown
               askedInItemId={ctx.onReplyToResponse ? row.projectedItem?.item.id : undefined}
-              text={messageText}
+              text={bodyText}
               renderInsights
               cwd={ctx.markdownCwd}
               threadRef={ctx.threadRef ?? undefined}
               isStreaming={Boolean(row.message.streaming)}
-              lineBreaks={shouldPreserveAssistantLineBreaks(messageText)}
+              lineBreaks={shouldPreserveAssistantLineBreaks(bodyText)}
               skills={ctx.skills}
               headingLevelOffset={MESSAGE_HEADING_LEVEL}
               onUseArtifactTemplate={ctx.onUseArtifactTemplate}
@@ -206,7 +211,6 @@ function AssistantMessageMeta({
       {!message.streaming && projectedItem ? (
         <AssistantReplyButton message={message} itemId={projectedItem.sourceItemId} />
       ) : null}
-      {!message.streaming ? <ExchangeViewThreadButton rowId={message.id} /> : null}
       {!message.streaming && (
         <Tooltip>
           <TooltipTrigger render={<p className="text-muted-foreground text-xs tabular-nums" />}>

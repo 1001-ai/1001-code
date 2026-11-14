@@ -225,7 +225,12 @@ export function shouldAttachThreadReply(input: {
   );
 }
 
-export type ThreadTriggerControl = "reply-link" | "reply-marker" | "view-thread";
+export type ThreadTriggerControl =
+  | "bubble"
+  | "re-line"
+  | "reply-link"
+  | "reply-marker"
+  | "view-thread";
 
 /** What opened the thread view, by identity, since the list can remount the control itself. */
 export interface ThreadTrigger {
@@ -236,12 +241,19 @@ export interface ThreadTrigger {
 const attributeValue = (value: string) => `"${value.replace(/["\\]/g, "\\$&")}"`;
 
 /** Where focus goes back on close, in order: the control that opened the view, then its row. */
-export function threadTriggerFocusSelectors(trigger: ThreadTrigger): string[] {
+export function threadTriggerFocusSelectors(trigger: ThreadTrigger): {
+  readonly control: string | null;
+  readonly row: string;
+} {
   const rowId = attributeValue(trigger.rowId);
-  return [
-    `[data-exchange-thread-control=${attributeValue(trigger.control)}][data-exchange-control-row=${rowId}]`,
-    `[data-timeline-row-id=${rowId}]`,
-  ];
+  return {
+    // A bubble is no focus target, so its row takes focus back.
+    control:
+      trigger.control === "bubble"
+        ? null
+        : `[data-exchange-thread-control=${attributeValue(trigger.control)}][data-exchange-control-row=${rowId}]`,
+    row: `[data-timeline-row-id=${rowId}]`,
+  };
 }
 
 /** What focus restore reads from an element; a duplicate or collapsed copy of a control fails it. */
@@ -286,6 +298,31 @@ export function sameExchangeStructure(
     }
   }
   return true;
+}
+
+const RE_LINE = /^(?:\*\*|__|\*|_)?Re:\s*\S/;
+
+/**
+ * Splits off the `Re:` lines an agent opens a reply with to say what it answers, often in bold.
+ * The web client shows them as a link to the thread; the message text itself stays unchanged.
+ */
+export function splitReLines(
+  text: string,
+): { readonly lines: ReadonlyArray<string>; readonly body: string } | null {
+  const rows = text.trimStart().split("\n");
+  let count = 0;
+  while (count < rows.length && RE_LINE.test(rows[count]!.trim())) count += 1;
+  if (count === 0) return null;
+  const body = rows
+    .slice(count)
+    .join("\n")
+    .replace(/^(?:[ \t]*\r?\n)+/, "");
+  if (body.trim() === "") return null;
+  const lines = rows.slice(0, count).map((row) => {
+    const line = row.replace(/\*\*|__/g, "").trim();
+    return /^([*_]).*\1$/.test(line) ? line.slice(1, -1).trim() : line;
+  });
+  return { lines, body };
 }
 
 // Stored in the free-form `threadDetailsItems` record, so no settings schema change.

@@ -15,6 +15,7 @@ import {
   sameExchangeStructure,
   setReplyMarkersEnabled,
   shouldAttachThreadReply,
+  splitReLines,
   threadTriggerFocusSelectors,
   canRestoreFocusTo,
   threadExchangeKeys,
@@ -223,11 +224,19 @@ describe("shouldAttachThreadReply", () => {
 describe("threadTriggerFocusSelectors", () => {
   it("finds the control that opened the view by its row, then the row, quoting odd ids", () => {
     expect(threadTriggerFocusSelectors({ rowId: 'message:a"b\\c', control: "reply-link" })).toEqual(
-      [
-        '[data-exchange-thread-control="reply-link"][data-exchange-control-row="message:a\\"b\\\\c"]',
-        '[data-timeline-row-id="message:a\\"b\\\\c"]',
-      ],
+      {
+        control:
+          '[data-exchange-thread-control="reply-link"][data-exchange-control-row="message:a\\"b\\\\c"]',
+        row: '[data-timeline-row-id="message:a\\"b\\\\c"]',
+      },
     );
+  });
+
+  it("goes back to the row of a bubble, which cannot hold focus", () => {
+    expect(threadTriggerFocusSelectors({ rowId: "a", control: "bubble" })).toEqual({
+      control: null,
+      row: '[data-timeline-row-id="a"]',
+    });
   });
 });
 
@@ -264,6 +273,46 @@ describe("sameExchangeStructure", () => {
     expect(sameExchangeStructure(rows, [...rows, work("f")])).toBe(false);
     expect(sameExchangeStructure(rows, [user("a", "r2"), rows[1]!])).toBe(false);
     expect(sameExchangeStructure(rows, [user("a", "r1", replyingTo("x")), rows[1]!])).toBe(false);
+  });
+});
+
+describe("splitReLines", () => {
+  it.each([
+    {
+      name: "a bold Re: line splits off without its emphasis",
+      text: '**Re: "fix the bubble"** and **"the line"**\nDone. The **bubble** opens it.',
+      expected: {
+        lines: ['Re: "fix the bubble" and "the line"'],
+        body: "Done. The **bubble** opens it.",
+      },
+    },
+    {
+      name: "a plain Re: paragraph, then a blank line",
+      text: '  Re: "first words" / "more words"\r\n \r\n\n- one\n- two',
+      expected: { lines: ['Re: "first words" / "more words"'], body: "- one\n- two" },
+    },
+    {
+      name: "several Re: lines in a row read as one block",
+      text: "_Re: one_\n**Re: two**\nBody\n\n**Re: later stays in the body**",
+      expected: { lines: ["Re: one", "Re: two"], body: "Body\n\n**Re: later stays in the body**" },
+    },
+    {
+      name: "the body keeps an indented code block's indent",
+      text: "Re: the script\n\n    run it\n",
+      expected: { lines: ["Re: the script"], body: "    run it\n" },
+    },
+    {
+      name: "a reply that is only a Re: line stays text",
+      text: "**Re: yes, done.**",
+      expected: null,
+    },
+    { name: "nothing after the Re: line", text: "Re: done\n\n  \n", expected: null },
+    { name: "an empty Re:", text: "Re:\nBody", expected: null },
+    { name: "Re: later in the reply", text: "Done.\n\nRe: the rest", expected: null },
+    { name: "a word that starts with Re", text: "Reading it now\nBody", expected: null },
+    { name: "lowercase re:", text: "re: it\nBody", expected: null },
+  ])("$name", ({ text, expected }) => {
+    expect(splitReLines(text)).toEqual(expected);
   });
 });
 
