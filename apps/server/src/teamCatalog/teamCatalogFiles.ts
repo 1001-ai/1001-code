@@ -80,12 +80,10 @@ export function decodeTeamCatalogFiles(files: ReadonlyArray<TeamCatalogFile>): D
   return { projects, invalid };
 }
 
+// The schema already refuses a trailing `/` in `repo`.
 function repositorySegments(repo: string): ReadonlyArray<string> {
-  return repo
-    .trim()
-    .replace(/\/+$/, "")
-    .replace(/\.git$/, "")
-    .split("/");
+  const trimmed = repo.trim();
+  return (trimmed.endsWith(".git") ? trimmed.slice(0, -".git".length) : trimmed).split("/");
 }
 
 /** The folder below the managed projects folder: `<repo>`, or `<host>/<owner>/<repo>` like ghq. */
