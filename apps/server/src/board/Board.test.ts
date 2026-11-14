@@ -1083,4 +1083,98 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Board", (it) => 
       expect(yield* Queue.take(updates)).toMatchObject({ status: "ready", failure: null });
     }).pipe(Effect.scoped),
   );
+
+  it.effect("a poll after a rate-limited refresh asks Linear, not the cache", () =>
+    Effect.gen(function* () {
+      let limited = false;
+      const linear = fakeLinear((operation, variables) =>
+        limited && operation !== "BoardViewer"
+          ? { status: 429, body: { errors: [] }, headers: { "retry-after": "1" } }
+          : boardAnswers([[linearIssue("1", "s-todo")]])(operation, variables),
+      );
+      const board = yield* makeBoard({
+        client: linear.client,
+        catalog: catalog([catalogEntry({ team: "ENG" })]),
+        secrets: yield* memorySecrets(),
+      });
+      yield* signIn(board, linear);
+      const teamReads = () => linear.calls.filter((call) => call.operation === "BoardTeam").length;
+      const updates = yield* Queue.unbounded<BoardSnapshot>();
+      yield* board.changes(PROJECT_ID).pipe(
+        Stream.runForEach((snapshot) => Queue.offer(updates, snapshot)),
+        Effect.forkScoped,
+      );
+      ready(yield* Queue.take(updates));
+
+      // A successful refresh leaves a fresh cache behind the warning the next one shows.
+      yield* TestClock.adjust("20 seconds");
+      yield* board.refresh(PROJECT_ID);
+      yield* Queue.take(updates);
+      yield* TestClock.adjust("5 seconds");
+      limited = true;
+      yield* board.refresh(PROJECT_ID);
+      expect(yield* Queue.take(updates)).toMatchObject({
+        failure: { reason: "rate-limited" },
+      });
+      expect(teamReads()).toBe(3);
+
+      yield* TestClock.adjust("5 seconds");
+      expect(teamReads()).toBe(4);
+      expect(yield* Queue.size(updates)).toBe(0);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("a board closed during a poll and opened again gets a poll of its own", () =>
+    Effect.gen(function* () {
+      const reading = yield* Deferred.make<void>();
+      const released = yield* Deferred.make<void>();
+      let hold = false;
+      let issues = [linearIssue("1", "s-todo")];
+      const linear = fakeLinear((operation, variables) => {
+        const answered = boardAnswers([issues])(operation, variables);
+        return operation === "BoardIssues" && hold
+          ? Deferred.succeed(reading, undefined).pipe(
+              Effect.andThen(Deferred.await(released)),
+              Effect.as(answered),
+            )
+          : answered;
+      });
+      const board = yield* makeBoard({
+        client: linear.client,
+        catalog: catalog([catalogEntry({ team: "ENG" })]),
+        secrets: yield* memorySecrets(),
+      });
+      yield* signIn(board, linear);
+      const teamReads = () => linear.calls.filter((call) => call.operation === "BoardTeam").length;
+      const open = Effect.gen(function* () {
+        const scope = yield* Scope.make();
+        const updates = yield* Queue.unbounded<BoardSnapshot>();
+        yield* board.changes(PROJECT_ID).pipe(
+          Stream.runForEach((snapshot) => Queue.offer(updates, snapshot)),
+          Effect.forkIn(scope),
+        );
+        return { scope, updates, first: ready(yield* Queue.take(updates)) };
+      });
+
+      const before = yield* open;
+      hold = true;
+      issues = [linearIssue("2", "s-todo")];
+      yield* TestClock.adjust("30 seconds");
+      yield* Deferred.await(reading);
+      yield* Scope.close(before.scope, Exit.void);
+
+      hold = false;
+      issues = [linearIssue("3", "s-todo")];
+      const after = yield* open;
+      yield* Deferred.succeed(released, undefined);
+      expect(
+        after.first?.board.columns.flatMap((column) => column.issues.map((i) => i.identifier)),
+      ).toEqual(["ENG-3"]);
+      expect(teamReads()).toBe(3);
+
+      yield* TestClock.adjust("30 seconds");
+      expect(teamReads()).toBe(4);
+      expect(yield* Queue.size(after.updates)).toBe(0);
+    }).pipe(Effect.scoped),
+  );
 });

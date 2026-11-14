@@ -104,8 +104,8 @@ export const CLIENT_ID_ENV = "T3CODE_LINEAR_CLIENT_ID";
 const DEV_LINEAR_API_URL_ENV = "T3CODE_DEV_LINEAR_API_URL";
 
 const FRESH_FOR_MS = 30_000;
-/** How often an open board is read again; at least `FRESH_FOR_MS`, so each poll reaches Linear. */
-const POLL_INTERVAL = Duration.millis(FRESH_FOR_MS);
+/** How often an open board is read again from Linear. */
+const POLL_INTERVAL = Duration.seconds(30);
 /** How long polling waits after a rate limit that names no retry time. */
 const RATE_LIMIT_BACKOFF = Duration.minutes(5);
 const REQUEST_TIMEOUT = "20 seconds";
@@ -507,13 +507,23 @@ const make = Effect.gen(function* () {
   const polls = new Map<ProjectId, Poll>();
   const pollsLock = yield* Semaphore.make(1);
 
-  /** Sends a snapshot to the project's open boards unless the sign-in changed since its read. */
-  const publish = (projectId: ProjectId, snapshot: BoardSnapshot, generation: number) =>
+  /**
+   * Sends a snapshot to the project's open boards unless the sign-in changed since its read, or,
+   * for a poll's snapshot (`from`), unless that poll was stopped since.
+   */
+  const publish = (
+    projectId: ProjectId,
+    snapshot: BoardSnapshot,
+    generation: number,
+    from?: Poll,
+  ) =>
     credentialLock.withPermits(1)(
       Effect.suspend(() => {
-        if (generation !== credentialGeneration) return Effect.succeed(false);
+        const open = polls.get(projectId);
+        if (generation !== credentialGeneration || (from !== undefined && from !== open)) {
+          return Effect.succeed(false);
+        }
         return Effect.flatMap(Clock.currentTimeMillis, (now) => {
-          const open = polls.get(projectId);
           if (open !== undefined) {
             open.shown = pollFingerprint(snapshot);
             open.quietUntilMs = quietUntil(snapshot, now);
@@ -534,18 +544,19 @@ const make = Effect.gen(function* () {
   });
 
   /**
-   * Reads an open board again every 30 seconds and publishes it when it differs from what open
-   * boards last got. The first step only records the board the subscriber was just served,
-   * normally from the cache. Unlike `refresh`, a poll does not fetch the team catalog.
+   * Reads an open board from Linear again every 30 seconds and publishes it when it differs from
+   * what open boards last got. The first step only records the board the subscriber was just
+   * served, normally from the cache; later ones skip it, so a poll never republishes a cached read
+   * over a newer warning. Unlike `refresh`, a poll does not fetch the team catalog.
    */
   const poll = (projectId: ProjectId, state: Poll) => {
     const step = Effect.fn("Board.poll")(function* () {
       if ((yield* Clock.currentTimeMillis) < state.quietUntilMs) return;
       const generation = credentialGeneration;
-      const snapshot = yield* read(projectId);
+      const snapshot = yield* read(projectId, { refresh: state.shown !== null });
       const fingerprint = pollFingerprint(snapshot);
       if (state.shown !== null && fingerprint !== state.shown) {
-        yield* publish(projectId, snapshot, generation);
+        yield* publish(projectId, snapshot, generation, state);
         return;
       }
       state.shown = fingerprint;
