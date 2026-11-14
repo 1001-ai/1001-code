@@ -2705,6 +2705,7 @@ export const layerWsRpc = (
         [WS_METHODS.teamCatalogSubscribe]: () => teamCatalog.changes,
         [WS_METHODS.teamCatalogRefresh]: (input) => teamCatalog.refresh(input),
         [WS_METHODS.teamCatalogSetSource]: (input) => teamCatalog.setSource(input.source),
+        [WS_METHODS.teamCatalogPropose]: (input) => teamCatalog.propose(input),
         [WS_METHODS.serverRetryResourceTelemetry]: (_input) => resourceTelemetry.retry,
         [WS_METHODS.serverCheckOtlpEndpoint]: (input) => otlpEndpointCheck.check(input),
         [WS_METHODS.serverListTextGeneratorModels]: (input) => textGenerators.listModels(input),

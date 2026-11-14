@@ -59,6 +59,8 @@ export const TeamCatalogEntry = Schema.Struct({
   project: TeamCatalogProject,
   cloneUrl: TrimmedNonEmptyString,
   checkout: TeamCatalogCheckout,
+  /** Whether this environment's credentials reach the repository; null until checked. */
+  reachable: Schema.NullOr(Schema.Boolean),
 });
 export type TeamCatalogEntry = typeof TeamCatalogEntry.Type;
 
@@ -67,6 +69,14 @@ export const TeamCatalogInvalidFile = Schema.Struct({
   reason: Schema.String,
 });
 export type TeamCatalogInvalidFile = typeof TeamCatalogInvalidFile.Type;
+
+/** Who edits on this environment: the GitHub CLI's signed-in login, matched against `owners`. */
+export const TeamCatalogViewer = Schema.Struct({
+  login: Schema.NullOr(TeamCatalogOwner),
+  /** Why there is no login, such as the GitHub CLI being signed out. */
+  problem: Schema.NullOr(Schema.String),
+});
+export type TeamCatalogViewer = typeof TeamCatalogViewer.Type;
 
 export const TeamCatalogSnapshot = Schema.Struct({
   /** The catalog's git URL; null when none is set. */
@@ -78,6 +88,7 @@ export const TeamCatalogSnapshot = Schema.Struct({
   error: Schema.NullOr(Schema.String),
   projects: Schema.Array(TeamCatalogEntry),
   invalid: Schema.Array(TeamCatalogInvalidFile),
+  viewer: TeamCatalogViewer,
 });
 export type TeamCatalogSnapshot = typeof TeamCatalogSnapshot.Type;
 
