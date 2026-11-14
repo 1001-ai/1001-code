@@ -1,71 +1,95 @@
-import * as Option from "effect/Option";
-import * as Schema from "effect/Schema";
-
 const BOOLEAN_OPTIONS = ["Yes", "No"] as const;
+const MULTI_SEPARATOR = ", ";
 
-const QUESTION_ID_PATTERN = /^[A-Za-z][A-Za-z0-9_-]{0,23}$/;
-// Line breaks would let one answer forge another `<id>:` line; invisible and bidi
-// characters would make the draft say something other than what the card shows.
-const VISIBLE_SINGLE_LINE = /^[^\p{Cc}\p{Cf}\u2028\u2029]*$/u;
-
-const VisibleText = (max: number) =>
-  Schema.String.check(
-    Schema.isMinLength(1),
-    Schema.isMaxLength(max),
-    Schema.isTrimmed(),
-    Schema.isPattern(VISIBLE_SINGLE_LINE),
-  );
-
-const QuestionBlockSchema = Schema.Struct({
-  id: Schema.String.check(Schema.isPattern(QUESTION_ID_PATTERN)),
-  prompt: VisibleText(500),
-  kind: Schema.Literals(["choice", "multi", "boolean", "text"]),
-  options: Schema.optionalKey(
-    Schema.Array(VisibleText(120)).check(
-      Schema.isMinLength(2),
-      Schema.isMaxLength(8),
-      Schema.isUnique(),
-    ),
-  ),
-  recommended: Schema.optionalKey(VisibleText(120)),
-});
-
-export type QuestionBlock = typeof QuestionBlockSchema.Type;
-
-const decodeQuestionBlockJson = Schema.decodeUnknownOption(
-  Schema.fromJsonString(QuestionBlockSchema),
-  { onExcessProperty: "error" },
-);
+export interface QuestionBlock {
+  readonly id: string;
+  readonly prompt: string;
+  readonly kind: "choice" | "multi" | "boolean" | "text";
+  /** Set for `choice` and `multi` only. */
+  readonly options?: ReadonlyArray<string>;
+  readonly recommended?: string;
+}
 
 export function questionOptions(question: QuestionBlock): ReadonlyArray<string> {
   if (question.kind === "boolean") return BOOLEAN_OPTIONS;
   return question.options ?? [];
 }
 
-const MULTI_SEPARATOR = ", ";
+// Line breaks would let one answer forge another `<id>:` line; invisible and bidi
+// characters would make the draft say something other than what the card shows.
+const VISIBLE_SINGLE_LINE = /^[^\p{Cc}\p{Cf}\u2028\u2029]*$/u;
 
-/** The fence body as a question, or null when it should render as ordinary code. */
-export function parseQuestionBlock(code: string): QuestionBlock | null {
-  if (code.length > 4_000) return null;
-  const question = Option.getOrNull(decodeQuestionBlockJson(code));
-  if (question === null) return null;
-  const hasOptions = question.options !== undefined;
-  const needsOptions = question.kind === "choice" || question.kind === "multi";
-  if (hasOptions !== needsOptions) return null;
-  // A multi answer joins options with the separator, so an option containing it can't round-trip.
-  if (
-    question.kind === "multi" &&
-    questionOptions(question).some((o) => o.includes(MULTI_SEPARATOR))
-  ) {
-    return null;
+function isVisibleText(value: string, max: number): boolean {
+  return (
+    value.length > 0 &&
+    value.length <= max &&
+    value.trim() === value &&
+    VISIBLE_SINGLE_LINE.test(value)
+  );
+}
+
+// Up to 3 spaces before `>`, as CommonMark allows; deeper or lazy lines belong to something else.
+const QUOTE_LINE = /^ {0,3}> ?(.*)$/;
+const QUOTE_HEADER = /^\*\*(Q[1-9][0-9]{0,5}) · (.+)\*\*( \(pick any\))?$/;
+const QUOTE_OPTION = /^- (.*)$/;
+// Text that CommonMark would read as a nested block (list, quote, heading, task box, code fence,
+// thematic break) is not a plain option; `-1`, `+5%`, `*args` and `#hash` stay plain text.
+const NESTED_BLOCK_START =
+  /^(?:[-*+](?:[ \t]|$)|>|#{1,6}(?:[ \t]|$)|\d{1,9}[.)](?:[ \t]|$)|\[[ xX]\](?:[ \t]|$)|`{3}|~{3}|(?:(?:-[ \t]*){3,}|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,})$)/;
+// Either emphasis marker, since markdown formatters rewrite `*x*` as `_x_`.
+const RECOMMENDED_SUFFIX = / (?:\*\(recommended\)\*|_\(recommended\)_)$/;
+const REPLY_HINT = /^(?:_Reply with .+_|\*Reply with .+\*)$/;
+
+/**
+ * A blockquote's markdown source as a question, or null when it is an ordinary quote:
+ * a bold `**Q<n> · prompt**` line, optionally ` (pick any)`, then 2 to 8 `- option` items
+ * (one may end ` _(recommended)_`) or a single `_Reply with …_` line for free text.
+ */
+export function parseQuestionQuote(source: string): QuestionBlock | null {
+  if (source.length > 4_000) return null;
+  const lines: string[] = [];
+  for (const raw of source.split(/\r\n|\r|\n/)) {
+    const line = QUOTE_LINE.exec(raw)?.[1]?.trimEnd();
+    if (line === undefined) return null;
+    if (line.length > 0) lines.push(line);
   }
-  if (
-    question.recommended !== undefined &&
-    (question.kind === "text" || !questionOptions(question).includes(question.recommended))
-  ) {
-    return null;
+  const [header = "", ...body] = lines;
+  const heading = QUOTE_HEADER.exec(header);
+  if (!heading) return null;
+  const [, id = "", prompt = "", pickAny] = heading;
+  if (prompt.includes("**") || !isVisibleText(prompt, 500)) return null;
+
+  const [hint] = body;
+  if (body.length === 1 && hint !== undefined && REPLY_HINT.test(hint)) {
+    if (pickAny !== undefined || !isVisibleText(hint, 500)) return null;
+    return { id, prompt, kind: "text" };
   }
-  return question;
+
+  const options: string[] = [];
+  let recommended: string | undefined;
+  for (const line of body) {
+    let option = QUOTE_OPTION.exec(line)?.[1];
+    if (option === undefined || NESTED_BLOCK_START.test(option)) return null;
+    const marker = RECOMMENDED_SUFFIX.exec(option);
+    if (marker) {
+      if (recommended !== undefined) return null;
+      option = option.slice(0, marker.index);
+      recommended = option;
+    }
+    if (!isVisibleText(option, 120) || options.includes(option)) return null;
+    options.push(option);
+  }
+  if (options.length < 2 || options.length > 8) return null;
+  const recommendation = recommended === undefined ? {} : { recommended };
+  if (pickAny !== undefined) {
+    // A multi answer joins options with the separator, so an option containing it can't round-trip.
+    if (options.some((option) => option.includes(MULTI_SEPARATOR))) return null;
+    return { id, prompt, kind: "multi", options, ...recommendation };
+  }
+  if (options.length === 2 && options[0] === "Yes" && options[1] === "No") {
+    return { id, prompt, kind: "boolean", ...recommendation };
+  }
+  return { id, prompt, kind: "choice", options, ...recommendation };
 }
 
 const ANSWER_LINE = /^[ \t]*([A-Za-z][A-Za-z0-9_-]*)[ \t]*:[ \t]*(.*?)[ \t]*$/;
