@@ -175,7 +175,7 @@ function LimitRow({
 }
 
 /** One label, hairline, and value row; the whole row opens the details tooltip. */
-function UsageRow({
+export function UsageRow({
   label,
   fill,
   tone,

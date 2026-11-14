@@ -334,7 +334,7 @@ function SubagentsTooltip({ turn }: { readonly turn: ThreadTurnSubagents }) {
   );
 }
 
-function CostTooltip({
+export function CostTooltip({
   estimate,
   costUsd,
 }: {

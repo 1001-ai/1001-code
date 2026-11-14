@@ -121,13 +121,13 @@ export function subagentTitle(subagent: Pick<OrchestrationV2Subagent, "title" | 
  */
 export function threadCostSignal(projection: {
   readonly providerTurns: ReadonlyArray<
-    Pick<OrchestrationV2ProviderTurn, "status" | "turnTokenUsage">
+    Pick<OrchestrationV2ProviderTurn, "status" | "turnTokenUsage" | "tokenUsage">
   >;
-  readonly subagents: ReadonlyArray<Pick<OrchestrationV2Subagent, "status">>;
+  readonly subagents: ReadonlyArray<Pick<OrchestrationV2Subagent, "status" | "model" | "workflow">>;
 }): string {
   // Every priced field counts: a finished turn's report can be refined later (cache split, otherUsage, models).
   const reports: string[] = [];
-  for (const { status, turnTokenUsage: u } of projection.providerTurns) {
+  for (const { status, turnTokenUsage: u, tokenUsage } of projection.providerTurns) {
     if (u === undefined || status === "pending" || status === "running") continue;
     reports.push(
       [
@@ -140,12 +140,16 @@ export function threadCostSignal(projection: {
         u.otherUsage?.inputTokens,
         u.otherUsage?.outputTokens,
         u.models?.join("+"),
+        u.localCommand,
+        tokenUsage?.promptCacheTtlMs,
       ].join(","),
     );
   }
-  let settled = 0;
-  for (const { status } of projection.subagents) {
-    if (!isOrchestrationV2WorkActive(status)) settled += 1;
+  // Settled subagents' models (a workflow's are its agents') price the ledger extras.
+  const settled: string[] = [];
+  for (const { status, model, workflow } of projection.subagents) {
+    if (isOrchestrationV2WorkActive(status)) continue;
+    settled.push([model, ...(workflow?.agents ?? []).map((agent) => agent.model)].join("+"));
   }
-  return `${reports.join(";")}|${settled}`;
+  return `${reports.join(";")}|${settled.length}:${settled.join(";")}`;
 }
