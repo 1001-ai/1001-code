@@ -522,9 +522,9 @@ function prefersReducedMotion() {
 
 /**
  * The open exchange, drawn over the timeline in the same viewport. The virtualized list stays
- * mounted and untouched underneath, faded out, so closing returns to the same scroll position.
+ * mounted and untouched under the view's glass, so closing returns to the same scroll position.
  * Rows move from where the list showed them (FLIP) and fade in from below when it had them
- * virtualized away. Motion runs only on open and close, with transform and opacity.
+ * virtualized away. Motion runs only on open and close: transform, opacity and the glass.
  */
 export function ExchangeThreadView({
   view,
@@ -540,9 +540,10 @@ export function ExchangeThreadView({
   readonly renderRow: (row: MessagesTimelineRow) => ReactNode;
 }) {
   const overlayRef = useRef<HTMLDivElement>(null);
+  const glassRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const layersRef = useRef<{ element: HTMLElement; animation: Animation }[]>([]);
+  const layersRef = useRef<HTMLElement[]>([]);
   const shownRowIdsRef = useRef<ReadonlySet<string>>(new Set());
   const { closing, close, finishClose } = view;
 
@@ -555,19 +556,15 @@ export function ExchangeThreadView({
     if (active === document.body || (active !== null && viewport.contains(active))) {
       headerRef.current?.querySelector<HTMLElement>("button")?.focus({ preventScroll: true });
     }
+    // The list stays visible under the view's glass, so the thread reads as a layer above the chat.
+    const glass = glassRef.current;
     layersRef.current = [...viewport.children].flatMap((child) => {
-      if (child === overlay || !(child instanceof HTMLElement)) return [];
+      if (child === overlay || child === glass || !(child instanceof HTMLElement)) return [];
       child.setAttribute("inert", "");
-      const animation = child.animate(
-        [
-          { opacity: 1, visibility: "visible" },
-          { opacity: 0, visibility: "hidden" },
-        ],
-        { ...timing, fill: "forwards" },
-      );
-      return [{ element: child, animation }];
+      return [child];
     });
     const moves: Animation[] = [];
+    if (glass) moves.push(glass.animate([{ opacity: 0 }, { opacity: 1 }], timing));
     const header = headerRef.current?.animate(
       [
         { opacity: 0, transform: "translateY(-4px)" },
@@ -604,16 +601,13 @@ export function ExchangeThreadView({
     shownRowIdsRef.current = new Set(view.rows.map((row) => row.id));
     return moves;
   });
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- fades the list under the thread view and moves each row from where the list drew it, before the first paint
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- frosts the list under the thread view and moves each row from where the list drew it, before the first paint
   useLayoutEffect(() => {
     const moves = overlayRef.current ? playEnter(overlayRef.current) : [];
     return () => {
       // A remount measures again, which a running move would skew.
       for (const animation of moves) animation.cancel();
-      for (const { element, animation } of layersRef.current) {
-        animation.cancel();
-        element.removeAttribute("inert");
-      }
+      for (const element of layersRef.current) element.removeAttribute("inert");
       layersRef.current = [];
     };
   }, []);
@@ -664,15 +658,9 @@ export function ExchangeThreadView({
   const playExit = useEffectEvent((overlay: HTMLElement, isCancelled: () => boolean) => {
     const duration = prefersReducedMotion() ? 0 : MOTION_MS;
     const timing = { duration, easing: MOTION_EASING, fill: "forwards" as const };
-    const fadeIns: Animation[] = [];
-    for (const { element, animation } of layersRef.current) {
-      animation.cancel();
-      element.removeAttribute("inert");
-      fadeIns.push(
-        element.animate([{ opacity: 0 }, { opacity: 1 }], { duration, easing: MOTION_EASING }),
-      );
-    }
+    for (const element of layersRef.current) element.removeAttribute("inert");
     layersRef.current = [];
+    const clearing = glassRef.current?.animate([{ opacity: 1 }, { opacity: 0 }], timing);
     headerRef.current?.animate([{ opacity: 1 }, { opacity: 0 }], timing);
     for (const element of overlay.querySelectorAll<HTMLElement>("[data-exchange-thread-row]")) {
       const rowId = element.dataset.exchangeThreadRow!;
@@ -695,7 +683,7 @@ export function ExchangeThreadView({
         );
       }
     }
-    void Promise.allSettled(fadeIns.map((animation) => animation.finished)).then(() => {
+    void Promise.allSettled([clearing?.finished]).then(() => {
       if (isCancelled()) return;
       const focusInView =
         document.activeElement === document.body || overlay.contains(document.activeElement);
@@ -703,7 +691,7 @@ export function ExchangeThreadView({
       finishClose();
     });
   });
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- moves each row back to where the list shows it and fades the list in, then unmounts
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- moves each row back to where the list shows it and clears the glass, then unmounts
   useEffect(() => {
     const overlay = overlayRef.current;
     if (!closing || !overlay) return;
@@ -753,6 +741,13 @@ export function ExchangeThreadView({
 
   return (
     <InThreadViewCtx value>
+      {/* A sibling, not the scroller's own background: a backdrop-filter on the scroller stops
+          Chromium painting its sticky header's text. */}
+      <div
+        ref={glassRef}
+        aria-hidden
+        className="pointer-events-none absolute inset-0 z-10 bg-card/60 backdrop-blur-(--glass-blur) backdrop-saturate-(--glass-saturation)"
+      />
       <div
         ref={overlayRef}
         data-exchange-thread-view=""
@@ -768,7 +763,7 @@ export function ExchangeThreadView({
           <div
             ref={headerRef}
             data-exchange-thread-header=""
-            className="messages-timeline-row-frame sticky top-0 z-10 bg-background"
+            className="messages-timeline-row-frame sticky top-0 z-10 bg-card"
           >
             {topFadeEnabled ? (
               <div className="h-[var(--workspace-titlebar-scroll-fade-height)]" />
