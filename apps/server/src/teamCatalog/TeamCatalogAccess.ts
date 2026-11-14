@@ -16,6 +16,11 @@ export class TeamCatalogAccess extends Context.Service<
   TeamCatalogAccess,
   {
     readonly viewer: Effect.Effect<TeamCatalogViewer>;
+    /** The GitHub CLI's login and its noreply address, to author proposal commits. */
+    readonly author: Effect.Effect<
+      { readonly name: string; readonly email: string },
+      TeamCatalogError
+    >;
     readonly canReach: (cloneUrl: string) => Effect.Effect<boolean>;
     /** `repository` is `host/owner/repo`. Returns the pull request's URL. */
     readonly openPullRequest: (input: {
@@ -51,6 +56,29 @@ const make = Effect.gen(function* () {
         login: null,
         problem: "The GitHub CLI (gh) is not installed, so owners cannot be recognized.",
       })),
+    );
+
+  const author: TeamCatalogAccess["Service"]["author"] = processRunner
+    .run({
+      command: "gh",
+      args: ["api", "user", "--jq", '"\\(.id)+\\(.login)"'],
+      env,
+      timeout: "15 seconds",
+    })
+    .pipe(
+      Effect.mapError((cause) => new TeamCatalogError({ detail: cause.message })),
+      Effect.flatMap((output) => {
+        const handle = output.stdout.trim();
+        const login = /^\d+\+([A-Za-z0-9](?:[A-Za-z0-9-]{0,38}))$/.exec(handle)?.[1];
+        return output.code === 0 && login !== undefined
+          ? Effect.succeed({ name: login, email: `${handle}@users.noreply.github.com` })
+          : Effect.fail(
+              new TeamCatalogError({
+                detail:
+                  "The GitHub CLI is not signed in, so the change has no author. Run gh auth login.",
+              }),
+            );
+      }),
     );
 
   const canReach = Effect.fn("TeamCatalogAccess.canReach")(function* (cloneUrl: string) {
@@ -98,7 +126,7 @@ const make = Effect.gen(function* () {
     });
   });
 
-  return TeamCatalogAccess.of({ viewer, canReach, openPullRequest });
+  return TeamCatalogAccess.of({ viewer, author, canReach, openPullRequest });
 });
 
 export const layer = Layer.effect(TeamCatalogAccess, make);

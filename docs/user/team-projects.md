@@ -72,7 +72,8 @@ project** or from **Team projects**. Owners are matched against the GitHub login
 signed in with on that environment (`gh auth login`); everyone else sees the links read-only.
 
 Saving never changes the catalog directly. **Propose change** pushes a new branch to the catalog
-repository with your own git credentials and, on GitHub, opens a pull request. The catalog
+repository with your own git credentials and, on GitHub, opens a pull request. Its commit is
+authored as your GitHub login with GitHub's noreply address, not your git identity. The catalog
 repository's own review rules decide who approves it, and the change counts once it is merged.
 
 A write link counts only when both projects declare it. When you add one, you can propose the

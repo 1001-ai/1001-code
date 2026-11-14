@@ -99,6 +99,7 @@ function SelectedProject(props: {
         )}
       </div>
       <TeamProjectLinksEditor
+        key={`${props.environmentId}:${entry.project.key}`}
         environmentId={props.environmentId}
         snapshot={props.snapshot}
         projectKey={entry.project.key}

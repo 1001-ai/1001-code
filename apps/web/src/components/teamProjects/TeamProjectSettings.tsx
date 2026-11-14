@@ -39,6 +39,7 @@ export function TeamProjectSettings(props: {
       }
     >
       <TeamProjectLinksEditor
+        key={`${environmentId}:${entry.project.key}`}
         environmentId={environmentId}
         snapshot={catalog}
         projectKey={entry.project.key}

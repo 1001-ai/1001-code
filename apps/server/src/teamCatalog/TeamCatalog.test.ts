@@ -51,6 +51,7 @@ const project = (
 /** Signed in as alice; repositories with "private" in their name are out of reach. */
 const accessTest = Layer.mock(TeamCatalogAccess.TeamCatalogAccess)({
   viewer: Effect.succeed({ login: "alice", problem: null }),
+  author: Effect.succeed({ name: "alice", email: "7+alice@users.noreply.github.com" }),
   canReach: (cloneUrl) => Effect.succeed(!cloneUrl.includes("private")),
   openPullRequest: () => Effect.fail(new TeamCatalogError({ detail: "No pull requests here." })),
 });
@@ -281,6 +282,7 @@ it.live("serves the last fetch at once after a restart, even with the catalog un
       expect(failed.error).not.toBeNull();
       expect(failed.fetchedAt).toBe(Option.getOrThrow(restored).fetchedAt);
       expect(failed.projects.map((entry) => entry.project.key)).toEqual(["web"]);
+      expect(failed.viewer).toEqual({ login: "alice", problem: null });
     }),
   ),
 );
@@ -323,12 +325,7 @@ it.live(
         const remote = `${catalog}-remote.git`;
         yield* git(catalog, ["clone", "--quiet", "--bare", catalog, remote]);
         const fetched = yield* service.setSource(remote);
-        yield* git(`${stateDir}/team-catalog/checkout`, ["config", "user.name", "Test"]);
-        yield* git(`${stateDir}/team-catalog/checkout`, [
-          "config",
-          "user.email",
-          "test@example.test",
-        ]);
+        yield* git(`${stateDir}/team-catalog/checkout`, ["config", "commit.gpgSign", "true"]);
 
         const stale = yield* Effect.flip(
           service.propose({
@@ -374,6 +371,9 @@ it.live(
         expect(yield* show(`${proposal.branch}:projects/web.json`)).toContain('"access": "write"');
         expect(yield* show(`HEAD:projects/web.json`)).toContain('"access":"read"');
         expect(yield* show("-s", "--format=%P", proposal.branch)).toContain(fetched.revision!);
+        expect((yield* show("-s", "--format=%an <%ae>|%cn <%ce>", proposal.branch)).trim()).toBe(
+          "alice <7+alice@users.noreply.github.com>|alice <7+alice@users.noreply.github.com>",
+        );
         const after = yield* service.snapshot;
         expect(after.revision).toBe(fetched.revision);
         expect(after.projects.find((entry) => entry.project.key === "web")?.project.links).toEqual([

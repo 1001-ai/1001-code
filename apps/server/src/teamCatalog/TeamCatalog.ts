@@ -281,14 +281,18 @@ const make = Effect.gen(function* () {
     return next;
   });
 
+  // The GitHub login does not depend on the catalog host, so a cached catalog loads it too.
+  const loadViewer = Effect.fn("TeamCatalog.loadViewer")(function* (force: boolean) {
+    const viewer = yield* Ref.get(viewerRef);
+    if (force || viewer.login === null) yield* Ref.set(viewerRef, yield* access.viewer);
+  });
+
   // Runs only after a fetch succeeds, so a failed check means no access rather than no network.
-  const checkAccess = Effect.fn("TeamCatalog.checkAccess")(function* (
+  const checkReachability = Effect.fn("TeamCatalog.checkReachability")(function* (
     source: string,
     now: number,
     force: boolean,
   ) {
-    const viewer = yield* Ref.get(viewerRef);
-    if (force || viewer.login === null) yield* Ref.set(viewerRef, yield* access.viewer);
     const known = yield* Ref.get(reachableRef);
     const catalog = yield* Ref.get(catalogRef);
     const checked = yield* Effect.forEach(
@@ -320,6 +324,7 @@ const make = Effect.gen(function* () {
     const now = yield* Clock.currentTimeMillis;
     const lastFetch = yield* Ref.get(fetchedAtMs);
     if (input?.force !== true && lastFetch !== null && now - lastFetch < FRESH_FOR_MS) {
+      yield* loadViewer(false);
       return yield* publish({});
     }
     yield* SubscriptionRef.set(state, { ...current, refreshing: true });
@@ -329,7 +334,8 @@ const make = Effect.gen(function* () {
       const fetchedAt = yield* Clock.currentTimeMillis;
       yield* Ref.set(catalogRef, fetched.value.catalog);
       yield* Ref.set(fetchedAtMs, fetchedAt);
-      yield* checkAccess(current.source, fetchedAt, input?.force === true);
+      yield* loadViewer(input?.force === true);
+      yield* checkReachability(current.source, fetchedAt, input?.force === true);
       return yield* publish({
         refreshing: false,
         error: null,
@@ -338,6 +344,7 @@ const make = Effect.gen(function* () {
       });
     }
     const failure = Exit.findErrorOption(fetched);
+    yield* loadViewer(false);
     return yield* publish({
       refreshing: false,
       error:
@@ -432,6 +439,13 @@ const make = Effect.gen(function* () {
     const fileOf = new Map(catalog.projects.map((entry) => [entry.project.key, entry.file]));
     const failed = (detail: string) =>
       new TeamCatalogError({ detail: detail.slice(0, MAX_ERROR_LENGTH) });
+    const author = yield* access.author;
+    const authorEnv = {
+      GIT_AUTHOR_NAME: author.name,
+      GIT_AUTHOR_EMAIL: author.email,
+      GIT_COMMITTER_NAME: author.name,
+      GIT_COMMITTER_EMAIL: author.email,
+    };
     const index = path.join(root, `proposal-${input.baseRevision.slice(0, 12)}.index`);
     const indexEnv = { GIT_INDEX_FILE: index };
     const commit = yield* Effect.gen(function* () {
@@ -449,9 +463,20 @@ const make = Effect.gen(function* () {
       const tree = yield* git(["-C", checkoutPath, "write-tree"], { env: indexEnv });
       const text = proposalText(projects, input.changes);
       const message = `${text.title}\n\n${text.body}\n`;
+      // No terminal can unlock a signing key, and the catalog's pull request carries the review.
       const sha = yield* git(
-        ["-C", checkoutPath, "commit-tree", tree, "-p", input.baseRevision, "-F", "-"],
-        { stdin: message },
+        [
+          "-C",
+          checkoutPath,
+          "commit-tree",
+          "--no-gpg-sign",
+          tree,
+          "-p",
+          input.baseRevision,
+          "-F",
+          "-",
+        ],
+        { stdin: message, env: authorEnv },
       );
       return { sha, text };
     }).pipe(
