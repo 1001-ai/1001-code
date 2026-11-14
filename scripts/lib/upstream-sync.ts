@@ -1,7 +1,10 @@
-// @effect-diagnostics nodeBuiltinImport:off - drives git directly and runs without the Effect runtime.
+// @effect-diagnostics nodeBuiltinImport:off globalDate:off - drives git directly and runs without the Effect runtime.
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
+
+import { sensitiveChanges, needsContent, type SensitiveGroup } from "./sensitive-changes.ts";
+import { githubActionsCheck, selectTarget, type CiLookup } from "./upstream-quarantine.ts";
 
 /** Records the upstream commit whose changes this fork already contains. */
 export const POINTER_PATH = "fork/upstream.json";
@@ -11,6 +14,10 @@ const STATE_FILE = "sync-upstream.json";
 const SYNC_SUBJECT_PREFIX = "sync: upstream through ";
 const CONFLICT_MARKER = /^(<{7}|>{7}|\|{7}) /m;
 const MINIMUM_GIT = [2, 40] as const;
+export const DEFAULT_MIN_AGE_DAYS = 3;
+// Upstream must never change the code that is merging it.
+const TOOL_PATHS =
+  /^(scripts\/sync-upstream\.ts|scripts\/lib\/(upstream-sync|upstream-quarantine|sensitive-changes)\.ts|fork\/)/;
 
 // @effect-diagnostics-next-line extendsNativeError:off - plain synchronous Node with no Effect runtime.
 export class SyncError extends Error {
@@ -35,6 +42,17 @@ export interface SyncStop {
   readonly files: ReadonlyArray<string>;
 }
 
+export interface TargetOptions {
+  /** Merge exactly this commit, skipping quarantine. */
+  readonly to?: string | undefined;
+  readonly fetch?: boolean | undefined;
+  readonly minAgeDays?: number | undefined;
+  /** Upstream CI lookup; defaults to the "Check" job through `gh api`. */
+  readonly ci?: CiLookup | undefined;
+  /** Epoch seconds. */
+  readonly now?: number | undefined;
+}
+
 export interface SyncState {
   readonly branch: string;
   /** The fork commit the sync started from. */
@@ -42,6 +60,8 @@ export interface SyncState {
   /** The upstream commit the fork contained when the sync started. */
   readonly base: string;
   readonly target: string;
+  /** Why this target: quarantine's choice or an explicit --to. */
+  readonly selection?: string;
   readonly stops: ReadonlyArray<SyncStop>;
 }
 
@@ -50,6 +70,7 @@ export interface SyncStatus {
   readonly head: string;
   readonly base: string;
   readonly target: string;
+  readonly selection: string;
   readonly behind: number;
   readonly clean: boolean;
   readonly firstConflict?: SyncStop & { readonly cleanBefore: number };
@@ -59,7 +80,7 @@ export interface SyncStatus {
 }
 
 export type MergeOutcome =
-  | { readonly kind: "up-to-date"; readonly pointer: UpstreamPointer }
+  | { readonly kind: "up-to-date"; readonly pointer: UpstreamPointer; readonly selection: string }
   | { readonly kind: "merged"; readonly state: SyncState }
   | { readonly kind: "conflict"; readonly state: SyncState; readonly stop: SyncStop };
 
@@ -67,9 +88,10 @@ export interface FinishResult {
   readonly commit: string;
   readonly title: string;
   readonly body: string;
-  /** Local ref that keeps the step-by-step merges for review after squashing. */
+  /** Local ref that keeps the step-by-step merges for review. */
   readonly detailRef: string;
   readonly squashed: boolean;
+  readonly sensitive: ReadonlyArray<SensitiveGroup>;
   /** Markdown for the pull request: what was merged, each resolution, and what to look at. */
   readonly report: string;
 }
@@ -81,7 +103,9 @@ interface GitResult {
 }
 
 function run(cwd: string, args: ReadonlyArray<string>, input?: string): GitResult {
-  const result = NodeChildProcess.spawnSync("git", ["-c", "core.quotePath=false", ...args], {
+  // Hooks can live in the working tree, which holds upstream's code mid-sync. Never run them.
+  const config = ["-c", "core.quotePath=false", "-c", "core.hooksPath=/dev/null"];
+  const result = NodeChildProcess.spawnSync("git", [...config, ...args], {
     cwd,
     encoding: "utf8",
     maxBuffer: 1024 * 1024 * 1024,
@@ -187,21 +211,6 @@ function fetchUpstream(cwd: string, pointer: UpstreamPointer): string {
   return git(cwd, ["rev-parse", UPSTREAM_REF]);
 }
 
-function resolveTarget(
-  cwd: string,
-  pointer: UpstreamPointer,
-  options: { readonly to?: string | undefined; readonly fetch?: boolean | undefined },
-): string {
-  const fetched = options.fetch === false ? undefined : fetchUpstream(cwd, pointer);
-  if (options.to !== undefined)
-    return git(cwd, ["rev-parse", "--verify", `${options.to}^{commit}`]);
-  if (fetched !== undefined) return fetched;
-  const known = run(cwd, ["rev-parse", "--quiet", "--verify", UPSTREAM_REF]);
-  if (known.status !== 0)
-    throw new SyncError("Upstream has not been fetched yet. Run without --no-fetch.");
-  return known.stdout.trim();
-}
-
 // After a squashed sync the fork has no upstream ancestry, so git's own merge base would be the
 // original fork point. The pointer says which upstream commit the fork really contains.
 function containedUpstream(cwd: string, head: string, pointer: UpstreamPointer, target: string) {
@@ -215,6 +224,77 @@ function containedUpstream(cwd: string, head: string, pointer: UpstreamPointer, 
     );
   }
   return base;
+}
+
+interface ResolvedTarget {
+  readonly target: string;
+  readonly base: string;
+  readonly selection: string;
+}
+
+/**
+ * Without --to, the target is the newest upstream commit that has sat in quarantine: old enough,
+ * and passed upstream CI. If CI cannot be read, nothing is chosen.
+ */
+function resolveTarget(
+  cwd: string,
+  head: string,
+  pointer: UpstreamPointer,
+  options: TargetOptions,
+): ResolvedTarget {
+  const fetched = options.fetch === false ? undefined : fetchUpstream(cwd, pointer);
+  if (options.to !== undefined) {
+    const target = git(cwd, ["rev-parse", "--verify", `${options.to}^{commit}`]);
+    return {
+      target,
+      base: containedUpstream(cwd, head, pointer, target),
+      selection: `${short(target)} was named with --to, so quarantine was not applied.`,
+    };
+  }
+  let tip = fetched;
+  if (tip === undefined) {
+    const known = run(cwd, ["rev-parse", "--quiet", "--verify", UPSTREAM_REF]);
+    if (known.status !== 0)
+      throw new SyncError("Upstream has not been fetched yet. Run without --no-fetch.");
+    tip = known.stdout.trim();
+  }
+  const tipBase = containedUpstream(cwd, head, pointer, tip);
+  const candidates = lines(
+    git(cwd, ["log", "--first-parent", "--format=%H %ct", `${tipBase}..${tip}`]),
+  ).map((line) => {
+    const [sha = "", committedAt = ""] = line.split(" ");
+    return { sha, committedAt: Number(committedAt) };
+  });
+  const selection = selectTarget(candidates, {
+    minAgeDays: options.minAgeDays ?? DEFAULT_MIN_AGE_DAYS,
+    ci: options.ci ?? githubActionsCheck(pointer.repository, pointer.branch),
+    now: options.now ?? Math.floor(Date.now() / 1000),
+  });
+  if (selection.kind === "unreadable") {
+    throw new SyncError(
+      `Could not read upstream CI for ${short(selection.sha)}: ${selection.error}\n` +
+        "Quarantine needs it to choose a target, so nothing was chosen. Fix the lookup " +
+        "(is `gh` installed and signed in?), or pass --to <commit> for a commit you have checked yourself.",
+    );
+  }
+  const target = selection.kind === "chosen" ? selection.sha : tipBase;
+  return {
+    target,
+    base: containedUpstream(cwd, head, pointer, target),
+    selection: selection.reason,
+  };
+}
+
+function refuseToolChanges(cwd: string, base: string, target: string) {
+  const touched = lines(git(cwd, ["diff", "--name-only", "--no-renames", base, target])).filter(
+    (file) => TOOL_PATHS.test(file),
+  );
+  if (touched.length > 0) {
+    throw new SyncError(
+      `Upstream ${short(base)}..${short(target)} changes the sync tool's own files, which it must ` +
+        `never run from upstream. Stop and ask a human:\n${touched.join("\n")}`,
+    );
+  }
 }
 
 function upstreamCommits(cwd: string, base: string, target: string): ReadonlyArray<string> {
@@ -301,19 +381,20 @@ function attentionList(
 }
 
 /** Reads how far the fork is behind upstream and whether merging would conflict. Changes nothing but the fetched ref. */
-export function status(
-  cwd: string,
-  options: { readonly to?: string | undefined; readonly fetch?: boolean | undefined } = {},
-): SyncStatus {
+export function status(cwd: string, options: TargetOptions = {}): SyncStatus {
   requireGit(cwd);
   const inProgress = readState(cwd);
   const head = git(cwd, ["rev-parse", "HEAD"]);
   const pointer = readPointer(cwd);
-  const target =
+  const { target, base, selection } =
     inProgress && options.to === undefined
-      ? inProgress.target
-      : resolveTarget(cwd, pointer, options);
-  const base = containedUpstream(cwd, head, pointer, target);
+      ? {
+          target: inProgress.target,
+          base: containedUpstream(cwd, head, pointer, inProgress.target),
+          selection: inProgress.selection ?? "chosen when the sync in progress started",
+        }
+      : resolveTarget(cwd, head, pointer, options);
+  refuseToolChanges(cwd, base, target);
   const commits = upstreamCommits(cwd, base, target);
   const whole =
     commits.length === 0 ? { clean: true, files: [] } : tryMerge(cwd, base, head, target);
@@ -335,6 +416,7 @@ export function status(
     head,
     base,
     target,
+    selection,
     behind: commits.length,
     clean: whole.clean,
     ...(firstConflict ? { firstConflict } : {}),
@@ -345,8 +427,8 @@ export function status(
 
 function start(
   cwd: string,
-  options: { readonly to?: string | undefined; readonly fetch?: boolean | undefined },
-): SyncState | undefined {
+  options: TargetOptions,
+): { readonly state?: SyncState; readonly selection: string } {
   const branch = run(cwd, ["symbolic-ref", "--quiet", "--short", "HEAD"]).stdout.trim();
   if (branch === "" || branch === "main" || branch === "master") {
     throw new SyncError(
@@ -355,10 +437,10 @@ function start(
   }
   requireCleanTree(cwd);
   const pointer = readPointer(cwd);
-  const target = resolveTarget(cwd, pointer, options);
   const head = git(cwd, ["rev-parse", "HEAD"]);
-  const base = containedUpstream(cwd, head, pointer, target);
-  if (base === target) return undefined;
+  const { target, base, selection } = resolveTarget(cwd, head, pointer, options);
+  if (base === target) return { selection };
+  refuseToolChanges(cwd, base, target);
   if (!isAncestor(cwd, base, head)) {
     // Same tree as the fork, with the contained upstream commit as a second parent: git then
     // merges later upstream commits against the right base. It is local and never pushed.
@@ -374,9 +456,9 @@ function start(
     ]);
     git(cwd, ["reset", "--soft", graft]);
   }
-  const state = { branch, forkBase: head, base, target, stops: [] };
+  const state = { branch, forkBase: head, base, target, selection, stops: [] };
   writeState(cwd, state);
-  return state;
+  return { state, selection };
 }
 
 function unresolvedIn(cwd: string, files: ReadonlyArray<string>) {
@@ -470,17 +552,14 @@ function advance(cwd: string, state: SyncState): MergeOutcome {
  * the first upstream commit that conflicts, with that commit's conflicts in the working tree.
  * Resolve them, `git add` the files, and run it again.
  */
-export function merge(
-  cwd: string,
-  options: { readonly to?: string | undefined; readonly fetch?: boolean | undefined } = {},
-): MergeOutcome {
+export function merge(cwd: string, options: TargetOptions = {}): MergeOutcome {
   requireGit(cwd);
   const existing = readState(cwd);
   if (existing === undefined) {
     const started = start(cwd, options);
-    return started === undefined
-      ? { kind: "up-to-date", pointer: readPointer(cwd) }
-      : advance(cwd, started);
+    return started.state === undefined
+      ? { kind: "up-to-date", pointer: readPointer(cwd), selection: started.selection }
+      : advance(cwd, started.state);
   }
   if (options.to !== undefined) {
     throw new SyncError(
@@ -529,6 +608,44 @@ export function syncMessage(input: {
 }
 
 const REPORT_DIFF_LINES = 150;
+const REPORT_OPEN_ITEMS = 15;
+
+function upstreamSensitiveChanges(cwd: string, base: string, target: string) {
+  const show = (rev: string, file: string) => {
+    const shown = run(cwd, ["show", `${rev}:${file}`]);
+    return shown.status === 0 ? shown.stdout : undefined;
+  };
+  return sensitiveChanges(
+    lines(git(cwd, ["diff", "--name-only", "--no-renames", base, target])).map((path) =>
+      needsContent(path) ? { path, before: show(base, path), after: show(target, path) } : { path },
+    ),
+  );
+}
+
+export function sensitiveSection(groups: ReadonlyArray<SensitiveGroup>): ReadonlyArray<string> {
+  const heading = `## Sensitive changes (${groups.reduce((total, group) => total + group.items.length, 0)})`;
+  if (groups.length === 0) {
+    return [heading, "", "No upstream change in this sync matches a sensitive rule.", ""];
+  }
+  return [
+    heading,
+    "",
+    "Upstream changes that run on install or in CI, steer our agents, or decide where data goes " +
+      "or who gets in. Read each one before merging.",
+    "",
+    ...groups.flatMap((group) => {
+      const items = group.items.map((item) => `- ${item}`);
+      return [
+        `### ${group.reason} (${group.items.length})`,
+        "",
+        ...(items.length > REPORT_OPEN_ITEMS
+          ? ["<details><summary>Show all</summary>", "", ...items, "", "</details>"]
+          : items),
+        "",
+      ];
+    }),
+  ];
+}
 
 function syncReport(
   cwd: string,
@@ -536,6 +653,8 @@ function syncReport(
   pointer: UpstreamPointer,
   detailRef: string,
   count: number,
+  sensitive: ReadonlyArray<SensitiveGroup>,
+  squash: boolean,
 ): string {
   const link = (commit: UpstreamCommit) =>
     commit.pullRequest
@@ -577,7 +696,13 @@ function syncReport(
     pointer.repository,
   );
   return [
+    ...sensitiveSection(sensitive),
     `Upstream \`${short(state.base)}..${short(state.target)}\`: ${count} commit${count === 1 ? "" : "s"}.`,
+    ...(state.selection ? ["", `Target: ${state.selection}`] : []),
+    "",
+    squash
+      ? "Land this with **Squash and merge**."
+      : "Land this with **Create a merge commit**. A squash merge would drop upstream's history from `main`.",
     "",
     `## Conflicts resolved (${state.stops.length})`,
     "",
@@ -599,10 +724,10 @@ function syncReport(
 }
 
 /**
- * Records the new upstream commit in the pointer and, unless `keepMerges`, collapses the sync into
- * one commit on the fork so it can land through a squash merge.
+ * Records the new upstream commit in the pointer and collapses the sync into one commit on the
+ * fork: a merge commit of the fork base and the upstream target, or with `squash`, a plain commit.
  */
-export function finish(cwd: string, options: { readonly keepMerges?: boolean } = {}): FinishResult {
+export function finish(cwd: string, options: { readonly squash?: boolean } = {}): FinishResult {
   const state = readState(cwd);
   if (state === undefined) throw new SyncError("No sync is in progress on this checkout.");
   if (mergeInProgress(cwd)) throw new SyncError("A merge is still open. Run merge again first.");
@@ -612,6 +737,7 @@ export function finish(cwd: string, options: { readonly keepMerges?: boolean } =
       `Upstream ${short(state.target)} is not fully merged yet. Run merge again.`,
     );
   }
+  const squash = options.squash === true;
   const pointer = readPointer(cwd);
   NodeFS.writeFileSync(
     NodePath.join(cwd, POINTER_PATH),
@@ -630,23 +756,17 @@ export function finish(cwd: string, options: { readonly keepMerges?: boolean } =
     count,
     stops: state.stops,
   });
-  const report = syncReport(cwd, state, pointer, detailRef, count);
-  if (!options.keepMerges) {
-    const squashed = git(
-      cwd,
-      ["commit-tree", "HEAD^{tree}", "-p", state.forkBase, "-F", "-"],
-      `${message.title}\n\n${message.body}\n`,
-    );
-    git(cwd, ["reset", "--soft", squashed]);
-  }
+  const sensitive = upstreamSensitiveChanges(cwd, state.base, state.target);
+  const report = syncReport(cwd, state, pointer, detailRef, count, sensitive, squash);
+  const parents = squash ? [state.forkBase] : [state.forkBase, state.target];
+  const commit = git(
+    cwd,
+    ["commit-tree", "HEAD^{tree}", ...parents.flatMap((parent) => ["-p", parent]), "-F", "-"],
+    `${message.title}\n\n${message.body}\n`,
+  );
+  git(cwd, ["reset", "--soft", commit]);
   NodeFS.rmSync(statePath(cwd), { force: true });
-  return {
-    commit: git(cwd, ["rev-parse", "HEAD"]),
-    ...message,
-    detailRef,
-    squashed: !options.keepMerges,
-    report,
-  };
+  return { commit, ...message, detailRef, squashed: squash, sensitive, report };
 }
 
 /** Drops a sync in progress and puts the branch back where it started. */

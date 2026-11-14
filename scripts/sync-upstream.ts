@@ -9,6 +9,7 @@ import * as NodeUtil from "node:util";
 
 import {
   abort,
+  DEFAULT_MIN_AGE_DAYS,
   finish,
   forkHistory,
   merge,
@@ -21,16 +22,21 @@ import {
 
 const USAGE = `node scripts/sync-upstream.ts <command>
 
-  status [--to <rev>] [--no-fetch] [--json]
+  status [--to <rev>] [--min-age-days <n>] [--no-fetch] [--json]
       How far behind upstream this checkout is, whether merging conflicts, and which
       upstream commits touch files the fork has changed. Changes nothing.
-  merge [--to <rev>] [--no-fetch]
+  merge [--to <rev>] [--min-age-days <n>] [--no-fetch]
       Run on a sync branch with a clean tree. Merges upstream until it is done or an
       upstream commit conflicts (exit code 2). Resolve, git add, and run it again.
-  finish [--keep-merges]
-      Records the new upstream commit and squashes the sync into one commit.
+  finish [--squash]
+      Records the new upstream commit and makes the sync one merge commit of the fork
+      and upstream. --squash makes it a plain commit instead, without upstream's history.
   abort
-      Drops a sync in progress and resets the branch to where it started.`;
+      Drops a sync in progress and resets the branch to where it started.
+
+Without --to, the target is the newest upstream commit at least --min-age-days old
+(default ${DEFAULT_MIN_AGE_DAYS}) whose "Check" job passed on upstream's CI. If that CI cannot be
+read, nothing is chosen.`;
 
 const short = (sha: string) => sha.slice(0, 10);
 const describe = (commit: UpstreamCommit) =>
@@ -61,7 +67,8 @@ function main(): number {
       to: { type: "string" },
       "no-fetch": { type: "boolean", default: false },
       json: { type: "boolean", default: false },
-      "keep-merges": { type: "boolean", default: false },
+      "min-age-days": { type: "string" },
+      squash: { type: "boolean", default: false },
       help: { type: "boolean", short: "h", default: false },
     },
   });
@@ -73,7 +80,13 @@ function main(): number {
   const cwd = NodeChildProcess.execFileSync("git", ["rev-parse", "--show-toplevel"], {
     encoding: "utf8",
   }).trim();
-  const target = { to: values.to, fetch: !values["no-fetch"] };
+  const minAgeDays =
+    values["min-age-days"] === undefined ? undefined : Number(values["min-age-days"]);
+  if (minAgeDays !== undefined && !(Number.isFinite(minAgeDays) && minAgeDays >= 0)) {
+    console.error("--min-age-days takes a number of days, 0 or more.");
+    return 1;
+  }
+  const target = { to: values.to, fetch: !values["no-fetch"], minAgeDays };
 
   switch (command) {
     case "status": {
@@ -83,8 +96,9 @@ function main(): number {
         return 0;
       }
       console.log(
-        `Fork contains upstream through ${short(result.base)}. Upstream is at ${short(result.target)}: ${result.behind} commit${result.behind === 1 ? "" : "s"} to merge.`,
+        `Fork contains upstream through ${short(result.base)}. Target is ${short(result.target)}: ${result.behind} commit${result.behind === 1 ? "" : "s"} to merge.`,
       );
+      console.log(`Why this target: ${result.selection}`);
       if (result.inProgress) {
         console.log(
           `A sync to ${short(result.inProgress.target)} is in progress on ${result.inProgress.branch} (${result.inProgress.stops.length} conflict stop${result.inProgress.stops.length === 1 ? "" : "s"} so far).`,
@@ -115,7 +129,7 @@ function main(): number {
       const outcome = merge(cwd, target);
       if (outcome.kind === "up-to-date") {
         console.log(
-          `Already contains upstream ${short(outcome.pointer.commit)}. Nothing to merge.`,
+          `Already contains upstream ${short(outcome.pointer.commit)}. Nothing to merge.\n${outcome.selection}`,
         );
         return 0;
       }
@@ -123,18 +137,26 @@ function main(): number {
         printStop(cwd, outcome.state, outcome.stop);
         return 2;
       }
+      if (outcome.state.selection) console.log(`Target: ${outcome.state.selection}`);
       console.log(
-        `Upstream ${short(outcome.state.target)} is merged (${outcome.state.stops.length} conflict stop${outcome.state.stops.length === 1 ? "" : "s"}). Verify the result, then run \`node scripts/sync-upstream.ts finish\`.`,
+        `Upstream ${short(outcome.state.target)} is merged (${outcome.state.stops.length} conflict stop${outcome.state.stops.length === 1 ? "" : "s"}). Run \`node scripts/sync-upstream.ts finish\`; the fork's CI verifies the pull request.`,
       );
       return 0;
     }
     case "finish": {
-      const result = finish(cwd, { keepMerges: values["keep-merges"] });
+      const result = finish(cwd, { squash: values.squash });
       console.log(`${result.title}\n\n${result.body}\n`);
       console.log(
         result.squashed
-          ? `Squashed into ${short(result.commit)}. The step-by-step merges are kept at ${result.detailRef}.`
-          : `Kept the merge commits. HEAD is ${short(result.commit)}.`,
+          ? `Squashed into ${short(result.commit)}. Land it with "Squash and merge".`
+          : `Merge commit ${short(result.commit)}. Land it with "Create a merge commit"; a squash drops upstream's history.`,
+      );
+      console.log(`The step-by-step merges are kept at ${result.detailRef}.`);
+      const flagged = result.sensitive.reduce((total, group) => total + group.items.length, 0);
+      console.log(
+        flagged === 0
+          ? "No sensitive changes."
+          : `Sensitive changes: ${flagged}, listed at the top of the report. Read each before opening the pull request.`,
       );
       const reportPath = NodePath.resolve(
         cwd,
