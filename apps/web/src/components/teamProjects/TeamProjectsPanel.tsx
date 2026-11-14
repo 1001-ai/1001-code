@@ -303,10 +303,9 @@ function TeamProjectsView(props: {
       ) : (
         <div className="flex min-h-0 flex-1">
           <ScrollArea className="min-h-0 min-w-0 flex-1">
-            <div className="space-y-3 p-4 pb-12">
-              <div className={selected === null ? "pe-8" : undefined}>
-                <Legend />
-              </div>
+            <div
+              className={selected === null ? "space-y-3 p-4 pe-10 pb-14" : "space-y-3 p-4 pb-14"}
+            >
               {snapshot.error !== null ? (
                 <Alert variant="warning">
                   <AlertDescription>
@@ -355,62 +354,69 @@ function TeamProjectsView(props: {
         </div>
       )}
 
-      {environments.length > 1 || catalogReady ? (
-        <div className="absolute end-1.5 bottom-1.5 z-10 flex items-center gap-1.5 rounded-lg border bg-background py-0.5 ps-1 pe-0.5 text-xs text-muted-foreground shadow-xs">
-          {environments.length > 1 ? (
-            <Select
-              value={environmentId ?? ""}
-              onValueChange={(value) => {
-                setSelectedKey(null);
-                setChosenEnvironmentId(
-                  environments.find((environment) => environment.environmentId === value)
-                    ?.environmentId ?? null,
-                );
-              }}
-            >
-              <SelectTrigger size="xs" className="w-auto min-w-0" aria-label="Environment">
-                <SelectValue>{environmentLabel(environmentId)}</SelectValue>
-              </SelectTrigger>
-              <SelectPopup align="end" alignItemWithTrigger={false}>
-                {environments.map((environment) => (
-                  <SelectItem
-                    hideIndicator
-                    key={environment.environmentId}
-                    value={environment.environmentId}
-                  >
-                    {environment.label}
-                  </SelectItem>
-                ))}
-              </SelectPopup>
-            </Select>
-          ) : null}
-          {catalogReady ? (
-            <>
-              <span className="ps-1.5">
-                {snapshot.refreshing ? (
-                  "Fetching…"
-                ) : snapshot.fetchedAt === null ? (
-                  "Not fetched yet"
-                ) : (
-                  <>
-                    Updated <RelativeTime timestamp={snapshot.fetchedAt} />
-                  </>
-                )}
-              </span>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                aria-label="Refresh team catalog"
-                disabled={snapshot.refreshing}
-                onClick={() => void refresh({ environmentId, input: { force: true } })}
+      <div className="pointer-events-none absolute inset-x-1.5 bottom-1.5 z-10 flex items-end gap-2">
+        {catalogReady ? (
+          <div className="pointer-events-auto min-w-0 rounded-lg border bg-background px-2.5 py-1.5 shadow-xs">
+            <Legend />
+          </div>
+        ) : null}
+        {environments.length > 1 || catalogReady ? (
+          <div className="pointer-events-auto ms-auto flex shrink-0 items-center gap-1.5 rounded-lg border bg-background py-0.5 ps-1 pe-0.5 text-xs text-muted-foreground shadow-xs">
+            {environments.length > 1 ? (
+              <Select
+                value={environmentId ?? ""}
+                onValueChange={(value) => {
+                  setSelectedKey(null);
+                  setChosenEnvironmentId(
+                    environments.find((environment) => environment.environmentId === value)
+                      ?.environmentId ?? null,
+                  );
+                }}
               >
-                <RefreshCwIcon />
-              </Button>
-            </>
-          ) : null}
-        </div>
-      ) : null}
+                <SelectTrigger size="xs" className="w-auto min-w-0" aria-label="Environment">
+                  <SelectValue>{environmentLabel(environmentId)}</SelectValue>
+                </SelectTrigger>
+                <SelectPopup align="end" alignItemWithTrigger={false}>
+                  {environments.map((environment) => (
+                    <SelectItem
+                      hideIndicator
+                      key={environment.environmentId}
+                      value={environment.environmentId}
+                    >
+                      {environment.label}
+                    </SelectItem>
+                  ))}
+                </SelectPopup>
+              </Select>
+            ) : null}
+            {catalogReady ? (
+              <>
+                <span className="ps-1.5">
+                  {snapshot.refreshing ? (
+                    "Fetching…"
+                  ) : snapshot.fetchedAt === null ? (
+                    "Not fetched yet"
+                  ) : (
+                    <>
+                      Updated <RelativeTime timestamp={snapshot.fetchedAt} />
+                    </>
+                  )}
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label="Refresh team catalog"
+                  disabled={snapshot.refreshing}
+                  onClick={() => void refresh({ environmentId, input: { force: true } })}
+                >
+                  <RefreshCwIcon />
+                </Button>
+              </>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
