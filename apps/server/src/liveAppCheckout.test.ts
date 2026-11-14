@@ -18,12 +18,26 @@ it.layer(NodeServices.layer)("resolveLiveAppCheckout", (it) => {
       yield* fs.makeDirectory(sourceDir, { recursive: true });
       // A linked worktree's `.git` is a file.
       yield* fs.writeFileString(path.join(root, ".git"), "gitdir: /elsewhere\n");
+      yield* fs.writeFileString(path.join(root, "apps", "server", "package.json"), "{}");
 
       assert.strictEqual(yield* resolveLiveAppCheckout({ devUrl: DEV_URL, sourceDir }), root);
       assert.strictEqual(
         yield* resolveLiveAppCheckout({ devUrl: undefined, sourceDir }),
         undefined,
       );
+    }),
+  );
+
+  it.effect("ignores a git work tree that is not this repository", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-live-checkout-" });
+      const sourceDir = path.join(root, "lib", "node_modules", "t3", "dist");
+      yield* fs.makeDirectory(sourceDir, { recursive: true });
+      yield* fs.makeDirectory(path.join(root, ".git"));
+
+      assert.strictEqual(yield* resolveLiveAppCheckout({ devUrl: DEV_URL, sourceDir }), undefined);
     }),
   );
 

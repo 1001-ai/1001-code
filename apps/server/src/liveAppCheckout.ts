@@ -18,7 +18,13 @@ export const resolveLiveAppCheckout = Effect.fn("LiveAppCheckout.resolve")(funct
   while (true) {
     // A linked worktree has a `.git` file, a main checkout a `.git` directory.
     const found = yield* fs.exists(path.join(dir, ".git")).pipe(Effect.orElseSucceed(() => false));
-    if (found) return dir;
+    // Only this repository counts, not some unrelated checkout above an installed copy.
+    if (found) {
+      const isApp = yield* fs
+        .exists(path.join(dir, "apps", "server", "package.json"))
+        .pipe(Effect.orElseSucceed(() => false));
+      return isApp ? dir : undefined;
+    }
     const parent = path.dirname(dir);
     if (parent === dir) return undefined;
     dir = parent;

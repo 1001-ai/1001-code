@@ -2,7 +2,10 @@ import { pipe } from "effect/Function";
 import * as DocumentText from "../../provider/DocumentText.ts";
 import { revertCodexThread } from "../../provider/CodexThreadRevert.ts";
 import { historyResponseItems } from "@t3tools/provider-core/server/handoffBudget";
-import { QUESTION_CARD_INSTRUCTIONS } from "@t3tools/provider-core/server/runtimeInstructions";
+import {
+  liveAppCheckoutCodexContext,
+  QUESTION_CARD_INSTRUCTIONS,
+} from "@t3tools/provider-core/server/runtimeInstructions";
 import { makeProviderTextDeltaCoalescer } from "./ProviderTextDeltaCoalescer.ts";
 import {
   mcpToolPresentation,
@@ -825,6 +828,7 @@ export const buildCodexTurnStartParams = Effect.fn("CodexAdapterV2.buildCodexTur
               kind: "application" as const,
               value: QUESTION_CARD_INSTRUCTIONS,
             },
+            ...liveAppCheckoutCodexContext(),
           };
     const additionalContext =
       t3Context === undefined && Object.keys(appContext).length === 0
