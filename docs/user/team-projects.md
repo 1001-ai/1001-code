@@ -101,11 +101,11 @@ A team project with a `linear` field has a board: its Linear team's issues, in t
 workflow states. Linear holds the issues, so people working in Linear or another tool see the same
 ones.
 
-1. Create a personal API key in Linear under **Settings → Security & access → Personal API keys**.
-2. Open **Settings → Threads → Board**, paste the key and select **Connect**. The key is checked
-   with Linear and stored in the environment's secret store; Settings then shows who you are
-   connected as. **Disconnect** removes it.
-3. In a thread of the project, open **Board** from the right panel's new surface menu or the
+1. Open **Settings → Threads → Board** and select **Sign in with Linear**. Linear opens in your
+   browser; approve access there and it sends you back to the environment, which says you can
+   close the tab. Settings then shows who you are signed in as. **Disconnect** signs out and
+   revokes the access at Linear.
+2. In a thread of the project, open **Board** from the right panel's new surface menu or the
    command palette.
 
 The board shows open issues and those closed in the last week, as columns or as a list grouped by
@@ -115,5 +115,23 @@ integration. Selecting a card opens its thread when the issue links to a thread 
 are connected to, and opens the issue in Linear otherwise. The board is read when you open it and
 when you select refresh; it does not change issues.
 
-Each environment reads Linear with its own owner's key, so connect Linear on each machine you use
-the board from.
+Each environment reads Linear as the person who signed in on it, so sign in on each machine you
+use the board from.
+
+### Set up Linear sign-in
+
+Sign-in needs a Linear OAuth application, created once for the team by a Linear workspace
+administrator:
+
+1. Create the application in Linear's API settings
+   (`https://linear.app/settings/api/applications/new`).
+2. Add a callback URL `<origin>/oauth/linear/callback` for every address people's browsers reach
+   an environment at; Linear only redirects to callback URLs registered there. For the desktop
+   app that is usually `http://127.0.0.1:3773/oauth/linear/callback`. The port is the one the
+   desktop app's server listens on, and it moves up when 3773 is taken. Add the Tailscale or tunnel
+   address too when people open an environment through one.
+3. Set the application's client ID as `T3CODE_LINEAR_CLIENT_ID` in the environment of each server
+   that shows boards. No client secret is needed; sign-in uses PKCE.
+
+Without `T3CODE_LINEAR_CLIENT_ID`, Settings says sign-in is not set up. Linear sends the browser
+back to the environment's own address, so sign in from a browser that can reach that address.

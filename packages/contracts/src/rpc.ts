@@ -375,6 +375,7 @@ import {
   BoardDisconnectInput,
   BoardError,
   BoardProjectInput,
+  BoardSignIn,
   BoardSnapshot,
 } from "./board.ts";
 import {
@@ -1095,7 +1096,7 @@ const WsBoardSubscribeConnectionRpc = Rpc.make(WS_METHODS.boardSubscribeConnecti
 
 const WsBoardConnectRpc = Rpc.make(WS_METHODS.boardConnect, {
   payload: BoardConnectInput,
-  success: BoardConnection,
+  success: BoardSignIn,
   error: Schema.Union([BoardError, EnvironmentAuthorizationError]),
 });
 

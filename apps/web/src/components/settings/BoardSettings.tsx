@@ -2,15 +2,18 @@ import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime"
 import { AuthSettingsWriteScope, type EnvironmentId } from "@t3tools/contracts";
 import { useState } from "react";
 
+import { isElectron } from "../../env";
+import { readLocalApi } from "../../localApi";
 import { boardConnect, boardDisconnect, useBoardConnection } from "../../state/board";
-import { useEnvironmentScope } from "../../state/session";
+import { readPreparedConnection, useEnvironmentScope } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { Button } from "../ui/button";
-import { Input } from "../ui/input";
+import { Button, InlineButton } from "../ui/button";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
 
 const BOARD_SETTINGS_SECTION_ID = "board";
+/** The server forgets an unfinished sign-in after ten minutes. */
+const SIGN_IN_WAIT_MS = 10 * 60_000;
 
 function LinearConnectionRow(props: {
   readonly environmentId: EnvironmentId;
@@ -20,33 +23,72 @@ function LinearConnectionRow(props: {
   const canWrite = useEnvironmentScope(props.environmentId, AuthSettingsWriteScope);
   const connect = useAtomCommand(boardConnect, { reportFailure: false });
   const disconnect = useAtomCommand(boardDisconnect);
-  const [apiKey, setApiKey] = useState("");
   const [pending, setPending] = useState(false);
+  // The sign-in this row waits on, so an older attempt's timeout cannot end a newer wait. `link`
+  // is set when the browser blocked the sign-in tab, for the person to open it themselves.
+  const [waiting, setWaiting] = useState<{
+    readonly attempt: number;
+    readonly link: string | null;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // A wait ends once the environment signs in, here or from anywhere else.
+  if (waiting !== null && connection !== null && connection.status !== "disconnected") {
+    setWaiting(null);
+  }
 
-  const submit = async () => {
-    const value = apiKey.trim();
-    if (value.length === 0) return;
+  const signIn = async () => {
+    const callbackOrigin = readPreparedConnection(props.environmentId)?.httpBaseUrl;
+    if (callbackOrigin === undefined) return;
+    // Opened before the request: a tab opened after an await can be blocked as a pop-up.
+    const tab = isElectron ? null : window.open("about:blank", "_blank");
+    if (tab !== null) tab.opener = null;
     setPending(true);
     setError(null);
-    const result = await connect({ environmentId: props.environmentId, input: { apiKey: value } });
+    const result = await connect({
+      environmentId: props.environmentId,
+      input: { callbackOrigin },
+    });
     setPending(false);
     if (result._tag === "Failure") {
+      tab?.close();
       const failure = squashAtomCommandFailure(result);
-      setError(failure instanceof Error ? failure.message : "Could not connect to Linear.");
+      setError(failure instanceof Error ? failure.message : "Could not start the Linear sign-in.");
       return;
     }
-    setApiKey("");
+    const { authorizeUrl } = result.value;
+    let link: string | null = null;
+    if (tab !== null) {
+      tab.location.replace(authorizeUrl);
+    } else if (isElectron) {
+      await readLocalApi()?.shell.openExternal(authorizeUrl);
+    } else {
+      link = authorizeUrl;
+    }
+    const attempt = Date.now();
+    setWaiting({ attempt, link });
+    setTimeout(
+      () => setWaiting((current) => (current?.attempt === attempt ? null : current)),
+      SIGN_IN_WAIT_MS,
+    );
   };
 
   const title = props.label === null ? "Linear" : `Linear · ${props.label}`;
+  if (connection?.status === "unavailable") {
+    return (
+      <SettingsRow
+        title={title}
+        description="Boards read Linear as the person signed in on this environment."
+        status="Linear sign-in is not set up for this environment. An administrator sets T3CODE_LINEAR_CLIENT_ID on its server."
+      />
+    );
+  }
   if (connection?.status === "connected") {
     const { viewer } = connection;
     return (
       <SettingsRow
         title={title}
-        description="Boards read Linear as this account. The API key stays on this environment's server."
-        status={`Connected as ${viewer.name} (${viewer.email}) in ${viewer.workspace}.`}
+        description="Boards read Linear as this account. The sign-in stays on this environment's server."
+        status={`Signed in as ${viewer.name} (${viewer.email}) in ${viewer.workspace}.`}
         control={
           <Button
             type="button"
@@ -65,38 +107,37 @@ function LinearConnectionRow(props: {
   return (
     <SettingsRow
       title={title}
-      description="Paste a Linear personal API key (Linear → Settings → Security & access → Personal API keys) to see team projects' boards. It is stored in this environment's secret store and never shown again."
-      status={error ?? (connection === null ? null : "Not connected.")}
+      description="Sign in to Linear to see team projects' boards. Linear opens in your browser and sends you back to this environment."
+      status={
+        error ??
+        (connection === null
+          ? null
+          : (connection.signInFailure ??
+            (waiting === null ? (
+              "Not signed in."
+            ) : waiting.link === null ? (
+              "Finish signing in to Linear in your browser."
+            ) : (
+              <>
+                The browser blocked the sign-in tab.{" "}
+                <InlineButton
+                  render={<a href={waiting.link} target="_blank" rel="noopener noreferrer" />}
+                >
+                  Open Linear sign-in
+                </InlineButton>
+              </>
+            ))))
+      }
       control={
-        <form
-          className="flex w-full items-center gap-2 sm:w-auto"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void submit();
-          }}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={connection === null || !canWrite || pending}
+          onClick={() => void signIn()}
         >
-          <Input
-            size="sm"
-            className="w-full sm:w-64"
-            type="password"
-            autoComplete="off"
-            spellCheck={false}
-            placeholder="lin_api_…"
-            aria-label="Linear personal API key"
-            value={apiKey}
-            maxLength={500}
-            disabled={connection === null || !canWrite || pending}
-            onChange={(event) => setApiKey(event.target.value)}
-          />
-          <Button
-            type="submit"
-            variant="outline"
-            size="sm"
-            disabled={!canWrite || pending || apiKey.trim().length === 0}
-          >
-            Connect
-          </Button>
-        </form>
+          Sign in with Linear
+        </Button>
       }
     />
   );
