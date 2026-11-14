@@ -101,6 +101,7 @@ const RPC_AGGREGATES = {
   [WS_METHODS.boardSubscribeConnection]: "orchestration",
   [WS_METHODS.boardConnect]: "orchestration",
   [WS_METHODS.boardDisconnect]: "orchestration",
+  [WS_METHODS.teamCatalogPropose]: "orchestration",
   [WS_METHODS.serverSignalProcess]: "server",
   [WS_METHODS.serverReportClientActivity]: "server",
   [WS_METHODS.scheduledTasksSubscribe]: "scheduledTasks",

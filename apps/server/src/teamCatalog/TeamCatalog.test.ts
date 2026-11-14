@@ -19,7 +19,10 @@ import * as ProcessRunner from "../processRunner.ts";
 import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import { TeamCatalogError } from "@t3tools/contracts";
+
 import * as TeamCatalog from "./TeamCatalog.ts";
+import * as TeamCatalogAccess from "./TeamCatalogAccess.ts";
 
 const GIT_IDENTITY = {
   GIT_AUTHOR_NAME: "Test",
@@ -39,7 +42,20 @@ const git = (cwd: string, args: ReadonlyArray<string>) =>
     expect(output.code, output.stderr).toBe(0);
   });
 
-const project = (key: string, repo: string) => ({ key, name: key.toUpperCase(), repo, owners: [] });
+const project = (
+  key: string,
+  repo: string,
+  extra: { readonly owners?: ReadonlyArray<string>; readonly links?: ReadonlyArray<unknown> } = {},
+) => ({ key, name: key.toUpperCase(), repo, owners: [], ...extra });
+
+/** Signed in as `login` (alice to start); repositories with "private" in their name are out of reach. */
+const accessTest = (login: Ref.Ref<string>) =>
+  Layer.mock(TeamCatalogAccess.TeamCatalogAccess)({
+    viewer: Ref.get(login).pipe(Effect.map((current) => ({ login: current, problem: null }))),
+    author: Effect.succeed({ name: "alice", email: "7+alice@users.noreply.github.com" }),
+    canReach: (cloneUrl) => Effect.succeed(!cloneUrl.includes("private")),
+    openPullRequest: () => Effect.fail(new TeamCatalogError({ detail: "No pull requests here." })),
+  });
 
 interface FetchHold {
   readonly started: Deferred.Deferred<void>;
@@ -57,11 +73,14 @@ const withCatalog = <A, E>(
   test: (fixture: {
     readonly catalog: string;
     readonly projectsRoot: string;
+    readonly stateDir: string;
     readonly commit: (files: Record<string, unknown>) => Effect.Effect<void, Error>;
     readonly service: TeamCatalog.TeamCatalog["Service"];
     readonly start: Effect.Effect<TeamCatalog.TeamCatalog["Service"], Error, Services>;
     /** Holds the service's next `git fetch` until `release`; `started` completes when it is held. */
     readonly holdNextFetch: Effect.Effect<FetchHold>;
+    /** Switches the GitHub CLI login the service sees. */
+    readonly signIn: (login: string) => Effect.Effect<void>;
   }) => Effect.Effect<A, E, Services>,
 ) =>
   Effect.gen(function* () {
@@ -110,11 +129,18 @@ const withCatalog = <A, E>(
           return yield* runner.run(input);
         }),
     });
-    const layer = TeamCatalog.layer.pipe(
+    const login = yield* Ref.make("alice");
+    const configLayer = ServerConfig.layerTest(temp, path.join(temp, "home"));
+    const stateDir = yield* ServerConfig.ServerConfig.pipe(
+      Effect.map((config) => config.stateDir),
+      Effect.provide(configLayer),
+    );
+    const layer = TeamCatalog.layerWithoutAccess.pipe(
       Layer.provide(
         Layer.mergeAll(
           Layer.succeed(ProcessRunner.ProcessRunner, serviceRunner),
-          ServerConfig.layerTest(temp, path.join(temp, "home")),
+          configLayer,
+          accessTest(login),
           RepositoryIdentityResolver.layer,
           ServerSettings.layerTest(),
           Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
@@ -129,7 +155,16 @@ const withCatalog = <A, E>(
       Effect.provideService(Scope.Scope, yield* Scope.Scope),
     );
     const service = yield* start;
-    return yield* test({ catalog, projectsRoot, commit, service, start, holdNextFetch });
+    return yield* test({
+      catalog,
+      projectsRoot,
+      stateDir,
+      commit,
+      service,
+      start,
+      holdNextFetch,
+      signIn: (next) => Ref.set(login, next),
+    });
   }).pipe(
     Effect.scoped,
     Effect.provide(ProcessRunner.layer.pipe(Layer.provideMerge(NodeServices.layer))),
@@ -142,7 +177,7 @@ it.live("reads a catalog, reports bad files, and finds where each project is che
       yield* commit({
         "web.json": project("web", "example.com/acme/web"),
         "api.json": project("api", "example.com/acme/api"),
-        "docs.json": project("docs", "example.com/acme/docs"),
+        "docs.json": project("docs", "example.com/acme/private-docs"),
         "bad.json": { ...project("bad", "example.com/acme/bad"), extra: true },
       });
       yield* fileSystem.makeDirectory(`${projectsRoot}/web`);
@@ -161,14 +196,20 @@ it.live("reads a catalog, reports bad files, and finds where each project is che
       expect(snapshot).toMatchObject({ source: catalog, error: null, refreshing: false });
       expect(snapshot.fetchedAt).not.toBeNull();
       expect(snapshot.invalid.map((entry) => entry.file)).toEqual(["projects/bad.json"]);
+      expect(snapshot.viewer).toEqual({ login: "alice", problem: null });
       expect(
-        snapshot.projects.map((entry) => [entry.project.key, entry.checkout.state, entry.cloneUrl]),
+        snapshot.projects.map((entry) => [
+          entry.project.key,
+          entry.checkout.state,
+          entry.cloneUrl,
+          entry.reachable,
+        ]),
       ).toEqual([
-        ["api", "occupied", "https://example.com/acme/api.git"],
-        ["docs", "missing", "https://example.com/acme/docs.git"],
-        ["web", "present", "https://example.com/acme/web.git"],
+        ["api", "occupied", "https://example.com/acme/api.git", true],
+        ["docs", "missing", "https://example.com/acme/private-docs.git", false],
+        ["web", "present", "https://example.com/acme/web.git", true],
       ]);
-      expect(snapshot.projects[1]?.checkout.path).toBe(`${projectsRoot}/docs`);
+      expect(snapshot.projects[1]?.checkout.path).toBe(`${projectsRoot}/private-docs`);
     }),
   ),
 );
@@ -246,6 +287,7 @@ it.live("serves the last fetch at once after a restart, even with the catalog un
       expect(failed.error).not.toBeNull();
       expect(failed.fetchedAt).toBe(Option.getOrThrow(restored).fetchedAt);
       expect(failed.projects.map((entry) => entry.project.key)).toEqual(["web"]);
+      expect(failed.viewer).toEqual({ login: "alice", problem: null });
     }),
   ),
 );
@@ -270,4 +312,87 @@ it.effect("counts freshness from when a fetch finishes, not when it starts", () 
       expect(recent.projects.map((entry) => entry.project.key)).toEqual(["web"]);
     }),
   ),
+);
+
+it.live(
+  "proposes a link change as a branch on the catalog remote, never on the local catalog",
+  () =>
+    withCatalog(({ catalog, stateDir, commit, service, signIn }) =>
+      Effect.gen(function* () {
+        const runner = yield* ProcessRunner.ProcessRunner;
+        yield* commit({
+          "web.json": project("web", "example.com/acme/web", {
+            owners: ["Alice"],
+            links: [{ project: "api", access: "read" }],
+          }),
+          "api.json": project("api", "example.com/acme/api", { owners: ["bob"] }),
+        });
+        const remote = `${catalog}-remote.git`;
+        yield* git(catalog, ["clone", "--quiet", "--bare", catalog, remote]);
+        const fetched = yield* service.setSource(remote);
+        yield* git(`${stateDir}/team-catalog/checkout`, ["config", "commit.gpgSign", "true"]);
+
+        const stale = yield* Effect.flip(
+          service.propose({
+            baseRevision: "0000000",
+            changes: [{ key: "web", parent: null, links: [] }],
+          }),
+        );
+        expect(stale.detail).toContain("changed since you opened it");
+        const notOwner = yield* Effect.flip(
+          service.propose({
+            baseRevision: fetched.revision!,
+            changes: [{ key: "api", parent: null, links: [{ project: "web", access: "read" }] }],
+          }),
+        );
+        expect(notOwner.detail).toBe("Only the owners of api can change its parent and links.");
+        yield* signIn("bob");
+        const switched = yield* Effect.flip(
+          service.propose({
+            baseRevision: fetched.revision!,
+            changes: [{ key: "web", parent: null, links: [] }],
+          }),
+        );
+        expect(switched.detail).toBe("Only the owners of web can change its parent and links.");
+        yield* signIn("alice");
+
+        const proposal = yield* service.propose({
+          baseRevision: fetched.revision!,
+          changes: [
+            { key: "web", parent: null, links: [{ project: "api", access: "write" }] },
+            { key: "api", parent: null, links: [{ project: "web", access: "write" }] },
+          ],
+        });
+        expect(proposal).toMatchObject({
+          remote,
+          files: ["projects/web.json", "projects/api.json"],
+          pullRequestUrl: null,
+          pullRequestProblem: null,
+        });
+        expect(proposal.branch).toBe(`team-catalog/web-api-links-${proposal.commit.slice(0, 7)}`);
+
+        const show = (...args: ReadonlyArray<string>) =>
+          runner
+            .run({ command: "git", args: ["-C", remote, "show", ...args] })
+            .pipe(Effect.map((output) => output.stdout));
+        expect(JSON.parse(yield* show(`${proposal.branch}:projects/api.json`))).toEqual({
+          key: "api",
+          name: "API",
+          repo: "example.com/acme/api",
+          owners: ["bob"],
+          links: [{ project: "web", access: "write" }],
+        });
+        expect(yield* show(`${proposal.branch}:projects/web.json`)).toContain('"access": "write"');
+        expect(yield* show(`HEAD:projects/web.json`)).toContain('"access":"read"');
+        expect(yield* show("-s", "--format=%P", proposal.branch)).toContain(fetched.revision!);
+        expect((yield* show("-s", "--format=%an <%ae>|%cn <%ce>", proposal.branch)).trim()).toBe(
+          "alice <7+alice@users.noreply.github.com>|alice <7+alice@users.noreply.github.com>",
+        );
+        const after = yield* service.snapshot;
+        expect(after.revision).toBe(fetched.revision);
+        expect(after.projects.find((entry) => entry.project.key === "web")?.project.links).toEqual([
+          { project: "api", access: "read" },
+        ]);
+      }),
+    ),
 );

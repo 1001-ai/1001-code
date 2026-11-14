@@ -367,6 +367,7 @@ import {
   TeamCatalogSnapshot,
   TeamCatalogSubscribeInput,
 } from "./teamCatalog.ts";
+import { TeamCatalogProposal, TeamCatalogProposeInput } from "./teamProjectLinks.ts";
 import {
   BoardConnectInput,
   BoardConnection,
@@ -577,6 +578,7 @@ export const WS_METHODS = {
   boardSubscribeConnection: "board.subscribeConnection",
   boardConnect: "board.connect",
   boardDisconnect: "board.disconnect",
+  teamCatalogPropose: "teamCatalog.propose",
 
   scheduledTasksSubscribe: "scheduledTasks.subscribe",
   scheduledTasksUpsert: "scheduledTasks.upsert",
@@ -1101,6 +1103,12 @@ const WsBoardDisconnectRpc = Rpc.make(WS_METHODS.boardDisconnect, {
   payload: BoardDisconnectInput,
   success: BoardConnection,
   error: Schema.Union([BoardError, EnvironmentAuthorizationError]),
+});
+
+const WsTeamCatalogProposeRpc = Rpc.make(WS_METHODS.teamCatalogPropose, {
+  payload: TeamCatalogProposeInput,
+  success: TeamCatalogProposal,
+  error: Schema.Union([TeamCatalogError, EnvironmentAuthorizationError]),
 });
 
 const WsServerSignalProcessRpc = Rpc.make(WS_METHODS.serverSignalProcess, {
@@ -2236,6 +2244,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsBoardSubscribeConnectionRpc,
   WsBoardConnectRpc,
   WsBoardDisconnectRpc,
+  WsTeamCatalogProposeRpc,
   WsServerSignalProcessRpc,
   WsScheduledTasksSubscribeRpc,
   WsScheduledTasksUpsertRpc,

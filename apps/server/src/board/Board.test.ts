@@ -47,6 +47,7 @@ const catalogEntry = (linear: { team: string; project?: string } | undefined) =>
   },
   cloneUrl: "git@github.com:acme/web.git",
   checkout: { path: "/projects/web", state: "present" as const },
+  reachable: null,
 });
 
 const catalog = (
@@ -60,6 +61,7 @@ const catalog = (
   error: null,
   projects,
   invalid: [],
+  viewer: { login: null, problem: null },
 });
 
 const team = {

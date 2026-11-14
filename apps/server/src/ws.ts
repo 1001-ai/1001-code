@@ -2712,6 +2712,7 @@ export const layerWsRpc = (
         [WS_METHODS.boardSubscribeConnection]: () => board.connectionChanges,
         [WS_METHODS.boardConnect]: (input) => board.connect(input.apiKey),
         [WS_METHODS.boardDisconnect]: () => board.disconnect,
+        [WS_METHODS.teamCatalogPropose]: (input) => teamCatalog.propose(input),
         [WS_METHODS.serverRetryResourceTelemetry]: (_input) => resourceTelemetry.retry,
         [WS_METHODS.serverCheckOtlpEndpoint]: (input) => otlpEndpointCheck.check(input),
         [WS_METHODS.serverListTextGeneratorModels]: (input) => textGenerators.listModels(input),
