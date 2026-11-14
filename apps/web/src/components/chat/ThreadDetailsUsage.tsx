@@ -108,11 +108,7 @@ export function ThreadDetailsContext({ usage }: { readonly usage: ContextWindowS
           tone={used === null ? null : used >= 90 ? "error" : used >= 80 ? "warning" : null}
           tick={tick}
           muted
-          value={
-            maxTokens !== null
-              ? `${usedTokens} / ${formatContextWindowTokens(maxTokens)}`
-              : usedTokens
-          }
+          value={used !== null ? `${used}% used` : `${usedTokens} used`}
           ariaValue={used !== null ? `${used}% used` : `${usedTokens} tokens used`}
           tooltip={
             <>
@@ -154,7 +150,7 @@ function LimitRow({
       label={window.label}
       fill={left}
       tone={left <= 10 ? "error" : left <= 20 ? "warning" : null}
-      value={`${left}%`}
+      value={`${left}% left`}
       ariaValue={`${left}% left`}
       tooltip={
         <>
