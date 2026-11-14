@@ -5,7 +5,7 @@ description: Ask the user a decision question they can answer inline in the chat
 
 # Ask the user
 
-The web and desktop clients render a fenced `question` block in your reply as a card with buttons and a text field. Clicking an option or entering text writes a line `<id>: <answer>` into the user's draft. Nothing is sent until the user sends the message, so they can answer several questions, add comments and edit the draft first. The card shows as answered once a later user message has a line starting `<id>:`.
+The web and desktop clients render a fenced `question` block in your reply as a list of options and a text field. Choosing an option or entering text writes a line `<id>: <answer>` into the user's draft. Nothing is sent until the user sends the message, so they can answer several questions, add comments and edit the draft first. The card shows as answered once a later user message has a line starting `<id>:`.
 
 ## When to ask
 
