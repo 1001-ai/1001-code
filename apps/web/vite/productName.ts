@@ -1,6 +1,6 @@
 import type { Plugin } from "vite-plus";
 
-// This fork ships as 1001 Code. Renaming at build time leaves upstream's source strings alone, so
+// This fork ships as Code. Renaming at build time leaves upstream's source strings alone, so
 // its merges stay clean and strings it adds later are renamed too. Only the web client is renamed:
 // the server, the CLI and every identifier keep upstream's name.
 
@@ -28,7 +28,7 @@ const UPSTREAM_NAME = new RegExp(
 
 const renameProduct = (text: string) =>
   text.replace(UPSTREAM_NAME, (match: string, gap: string | undefined) =>
-    gap === undefined ? match : `1001${gap}Code`,
+    gap === undefined ? match : "Code",
   );
 
 export function productNamePlugin(): Plugin {
