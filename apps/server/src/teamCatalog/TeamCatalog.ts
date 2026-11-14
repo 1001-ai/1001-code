@@ -253,13 +253,15 @@ const make = Effect.gen(function* () {
     yield* SubscriptionRef.set(state, { ...current, refreshing: true });
     const fetched = yield* Effect.exit(fetchCatalog(current.source));
     if (Exit.isSuccess(fetched)) {
+      // Freshness counts from when the fetch finished, not from when it started.
+      const fetchedAt = yield* Clock.currentTimeMillis;
       yield* Ref.set(catalogRef, fetched.value.catalog);
-      yield* Ref.set(fetchedAtMs, now);
+      yield* Ref.set(fetchedAtMs, fetchedAt);
       return yield* publish({
         refreshing: false,
         error: null,
         revision: fetched.value.revision,
-        fetchedAt: DateTime.formatIso(DateTime.makeUnsafe(now)),
+        fetchedAt: DateTime.formatIso(DateTime.makeUnsafe(fetchedAt)),
       });
     }
     const failure = Exit.findErrorOption(fetched);
