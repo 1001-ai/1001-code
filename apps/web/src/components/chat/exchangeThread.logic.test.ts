@@ -16,6 +16,7 @@ import {
   setReplyMarkersEnabled,
   shouldAttachThreadReply,
   threadTriggerFocusSelectors,
+  canRestoreFocusTo,
   threadExchangeKeys,
   threadLatestReplyRowId,
   threadRowIds,
@@ -218,6 +219,31 @@ describe("threadTriggerFocusSelectors", () => {
         '[data-timeline-row-id="message:a\\"b\\\\c"]',
       ],
     );
+  });
+});
+
+describe("canRestoreFocusTo", () => {
+  const shown = { connected: true, shut: false, visibility: "visible", width: 24, height: 24 };
+  it.each([
+    { name: "a shown control", candidate: shown, focusable: true },
+    { name: "a removed node", candidate: { ...shown, connected: false }, focusable: false },
+    {
+      name: "the collapsed copy of the actions",
+      candidate: { ...shown, width: 0, height: 0 },
+      focusable: false,
+    },
+    {
+      name: "a control in the faded list",
+      candidate: { ...shown, visibility: "hidden" },
+      focusable: false,
+    },
+    {
+      name: "a control in an inert or aria-hidden subtree",
+      candidate: { ...shown, shut: true },
+      focusable: false,
+    },
+  ])("$name", ({ candidate, focusable }) => {
+    expect(canRestoreFocusTo(candidate)).toBe(focusable);
   });
 });
 

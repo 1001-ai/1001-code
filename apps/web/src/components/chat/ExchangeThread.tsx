@@ -32,6 +32,7 @@ import {
   threadRowIds,
   threadSummaryLabel,
   threadTriggerFocusSelectors,
+  canRestoreFocusTo,
   type ExchangeMap,
   type ThreadTrigger,
 } from "./exchangeThread.logic";
@@ -391,9 +392,17 @@ function focusThreadTrigger(viewport: HTMLElement, overlay: HTMLElement, trigger
   const outside = (selector: string | undefined) =>
     selector === undefined
       ? undefined
-      : [...viewport.querySelectorAll<HTMLElement>(selector)].find(
-          (element) => !overlay.contains(element),
-        );
+      : [...viewport.querySelectorAll<HTMLElement>(selector)].find((element) => {
+          if (overlay.contains(element)) return false;
+          const rect = element.getBoundingClientRect();
+          return canRestoreFocusTo({
+            connected: element.isConnected,
+            shut: element.closest('[inert], [aria-hidden="true"]') !== null,
+            visibility: getComputedStyle(element).visibility,
+            width: rect.width,
+            height: rect.height,
+          });
+        });
   const control = outside(controlSelector);
   if (control) return control.focus({ preventScroll: true });
   const row = outside(rowSelector);

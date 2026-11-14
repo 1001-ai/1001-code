@@ -243,6 +243,26 @@ export function threadTriggerFocusSelectors(trigger: ThreadTrigger): string[] {
   ];
 }
 
+/** What focus restore reads from an element; a duplicate or collapsed copy of a control fails it. */
+export interface FocusCandidate {
+  readonly connected: boolean;
+  /** Inside an inert or aria-hidden subtree. */
+  readonly shut: boolean;
+  readonly visibility: string;
+  readonly width: number;
+  readonly height: number;
+}
+
+export function canRestoreFocusTo(candidate: FocusCandidate): boolean {
+  return (
+    candidate.connected &&
+    !candidate.shut &&
+    candidate.visibility === "visible" &&
+    candidate.width > 0 &&
+    candidate.height > 0
+  );
+}
+
 /** Everything the exchange map reads from a row, so streamed text keeps the previous map. */
 export function sameExchangeStructure(
   previous: ReadonlyArray<ExchangeRow>,
