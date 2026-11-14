@@ -245,6 +245,7 @@ import {
   remoteProjectSourceIcon,
   sourceControlHostIcon,
 } from "./CommandPaletteAddProject";
+import { useTeamProjectPaletteGroups } from "./teamProjects/useTeamProjectPaletteGroups";
 import { useCommandPaletteThreadItems } from "./CommandPaletteThreadItems";
 import { useCommandPaletteThemeItems } from "./CommandPaletteThemeItems";
 import {
@@ -525,6 +526,10 @@ function OpenCommandPaletteDialog(props: {
     null,
   );
   const [isPickingProjectFolder, setIsPickingProjectFolder] = useState(false);
+  const teamProjectGroups = useTeamProjectPaletteGroups({
+    environmentId: addProjectEnvironmentId,
+    closePalette: () => setOpen(false),
+  });
   const [addProjectCloneFlow, setAddProjectCloneFlow] = useState<AddProjectCloneFlow | null>(null);
   const [newProjectFlow, setNewProjectFlow] = useState<{
     readonly environmentId: EnvironmentId;
@@ -1143,7 +1148,10 @@ function OpenCommandPaletteDialog(props: {
       });
     }
 
-    return [{ value: `sources:${environmentId}`, label: "Sources", items: sourceItems }];
+    return [
+      { value: `sources:${environmentId}`, label: "Sources", items: sourceItems },
+      ...(environmentId === addProjectEnvironmentId ? teamProjectGroups : []),
+    ];
   };
 
   const startAddProjectSourceSelection = (environmentId: EnvironmentId): void => {
