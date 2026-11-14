@@ -449,6 +449,7 @@ const make = Effect.gen(function* () {
     const commit = yield* Effect.gen(function* () {
       yield* git(["-C", checkoutPath, "read-tree", input.baseRevision], { env: indexEnv });
       const files: Array<string> = [];
+      const changed: Array<(typeof input.changes)[number]> = [];
       for (const change of input.changes) {
         const file = fileOf.get(change.key)!;
         const original = yield* git(["-C", checkoutPath, "show", `${input.baseRevision}:${file}`]);
@@ -462,9 +463,11 @@ const make = Effect.gen(function* () {
           env: indexEnv,
         });
         files.push(file);
+        changed.push(change);
       }
+      if (changed.length === 0) return null;
       const tree = yield* git(["-C", checkoutPath, "write-tree"], { env: indexEnv });
-      const text = proposalText(projects, input.changes);
+      const text = proposalText(projects, changed);
       const message = `${text.title}\n\n${text.body}\n`;
       // No terminal can unlock a signing key, and the catalog's pull request carries the review.
       const sha = yield* git(
@@ -487,7 +490,7 @@ const make = Effect.gen(function* () {
       Effect.mapError((cause) => failed(`The change could not be committed: ${cause.detail}`)),
     );
 
-    if (commit.files.length === 0) {
+    if (commit === null) {
       return yield* new TeamCatalogError({
         detail: "Nothing to propose: the links already match.",
       });
