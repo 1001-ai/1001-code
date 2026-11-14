@@ -41,6 +41,8 @@ import { TimelineRowCtx } from "./timelineRowContext";
 
 const MOTION_MS = 240;
 const MOTION_EASING = "cubic-bezier(0.25, 0.8, 0.25, 1)";
+/** The glass and the view's z-index; list layers stacked above it would paint over the frost. */
+const VIEW_Z_INDEX = 10;
 // The view is not inside `.messages-timeline-scroll`, so it copies that list's lane padding from
 // index.css: the content then sits where the list's does, beside the details card and preview player.
 const LIST_LANE_PADDING_CLASS =
@@ -541,7 +543,7 @@ export function ExchangeThreadView({
   const overlayRef = useRef<HTMLDivElement>(null);
   const glassRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const layersRef = useRef<HTMLElement[]>([]);
+  const layersRef = useRef<{ element: HTMLElement; hidden: Animation | null }[]>([]);
   const shownRowIdsRef = useRef<ReadonlySet<string>>(new Set());
   const { closing, close, finishClose } = view;
 
@@ -559,7 +561,12 @@ export function ExchangeThreadView({
     layersRef.current = [...viewport.children].flatMap((child) => {
       if (child === overlay || child === glass || !(child instanceof HTMLElement)) return [];
       child.setAttribute("inert", "");
-      return [child];
+      // Layers stacked above the glass, such as the timeline minimap, would stay sharp on top of it.
+      const above = Number.parseInt(getComputedStyle(child).zIndex, 10) > VIEW_Z_INDEX;
+      const hidden = above
+        ? child.animate([{ opacity: 1 }, { opacity: 0 }], { ...timing, fill: "forwards" })
+        : null;
+      return [{ element: child, hidden }];
     });
     const moves: Animation[] = [];
     if (glass) moves.push(glass.animate([{ opacity: 0 }, { opacity: 1 }], timing));
@@ -597,7 +604,10 @@ export function ExchangeThreadView({
     return () => {
       // A remount measures again, which a running move would skew.
       for (const animation of moves) animation.cancel();
-      for (const element of layersRef.current) element.removeAttribute("inert");
+      for (const { element, hidden } of layersRef.current) {
+        hidden?.cancel();
+        element.removeAttribute("inert");
+      }
       layersRef.current = [];
     };
   }, []);
@@ -648,7 +658,12 @@ export function ExchangeThreadView({
   const playExit = useEffectEvent((overlay: HTMLElement, isCancelled: () => boolean) => {
     const duration = prefersReducedMotion() ? 0 : MOTION_MS;
     const timing = { duration, easing: MOTION_EASING, fill: "forwards" as const };
-    for (const element of layersRef.current) element.removeAttribute("inert");
+    for (const { element, hidden } of layersRef.current) {
+      element.removeAttribute("inert");
+      if (!hidden) continue;
+      hidden.cancel();
+      element.animate([{ opacity: 0 }, { opacity: 1 }], { duration, easing: MOTION_EASING });
+    }
     layersRef.current = [];
     const clearing = glassRef.current?.animate([{ opacity: 1 }, { opacity: 0 }], timing);
     for (const element of overlay.querySelectorAll<HTMLElement>("[data-exchange-thread-row]")) {
