@@ -3,7 +3,6 @@ import {
   type TeamCatalogInvalidFile,
   teamCatalogRepositoryKey,
 } from "@t3tools/contracts";
-import { cloneUrlProtocol } from "@t3tools/shared/cloneUrl";
 import * as Cause from "effect/Cause";
 import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
@@ -92,11 +91,39 @@ export function teamCatalogCheckoutFolder(repo: string, ghqLayout: boolean): Rea
   return ghqLayout ? segments.map((segment) => segment.replace(":", "_")) : [segments.at(-1)!];
 }
 
-/** Clones over the transport the catalog itself was fetched with, which this machine has proven. */
+const SSH_SOURCE = /^ssh:\/\/(?:([^@/\s]+)@)?([^/:\s]+)(?::(\d+))?\//i;
+const SCP_SOURCE = /^(?:([^@/:\s]+)@)?([^/:\s]+):(?!\/)/;
+const HTTPS_SOURCE = /^https?:\/\/(?:[^@/\s]+@)?([^/:\s]+)(?::(\d+))?\//i;
+
+/**
+ * Clones over the transport the catalog itself was fetched with, which this machine has proven:
+ * on the catalog's host that keeps its SSH user and port too. Never copies HTTPS credentials.
+ */
 export function teamCatalogCloneUrl(repo: string, source: string): string {
-  const [host, ...path] = repositorySegments(repo);
+  const [hostPart = "", ...path] = repositorySegments(repo);
+  const [host = "", port] = hostPart.split(":");
   const repository = `${path.join("/")}.git`;
-  return cloneUrlProtocol(source) === "ssh" && !host!.includes(":")
-    ? `git@${host}:${repository}`
-    : `https://${host}/${repository}`;
+  const sameHost = (candidate: string | undefined) =>
+    candidate !== undefined && candidate.toLowerCase() === host.toLowerCase();
+
+  const ssh = SSH_SOURCE.exec(source);
+  if (ssh) {
+    if (port !== undefined) return `https://${hostPart}/${repository}`;
+    if (!sameHost(ssh[2])) return `git@${host}:${repository}`;
+    const user = ssh[1] === undefined ? "" : `${ssh[1]}@`;
+    const sshPort = ssh[3] === undefined ? "" : `:${ssh[3]}`;
+    return sshPort === ""
+      ? `${user}${ssh[2]}:${repository}`
+      : `ssh://${user}${ssh[2]}${sshPort}/${repository}`;
+  }
+  const scp = source.includes("://") ? null : SCP_SOURCE.exec(source);
+  if (scp && scp[1] !== undefined) {
+    if (port !== undefined) return `https://${hostPart}/${repository}`;
+    return `${sameHost(scp[2]) ? scp[1] : "git"}@${host}:${repository}`;
+  }
+  const https = HTTPS_SOURCE.exec(source);
+  if (https && sameHost(https[1]) && https[2] !== undefined && port === undefined) {
+    return `https://${host}:${https[2]}/${repository}`;
+  }
+  return `https://${hostPart}/${repository}`;
 }

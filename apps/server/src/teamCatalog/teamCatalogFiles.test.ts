@@ -87,19 +87,45 @@ describe("decodeTeamCatalogFiles", () => {
 });
 
 describe("teamCatalogCloneUrl", () => {
-  it("clones over the transport the catalog was fetched with", () => {
-    expect(teamCatalogCloneUrl("github.com/Acme/Web", "git@github.com:acme/catalog.git")).toBe(
-      "git@github.com:Acme/Web.git",
-    );
-    expect(teamCatalogCloneUrl("github.com/Acme/Web", "ssh://git@github.com/acme/catalog")).toBe(
-      "git@github.com:Acme/Web.git",
-    );
-    expect(teamCatalogCloneUrl("github.com/Acme/Web", "https://github.com/acme/catalog")).toBe(
-      "https://github.com/Acme/Web.git",
-    );
-    expect(teamCatalogCloneUrl("github.com/acme/web.git", "/srv/catalog")).toBe(
-      "https://github.com/acme/web.git",
-    );
+  it.each([
+    ["git@github.com:acme/catalog.git", "github.com/Acme/Web", "git@github.com:Acme/Web.git"],
+    ["ssh://git@github.com/acme/catalog", "github.com/Acme/Web", "git@github.com:Acme/Web.git"],
+    // The catalog's host keeps its SSH user and port; another host gets the usual git@ user.
+    [
+      "ssh://deploy@git.example.com:2222/team/catalog.git",
+      "git.example.com/team/web",
+      "ssh://deploy@git.example.com:2222/team/web.git",
+    ],
+    [
+      "ssh://deploy@git.example.com:2222/team/catalog",
+      "github.com/acme/web",
+      "git@github.com:acme/web.git",
+    ],
+    [
+      "forge@git.example.com:team/catalog.git",
+      "git.example.com/team/web",
+      "forge@git.example.com:team/web.git",
+    ],
+    [
+      "forge@git.example.com:team/catalog.git",
+      "github.com/acme/web",
+      "git@github.com:acme/web.git",
+    ],
+    // HTTPS keeps the catalog host's port but never its credentials.
+    [
+      "https://token@git.example.com:8443/team/catalog.git",
+      "git.example.com/team/web",
+      "https://git.example.com:8443/team/web.git",
+    ],
+    ["https://github.com/acme/catalog", "github.com/Acme/Web", "https://github.com/Acme/Web.git"],
+    ["/srv/catalog", "github.com/acme/web.git", "https://github.com/acme/web.git"],
+    [
+      "git@git.example.com:team/catalog.git",
+      "git.example.com:8443/team/web",
+      "https://git.example.com:8443/team/web.git",
+    ],
+  ])("from %s, %s clones from %s", (source, repo, expected) => {
+    expect(teamCatalogCloneUrl(repo, source)).toBe(expected);
   });
 });
 

@@ -1,9 +1,14 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import { ChildProcessSpawner } from "effect/process";
+import * as Scope from "effect/Scope";
+import * as Stream from "effect/Stream";
 
 import * as ServerConfig from "../config.ts";
 import * as ProcessRunner from "../processRunner.ts";
@@ -32,6 +37,12 @@ const git = (cwd: string, args: ReadonlyArray<string>) =>
 
 const project = (key: string, repo: string) => ({ key, name: key.toUpperCase(), repo, owners: [] });
 
+type Services =
+  | FileSystem.FileSystem
+  | Path.Path
+  | ProcessRunner.ProcessRunner
+  | ChildProcessSpawner.ChildProcessSpawner;
+
 /** A catalog repository, a projects folder, and a service reading them, all in a temp dir. */
 const withCatalog = <A, E>(
   test: (fixture: {
@@ -39,7 +50,8 @@ const withCatalog = <A, E>(
     readonly projectsRoot: string;
     readonly commit: (files: Record<string, unknown>) => Effect.Effect<void, Error>;
     readonly service: TeamCatalog.TeamCatalog["Service"];
-  }) => Effect.Effect<A, E, FileSystem.FileSystem | Path.Path | ProcessRunner.ProcessRunner>,
+    readonly start: Effect.Effect<TeamCatalog.TeamCatalog["Service"], Error, Services>;
+  }) => Effect.Effect<A, E, Services>,
 ) =>
   Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;
@@ -80,8 +92,13 @@ const withCatalog = <A, E>(
         ),
       ),
     );
-    const service = yield* TeamCatalog.TeamCatalog.pipe(Effect.provide(layer));
-    return yield* test({ catalog, projectsRoot, commit, service });
+    // Each start is a server start on the same T3 home, alive until the test ends.
+    const start = Layer.build(layer).pipe(
+      Effect.map((context) => Context.get(context, TeamCatalog.TeamCatalog)),
+      Effect.provideService(Scope.Scope, yield* Scope.Scope),
+    );
+    const service = yield* start;
+    return yield* test({ catalog, projectsRoot, commit, service, start });
   }).pipe(
     Effect.scoped,
     Effect.provide(ProcessRunner.layer.pipe(Layer.provideMerge(NodeServices.layer))),
@@ -170,6 +187,34 @@ it.live("reports an unreachable catalog, refuses unsafe URLs, and forgets a clea
 
       const cleared = yield* service.setSource(null);
       expect(cleared).toMatchObject({ source: null, error: null, projects: [], invalid: [] });
+    }),
+  ),
+);
+
+it.live("serves the last fetch at once after a restart, even with the catalog unreachable", () =>
+  withCatalog(({ catalog, commit, service, start }) =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      yield* commit({ "web.json": project("web", "example.com/acme/web") });
+      const fetched = yield* service.setSource(catalog);
+      yield* fileSystem.remove(catalog, { recursive: true });
+
+      const restarted = yield* start;
+      const restored = yield* restarted.changes.pipe(
+        Stream.filter((snapshot) => snapshot.projects.length > 0),
+        Stream.runHead,
+      );
+      expect(Option.getOrThrow(restored)).toMatchObject({
+        source: catalog,
+        revision: fetched.revision,
+        error: null,
+      });
+      expect(Option.getOrThrow(restored).fetchedAt).not.toBeNull();
+
+      const failed = yield* restarted.refresh({ force: true });
+      expect(failed.error).not.toBeNull();
+      expect(failed.fetchedAt).toBe(Option.getOrThrow(restored).fetchedAt);
+      expect(failed.projects.map((entry) => entry.project.key)).toEqual(["web"]);
     }),
   ),
 );
