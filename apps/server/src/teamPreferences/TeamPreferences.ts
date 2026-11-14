@@ -11,6 +11,7 @@ import {
   teamCatalogRepositoryMatches,
   teamPreferencesFile,
 } from "@t3tools/contracts";
+import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -162,10 +163,13 @@ const make = Effect.gen(function* () {
       yield* refreshWhenStale(yield* teamCatalog.snapshot);
       return (yield* read(projectId)).block ?? undefined;
     },
+    // A cancelled run must stay cancelled; only a failed read degrades to no preferences.
     Effect.catchCause((cause) =>
-      Effect.logWarning("Team preferences could not be read.", { cause }).pipe(
-        Effect.as(undefined),
-      ),
+      Cause.hasInterrupts(cause)
+        ? Effect.failCause(cause)
+        : Effect.logWarning("Team preferences could not be read.", { cause }).pipe(
+            Effect.as(undefined),
+          ),
     ),
   );
 

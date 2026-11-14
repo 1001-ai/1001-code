@@ -7,6 +7,8 @@ import {
 import { expect, it } from "@effect/vitest";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
+import * as Cause from "effect/Cause";
+import * as Exit from "effect/Exit";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as TestClock from "effect/testing/TestClock";
@@ -245,5 +247,12 @@ it.effect("refreshes a stale catalog in the background, and a failed read sends 
       readFile: () => Effect.die("disk gone"),
     }).build;
     expect(yield* broken.instructions(PROJECT_ID)).toBeUndefined();
+
+    const cancelled = yield* makePreferences({
+      catalog: catalog(),
+      readFile: () => Effect.interrupt,
+    }).build;
+    const exit = yield* Effect.exit(cancelled.instructions(PROJECT_ID));
+    expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(true);
   }).pipe(Effect.scoped),
 );
