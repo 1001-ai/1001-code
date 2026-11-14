@@ -123,8 +123,14 @@ const fakeLinear = (
     variables: Record<string, unknown>,
     account: string,
   ) => Answer | Effect.Effect<Answer>,
+  /** Runs before the token endpoint answers, to hold or observe a refresh. */
+  beforeToken: (params: Record<string, string>) => Effect.Effect<void> = () => Effect.void,
 ) => {
-  const calls: Array<{ operation: string; variables: Record<string, unknown> }> = [];
+  const calls: Array<{
+    operation: string;
+    variables: Record<string, unknown>;
+    account: string | undefined;
+  }> = [];
   const tokenCalls: Array<Record<string, string>> = [];
   const revoked: Array<Record<string, string>> = [];
   const codes = new Map<string, { account: string; challenge: string }>();
@@ -146,6 +152,7 @@ const fakeLinear = (
       if (request.url === LINEAR_TOKEN_URL) {
         const params = formBody(request);
         tokenCalls.push(params);
+        yield* beforeToken(params);
         if (params.client_id !== CLIENT_ID) return json(request, { error: "invalid_client" }, 401);
         if (params.grant_type === "authorization_code") {
           const pending = codes.get(params.code ?? "");
@@ -176,10 +183,10 @@ const fakeLinear = (
         request.body._tag === "Uint8Array" ? new TextDecoder().decode(request.body.body) : "{}",
       ) as { query: string; variables: Record<string, unknown> };
       const operation = /query (\w+)/.exec(body.query)?.[1] ?? "";
-      calls.push({ operation, variables: body.variables });
       const account = accessTokens.get(
         (request.headers.authorization ?? "").replace(/^Bearer /u, ""),
       );
+      calls.push({ operation, variables: body.variables, account });
       if (account === undefined) {
         return json(
           request,
@@ -441,10 +448,16 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Board", (it) => 
       expect(yield* failure({ state: first.state, code: null, error: "access_denied" })).toBe(
         "Linear sign-in was cancelled.",
       );
+      // Settings shows it until the next sign-in starts; a stray callback does not change it.
+      expect(yield* board.connection).toEqual({
+        status: "disconnected",
+        signInFailure: "Linear sign-in was cancelled.",
+      });
       // The cancelled state is spent.
       expect(yield* failure({ ...first, error: null })).toBe(expired);
 
       const late = linear.authorize((yield* board.startSignIn(ORIGIN)).authorizeUrl, GOOD);
+      expect(yield* board.connection).toEqual({ status: "disconnected" });
       yield* TestClock.adjust("11 minutes");
       expect(yield* failure({ ...late, error: null })).toBe(expired);
 
@@ -454,7 +467,10 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Board", (it) => 
       );
 
       expect(linear.tokenCalls).toHaveLength(1);
-      expect(yield* board.connection).toEqual({ status: "disconnected" });
+      expect(yield* board.connection).toEqual({
+        status: "disconnected",
+        signInFailure: "Linear did not accept this sign-in. Start again from Settings → Board.",
+      });
     }).pipe(Effect.scoped),
   );
 
@@ -522,6 +538,104 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Board", (it) => 
     ),
   );
 
+  it.effect("stores a refresh even when the read that started it is interrupted", () =>
+    Effect.gen(function* () {
+      const refreshing = yield* Deferred.make<void>();
+      const released = yield* Deferred.make<void>();
+      const linear = fakeLinear(boardAnswers([[linearIssue("1", "s-todo")]]), (params) =>
+        params.grant_type === "refresh_token"
+          ? Deferred.succeed(refreshing, undefined).pipe(Effect.andThen(Deferred.await(released)))
+          : Effect.void,
+      );
+      const secrets = yield* buildSecrets();
+      const board = yield* makeBoard({
+        client: linear.client,
+        catalog: catalog([catalogEntry({ team: "ENG" })]),
+        secrets,
+      });
+      yield* signIn(board, linear);
+      yield* TestClock.adjust("1436 minutes");
+      const reading = yield* board.read(PROJECT_ID).pipe(Effect.forkChild);
+      yield* Deferred.await(refreshing);
+      const interrupting = yield* Fiber.interrupt(reading).pipe(Effect.forkChild);
+      yield* Deferred.succeed(released, undefined);
+      yield* Fiber.join(interrupting);
+
+      const stored = yield* Context.get(secrets, ServerSecretStore.ServerSecretStore).get(
+        Board.CREDENTIAL_SECRET_NAME,
+      );
+      expect(
+        JSON.parse(new TextDecoder().decode(Option.getOrThrow(stored))) as unknown,
+      ).toMatchObject({ accessToken: "access-good-2", refreshToken: "refresh-good-2" });
+      expect(ready(yield* board.read(PROJECT_ID))).not.toBeNull();
+      expect(linear.tokenCalls).toHaveLength(2);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("revokes the tokens of a sign-in it cannot keep", () =>
+    Effect.gen(function* () {
+      let viewerFails = true;
+      const holding = yield* Deferred.make<void>();
+      const released = yield* Deferred.make<void>();
+      const linear = fakeLinear((operation, variables, account) => {
+        if (operation !== "BoardViewer") return boardAnswers([[]])(operation, variables);
+        if (viewerFails) return { status: 500, body: { errors: [] } };
+        return account === OTHER
+          ? Deferred.succeed(holding, undefined).pipe(
+              Effect.andThen(Deferred.await(released)),
+              Effect.as(viewerAnswer),
+            )
+          : viewerAnswer;
+      });
+      const board = yield* makeBoard({
+        client: linear.client,
+        catalog: catalog([]),
+        secrets: yield* buildSecrets(),
+      });
+
+      // Linear granted access but the viewer could not be read.
+      const first = linear.authorize((yield* board.startSignIn(ORIGIN)).authorizeUrl, GOOD);
+      yield* Effect.flip(board.completeSignIn({ ...first, error: null }));
+      expect(linear.revoked.map((call) => call.token)).toEqual(["refresh-good-1", "access-good-1"]);
+      viewerFails = false;
+
+      // A disconnect while a sign-in finishes wins, and revokes that sign-in.
+      yield* signIn(board, linear);
+      const second = linear.authorize((yield* board.startSignIn(ORIGIN)).authorizeUrl, OTHER);
+      const finishing = yield* board
+        .completeSignIn({ ...second, error: null })
+        .pipe(Effect.flip, Effect.forkChild);
+      yield* Deferred.await(holding);
+      expect(yield* board.disconnect).toEqual({ status: "disconnected" });
+      yield* Deferred.succeed(released, undefined);
+      expect((yield* Fiber.join(finishing)).message).toContain("disconnected or signed in again");
+      expect(linear.revoked.slice(2).map((call) => call.token)).toEqual([
+        "refresh-good-2",
+        "access-good-2",
+        "refresh-other-3",
+        "access-other-3",
+      ]);
+      expect(yield* board.connection).toMatchObject({ status: "disconnected" });
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("a Linear tab opened before Disconnect cannot sign back in", () =>
+    Effect.gen(function* () {
+      const linear = fakeLinear(boardAnswers([[]]));
+      const board = yield* makeBoard({
+        client: linear.client,
+        catalog: catalog([]),
+        secrets: yield* buildSecrets(),
+      });
+      const open = linear.authorize((yield* board.startSignIn(ORIGIN)).authorizeUrl, GOOD);
+      yield* board.disconnect;
+      expect(
+        (yield* Effect.flip(board.completeSignIn({ ...open, error: null }))).message,
+      ).toContain("expired or was already used");
+      expect(yield* board.connection).toEqual({ status: "disconnected" });
+    }).pipe(Effect.scoped),
+  );
+
   it.effect("says why a project has no board", () =>
     Effect.gen(function* () {
       const cases = [
@@ -576,10 +690,11 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Board", (it) => 
       const reading = yield* Deferred.make<void>();
       const released = yield* Deferred.make<void>();
       const linear = fakeLinear((operation, variables, account) => {
-        const answered = boardAnswers([[linearIssue(account === GOOD ? "1" : "2", "s-todo")]])(
-          operation,
-          variables,
-        );
+        const answered = boardAnswers(
+          account === GOOD
+            ? [[linearIssue("1", "s-todo")], [linearIssue("3", "s-todo")]]
+            : [[linearIssue("2", "s-todo")]],
+        )(operation, variables);
         return operation === "BoardIssues" && account === GOOD
           ? Deferred.succeed(reading, undefined).pipe(
               Effect.andThen(Deferred.await(released)),
@@ -597,7 +712,9 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Board", (it) => 
       yield* Deferred.await(reading);
       yield* signIn(board, linear, OTHER);
       yield* Deferred.succeed(released, undefined);
-      yield* Fiber.join(previous);
+      expect((yield* Fiber.join(previous)).status).toBe("failed");
+      // The read stopped instead of fetching its second page as the other account.
+      expect(linear.calls.filter((call) => call.variables.after === "1")).toEqual([]);
 
       const snapshot = ready(yield* board.read(PROJECT_ID));
       expect(

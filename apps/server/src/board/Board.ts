@@ -197,8 +197,8 @@ const make = Effect.gen(function* () {
   const readLock = yield* Semaphore.make(1);
   // Bumped on every sign-in change; a refresh publishes only if no change happened while it read.
   let credentialGeneration = 0;
+  // Every read or write of the stored sign-in, including a refresh, happens under this lock.
   const credentialLock = yield* Semaphore.make(1);
-  const tokenLock = yield* Semaphore.make(1);
   const pendingSignIns = new Map<string, PendingSignIn>();
 
   const linearRequest = Effect.fn("Board.linearRequest")(function* <S extends Schema.Top>(
@@ -278,76 +278,71 @@ const make = Effect.gen(function* () {
   });
 
   /**
-   * An access token Linear should accept: the stored one, or a refreshed one when it is about to
-   * expire or is the token Linear just `rejected`. Refresh tokens rotate, so one refresh at a time.
+   * An access token of the sign-in a read started with (`generation`): the stored one, or a
+   * refreshed one when it is about to expire or is the token Linear just `rejected`.
    */
-  const accessToken = (rejected: string | null) =>
-    tokenLock.withPermits(1)(
+  const accessToken = (generation: number, rejected: string | null) =>
+    credentialLock.withPermits(1)(
       Effect.gen(function* () {
-        const generation = credentialGeneration;
         const credential = yield* readCredential;
-        if (credential === null || clientId === null) {
+        // A read never carries on, or mixes pages, across a sign-in change.
+        if (credential === null || clientId === null || generation !== credentialGeneration) {
           return yield* new BoardError({
             reason: "unauthorized",
-            detail: "Not signed in to Linear.",
+            detail: "The Linear sign-in changed while the board was read.",
           });
         }
         const now = yield* Clock.currentTimeMillis;
         if (credential.accessToken !== rejected && credential.expiresAt - REFRESH_EARLY_MS > now) {
           return credential.accessToken;
         }
-        const refreshed = yield* tokenRequest({
-          grant_type: "refresh_token",
-          refresh_token: credential.refreshToken,
-          client_id: clientId,
-        }).pipe(
-          Effect.catch((failure) =>
-            Effect.gen(function* () {
-              if (failure.dead) {
-                // Only a sign-in nobody replaced meanwhile is dropped.
-                yield* credentialLock.withPermits(1)(
-                  Effect.suspend(() =>
-                    generation === credentialGeneration ? applyCredential(null) : Effect.void,
-                  ),
-                );
-              }
-              return yield* failure.error;
-            }),
-          ),
-          // Linear has already rotated the refresh token once it answers; keep its reply.
-          Effect.uninterruptible,
+        // Linear rotates the refresh token as it answers, so its reply is stored before anything
+        // can interrupt; the lock keeps one refresh at a time.
+        return yield* Effect.uninterruptible(
+          Effect.gen(function* () {
+            const refreshed = yield* tokenRequest({
+              grant_type: "refresh_token",
+              refresh_token: credential.refreshToken,
+              client_id: clientId,
+            }).pipe(
+              Effect.catch((failure) =>
+                (failure.dead ? applyCredential(null) : Effect.void).pipe(
+                  Effect.andThen(Effect.fail(failure.error)),
+                ),
+              ),
+            );
+            yield* writeCredential({ ...credential, ...refreshed });
+            return refreshed.accessToken;
+          }),
         );
-        yield* credentialLock.withPermits(1)(
-          Effect.suspend(() =>
-            generation === credentialGeneration
-              ? writeCredential({ ...credential, ...refreshed })
-              : Effect.void,
-          ),
-        );
-        return refreshed.accessToken;
       }),
     );
 
   /** A Linear query as the signed-in person, refreshing the token once if Linear rejects it. */
   const linear = Effect.fn("Board.linear")(function* <S extends Schema.Top>(
+    generation: number,
     query: string,
     variables: Record<string, unknown>,
     schema: S,
   ) {
-    const token = yield* accessToken(null);
+    const token = yield* accessToken(generation, null);
     return yield* linearRequest(token, query, variables, schema).pipe(
       Effect.catchIf(
         (error) => error.reason === "unauthorized",
         () =>
-          accessToken(token).pipe(
+          accessToken(generation, token).pipe(
             Effect.flatMap((fresh) => linearRequest(fresh, query, variables, schema)),
           ),
       ),
     );
   });
 
-  const fetchBoard = Effect.fn("Board.fetchBoard")(function* (target: TeamCatalogLinear) {
+  const fetchBoard = Effect.fn("Board.fetchBoard")(function* (
+    generation: number,
+    target: TeamCatalogLinear,
+  ) {
     const teamData = yield* linear(
+      generation,
       TEAM_QUERY,
       {
         key: target.team,
@@ -386,6 +381,7 @@ const make = Effect.gen(function* () {
     let truncated = false;
     for (let page = 0; page < MAX_ISSUE_PAGES; page += 1) {
       const data: IssuesData = yield* linear(
+        generation,
         ISSUES_QUERY,
         { filter, first: ISSUE_PAGE_SIZE, after },
         IssuesData,
@@ -440,7 +436,7 @@ const make = Effect.gen(function* () {
         if (options?.refresh !== true && cached && now - cached.readAtMs < FRESH_FOR_MS) {
           return { status: "ready", board: cached.board, failure: null } satisfies BoardSnapshot;
         }
-        const outcome = yield* fetchBoard(target.linear).pipe(
+        const outcome = yield* fetchBoard(generation, target.linear).pipe(
           Effect.map((board) => ({ board, error: null })),
           Effect.catch((error) => Effect.succeed({ board: null, error })),
         );
@@ -520,9 +516,6 @@ const make = Effect.gen(function* () {
     return connection;
   });
 
-  const setCredential = (credential: StoredCredential | null) =>
-    credentialLock.withPermits(1)(applyCredential(credential));
-
   const startSignIn: Board["Service"]["startSignIn"] = Effect.fn("Board.startSignIn")(
     function* (callbackOrigin) {
       if (clientId === null) {
@@ -553,6 +546,7 @@ const make = Effect.gen(function* () {
         pendingSignIns.delete(key);
       }
       pendingSignIns.set(state, { verifier, redirectUri, expiresAtMs: now + SIGN_IN_TTL_MS });
+      yield* setSignInFailure(null);
       return {
         authorizeUrl: authorizeUrl({
           endpoint: oauthEndpoints.authorize,
@@ -565,6 +559,90 @@ const make = Effect.gen(function* () {
     },
   );
 
+  const revoke = (token: string, hint: "access_token" | "refresh_token") =>
+    httpClient
+      .execute(
+        HttpClientRequest.post(oauthEndpoints.revoke).pipe(
+          HttpClientRequest.bodyUrlParams({ token, token_type_hint: hint }),
+        ),
+      )
+      .pipe(Effect.timeout(REQUEST_TIMEOUT), Effect.ignore);
+
+  const revokeTokens = (tokens: Tokens) =>
+    revoke(tokens.refreshToken, "refresh_token").pipe(
+      Effect.andThen(revoke(tokens.accessToken, "access_token")),
+    );
+
+  /** Settings shows why the last sign-in failed until the next one starts. */
+  const setSignInFailure = (signInFailure: string | null) =>
+    SubscriptionRef.update(connectionState, (connection): BoardConnection =>
+      connection.status !== "disconnected"
+        ? connection
+        : signInFailure === null
+          ? { status: "disconnected" }
+          : { status: "disconnected", signInFailure },
+    );
+
+  const finishSignIn = Effect.fn("Board.finishSignIn")(function* (
+    clientId: string,
+    pending: PendingSignIn,
+    params: Parameters<Board["Service"]["completeSignIn"]>[0],
+    generation: number,
+  ) {
+    if (params.error !== null) {
+      return yield* new BoardSignInError({
+        message:
+          params.error === "access_denied"
+            ? "Linear sign-in was cancelled."
+            : `Linear did not complete the sign-in (${params.error.slice(0, 100)}).`,
+      });
+    }
+    if (params.code === null) {
+      return yield* new BoardSignInError({ message: "Linear sent no authorization code." });
+    }
+    const tokens = yield* tokenRequest({
+      grant_type: "authorization_code",
+      code: params.code,
+      redirect_uri: pending.redirectUri,
+      client_id: clientId,
+      code_verifier: pending.verifier,
+    }).pipe(
+      Effect.mapError(
+        (failure) =>
+          new BoardSignInError({
+            message: failure.dead
+              ? "Linear did not accept this sign-in. Start again from Settings → Board."
+              : failure.error.detail,
+          }),
+      ),
+    );
+    // From here Linear has granted access; a sign-in that cannot be kept is revoked.
+    const discard = (message: string) =>
+      revokeTokens(tokens).pipe(Effect.andThen(Effect.fail(new BoardSignInError({ message }))));
+    const data = yield* linearRequest(tokens.accessToken, VIEWER_QUERY, {}, ViewerData).pipe(
+      Effect.catch((error) => discard(error.detail)),
+    );
+    const viewer: BoardViewer = {
+      id: data.viewer.id,
+      name: data.viewer.name,
+      email: data.viewer.email,
+      workspace: data.organization.name,
+    };
+    const stored = yield* credentialLock.withPermits(1)(
+      Effect.suspend(() =>
+        generation === credentialGeneration
+          ? applyCredential({ ...tokens, viewer }).pipe(Effect.as(true))
+          : Effect.succeed(false),
+      ),
+    );
+    if (!stored) {
+      return yield* discard(
+        "Linear was disconnected or signed in again while this sign-in finished. Start again from Settings → Board.",
+      );
+    }
+    return viewer;
+  });
+
   const completeSignIn: Board["Service"]["completeSignIn"] = Effect.fn("Board.completeSignIn")(
     function* (params) {
       const now = yield* Clock.currentTimeMillis;
@@ -576,68 +654,31 @@ const make = Effect.gen(function* () {
             "This sign-in link has expired or was already used. Start again from Settings → Board.",
         });
       }
-      if (params.error !== null) {
-        return yield* new BoardSignInError({
-          message:
-            params.error === "access_denied"
-              ? "Linear sign-in was cancelled."
-              : `Linear did not complete the sign-in (${params.error.slice(0, 100)}).`,
-        });
-      }
-      if (params.code === null) {
-        return yield* new BoardSignInError({ message: "Linear sent no authorization code." });
-      }
-      const tokens = yield* tokenRequest({
-        grant_type: "authorization_code",
-        code: params.code,
-        redirect_uri: pending.redirectUri,
-        client_id: clientId,
-        code_verifier: pending.verifier,
-      }).pipe(
-        Effect.mapError(
-          (failure) =>
-            new BoardSignInError({
-              message: failure.dead
-                ? "Linear did not accept this sign-in. Start again from Settings → Board."
-                : failure.error.detail,
-            }),
-        ),
+      // A disconnect or another sign-in from now on supersedes this one.
+      const generation = credentialGeneration;
+      // Uninterruptible: a browser closing its tab must not strand tokens Linear already issued.
+      return yield* finishSignIn(clientId, pending, params, generation).pipe(
+        Effect.tapError((error) => setSignInFailure(error.message)),
+        Effect.uninterruptible,
       );
-      const data = yield* linearRequest(tokens.accessToken, VIEWER_QUERY, {}, ViewerData).pipe(
-        Effect.mapError((error) => new BoardSignInError({ message: error.detail })),
-      );
-      const viewer: BoardViewer = {
-        id: data.viewer.id,
-        name: data.viewer.name,
-        email: data.viewer.email,
-        workspace: data.organization.name,
-      };
-      yield* setCredential({ ...tokens, viewer });
-      return viewer;
     },
   );
 
-  const revoke = (token: string, hint: "access_token" | "refresh_token") =>
-    httpClient
-      .execute(
-        HttpClientRequest.post(oauthEndpoints.revoke).pipe(
-          HttpClientRequest.bodyUrlParams({ token, token_type_hint: hint }),
-        ),
-      )
-      .pipe(Effect.timeout(REQUEST_TIMEOUT), Effect.ignore);
-
   const disconnect = Effect.gen(function* () {
-    const credential = Option.getOrNull(
-      Option.flatMap(yield* storedBytes, (value) =>
-        decodeCredential(new TextDecoder().decode(value)),
-      ),
+    const { connection, credential } = yield* credentialLock.withPermits(1)(
+      Effect.gen(function* () {
+        // A Linear tab still open from an earlier sign-in cannot sign back in.
+        pendingSignIns.clear();
+        const credential = Option.getOrNull(
+          Option.flatMap(yield* storedBytes, (value) =>
+            decodeCredential(new TextDecoder().decode(value)),
+          ),
+        );
+        return { connection: yield* applyCredential(null), credential };
+      }),
     );
-    const connection = yield* setCredential(null);
     // Forgotten here first, so a slow or unreachable Linear cannot keep the sign-in alive.
-    if (credential !== null) {
-      yield* revoke(credential.refreshToken, "refresh_token");
-      yield* revoke(credential.accessToken, "access_token");
-    }
+    if (credential !== null) yield* revokeTokens(credential);
     return connection;
   }).pipe(Effect.withSpan("Board.disconnect"));
 

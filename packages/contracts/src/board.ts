@@ -26,7 +26,11 @@ export type BoardViewer = typeof BoardViewer.Type;
 export const BoardConnection = Schema.Union([
   /** The environment has no Linear OAuth application configured, so nobody can sign in. */
   Schema.Struct({ status: Schema.Literal("unavailable") }),
-  Schema.Struct({ status: Schema.Literal("disconnected") }),
+  Schema.Struct({
+    status: Schema.Literal("disconnected"),
+    /** Why the last sign-in failed, until the next one starts. */
+    signInFailure: Schema.optionalKey(Schema.String),
+  }),
   Schema.Struct({ status: Schema.Literal("connected"), viewer: BoardViewer }),
 ]);
 export type BoardConnection = typeof BoardConnection.Type;

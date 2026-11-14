@@ -12,6 +12,8 @@ import { useSettingsScope } from "./SettingsScopeContext";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
 
 const BOARD_SETTINGS_SECTION_ID = "board";
+/** The server forgets an unfinished sign-in after ten minutes. */
+const SIGN_IN_WAIT_MS = 10 * 60_000;
 
 function LinearConnectionRow(props: {
   readonly environmentId: EnvironmentId;
@@ -22,7 +24,8 @@ function LinearConnectionRow(props: {
   const connect = useAtomCommand(boardConnect, { reportFailure: false });
   const disconnect = useAtomCommand(boardDisconnect);
   const [pending, setPending] = useState(false);
-  const [waiting, setWaiting] = useState(false);
+  // The sign-in this row waits on, so an older attempt's timeout cannot end a newer wait.
+  const [waitingFor, setWaitingFor] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const signIn = async () => {
@@ -50,7 +53,12 @@ function LinearConnectionRow(props: {
     } else {
       await readLocalApi()?.shell.openExternal(authorizeUrl);
     }
-    setWaiting(true);
+    const attempt = Date.now();
+    setWaitingFor(attempt);
+    setTimeout(
+      () => setWaitingFor((current) => (current === attempt ? null : current)),
+      SIGN_IN_WAIT_MS,
+    );
   };
 
   const title = props.label === null ? "Linear" : `Linear · ${props.label}`;
@@ -77,7 +85,7 @@ function LinearConnectionRow(props: {
             size="sm"
             disabled={!canWrite}
             onClick={() => {
-              setWaiting(false);
+              setWaitingFor(null);
               void disconnect({ environmentId: props.environmentId, input: {} });
             }}
           >
@@ -96,9 +104,10 @@ function LinearConnectionRow(props: {
         error ??
         (connection === null
           ? null
-          : waiting
-            ? "Finish signing in to Linear in your browser."
-            : "Not signed in.")
+          : (connection.signInFailure ??
+            (waitingFor !== null
+              ? "Finish signing in to Linear in your browser."
+              : "Not signed in.")))
       }
       control={
         <Button
