@@ -76,7 +76,7 @@ const EMPTY_SOURCES: UsageLimitSourceSnapshots = [];
 const selectVisible = (settings: Parameters<typeof resolveThreadDetailsVisibility>[0]) =>
   resolveThreadDetailsVisibility(settings).composerStatus;
 
-/** One line under the composer: limits, context, running subagents and estimated cost. */
+/** A glass box under the composer: limits, context, running subagents and estimated cost. */
 export const ComposerStatusStrip = memo(function ComposerStatusStrip(
   props: ComposerStatusStripProps,
 ) {
@@ -100,63 +100,88 @@ export const ComposerStatusStrip = memo(function ComposerStatusStrip(
       : null;
   const liveSubagents = subagents?.liveCount ?? 0;
   const costUsd = cost?.costUsd ?? null;
-  if (limits === null && context === null && liveSubagents === 0 && costUsd === null) return null;
+  if (windows.length === 0 && context === null && liveSubagents === 0 && costUsd === null) {
+    return null;
+  }
 
+  const showSubagents = subagents !== null && liveSubagents > 0;
   return (
-    // Out of flow in the spacer under the composer, so its arrival never moves the composer.
+    // Its glass is laid over the composer's lower wrapper, so the context row above shares the box.
     <div
-      data-slot="composer-status-strip"
-      className="absolute inset-x-0 top-full flex h-4 min-w-0 items-center gap-3 overflow-hidden px-3 text-2xs whitespace-nowrap text-muted-foreground tabular-nums sm:h-5"
+      data-slot="composer-status-box"
+      // Marks an attached surface, so the composer card paints its own glass as it does for a banner.
+      data-composer-banner-surface="attached"
+      className={BOX_CLASS}
       onContextMenu={(event) => {
         event.preventDefault();
         setMenuPosition({ x: event.clientX, y: event.clientY });
       }}
     >
-      {limits && windows.length > 0 ? (
-        <StatusItem
-          label={`Usage limits: ${windows.map((window) => `${window.label} ${remainingPercent(window)}% left`).join(", ")}`}
-          tooltip={<LimitsTooltip limits={limits} windows={windows} />}
-        >
-          {windows.map((window, index) => {
-            const left = remainingPercent(window);
-            return (
-              <span key={window.id} className={cn(toneClass(limitTone(left)))}>
-                {index > 0 ? <span className="text-muted-foreground/60"> · </span> : null}
-                {shortWindowLabel(window)} {left}%
-              </span>
-            );
-          })}
-        </StatusItem>
-      ) : null}
-      {context ? (
-        <StatusItem
-          label={`Context window: ${contextUsed !== null ? `${contextUsed}% used` : `${formatContextWindowTokens(context.usedTokens)} tokens used`}`}
-          tooltip={<ContextTooltip usage={context} />}
-        >
-          <span className={cn(toneClass(contextTone(contextUsed)))}>
-            ctx{" "}
-            {contextUsed !== null
-              ? `${contextUsed}%`
-              : formatContextWindowTokens(context.usedTokens)}
-          </span>
-        </StatusItem>
-      ) : null}
-      {subagents && liveSubagents > 0 ? (
-        <StatusItem
-          label={`${subagentLabel(liveSubagents)} running`}
-          tooltip={<SubagentsTooltip turn={subagents} />}
-        >
-          {subagentLabel(liveSubagents)}
-        </StatusItem>
-      ) : null}
-      {cost && costUsd !== null ? (
-        <StatusItem
-          label={`Estimated cost ${formatCostUsd(costUsd)}`}
-          tooltip={<CostTooltip estimate={cost} costUsd={costUsd} />}
-        >
-          {formatCostUsd(costUsd)}
-        </StatusItem>
-      ) : null}
+      {/* Fixed height and wrapping: items that do not fit drop to a clipped second line, last first. */}
+      <div className="pointer-events-auto flex h-7 min-w-0 flex-wrap content-start items-center gap-x-4 overflow-hidden px-2 text-xs whitespace-nowrap tabular-nums @max-[29rem]/status:gap-x-3">
+        {limits
+          ? windows.map((window, index) => {
+              const left = remainingPercent(window);
+              const tone = limitTone(left);
+              return (
+                <StatusItem
+                  key={window.id}
+                  label={`${window.label} limit: ${left}% left`}
+                  tooltip={<LimitsTooltip limits={limits} windows={windows} />}
+                  // Narrow boxes keep the first window and context; a window near its limit stays.
+                  className={index > 0 && tone === null ? "@max-[29rem]/status:hidden" : undefined}
+                >
+                  <StatusMeter
+                    label={shortWindowLabel(window)}
+                    fill={left}
+                    tone={tone}
+                    value={`${left}% left`}
+                  />
+                </StatusItem>
+              );
+            })
+          : null}
+        {context ? (
+          <StatusItem
+            label={`Context window: ${contextUsed !== null ? `${contextUsed}% used` : `${formatContextWindowTokens(context.usedTokens)} tokens used`}`}
+            tooltip={<ContextTooltip usage={context} />}
+          >
+            <StatusMeter
+              label="Context"
+              fill={contextUsed}
+              tone={contextTone(contextUsed)}
+              value={
+                contextUsed !== null
+                  ? `${contextUsed}% used`
+                  : `${formatContextWindowTokens(context.usedTokens)} used`
+              }
+            />
+          </StatusItem>
+        ) : null}
+        {showSubagents ? (
+          <StatusItem
+            label={`${subagentLabel(liveSubagents)} running`}
+            tooltip={<SubagentsTooltip turn={subagents} />}
+            className="ms-auto"
+          >
+            <StatusMeter
+              label="Subagents"
+              fill={null}
+              tone={null}
+              value={`${liveSubagents} running`}
+            />
+          </StatusItem>
+        ) : null}
+        {cost && costUsd !== null ? (
+          <StatusItem
+            label={`Estimated cost ${formatCostUsd(costUsd)}`}
+            tooltip={<CostTooltip estimate={cost} costUsd={costUsd} />}
+            className={showSubagents ? undefined : "ms-auto"}
+          >
+            <StatusMeter label="Cost" fill={null} tone={null} value={formatCostUsd(costUsd)} />
+          </StatusItem>
+        ) : null}
+      </div>
 
       <Menu open={menuPosition !== null} onOpenChange={(open) => !open && setMenuPosition(null)}>
         <MenuPopup
@@ -213,21 +238,77 @@ function sameStripProps(previous: ComposerStatusStripProps, next: ComposerStatus
   );
 }
 
-function toneClass(tone: StatusTone) {
-  return tone === "error"
-    ? "text-error-foreground"
-    : tone === "warning"
-      ? "text-warning-foreground"
-      : null;
+// Mirrors ComposerBanner's attached surface, flipped to hang from the composer's bottom edge. The
+// glass is a pseudo-element positioned against the wrapper this sits in (the context row's), with
+// its top 1rem tucked under the card and masked out so the card's own glass is not doubled.
+const BOX_CLASS = cn(
+  "@container/status px-(--chat-composer-drawer-inset) pb-1.5",
+  "before:pointer-events-none before:absolute before:inset-x-(--chat-composer-drawer-inset) before:-top-[calc(1rem+1px)] before:bottom-0 before:-z-1",
+  "before:rounded-b-2xl before:border before:border-(--chat-composer-outline) before:mask-b-from-transparent before:mask-b-from-4 before:mask-b-to-black before:mask-b-to-4",
+  "before:bg-(--chat-composer-glass-surface)/(--glass-opacity) before:backdrop-blur-(--glass-blur) before:backdrop-saturate-(--glass-saturation)",
+  "before:shadow-composer dark:before:shadow-composer-dark",
+  "dark:supports-[(backdrop-filter:blur(1px))_or_(-webkit-backdrop-filter:blur(1px))]:before:bg-composer-seam-below",
+  "not-supports-[((backdrop-filter:blur(1px))_or_(-webkit-backdrop-filter:blur(1px)))]:before:bg-(--chat-composer-glass-surface)",
+);
+
+/** A label, a small bar and a value, coloured only near a limit. Matches the thread details rows. */
+function StatusMeter({
+  label,
+  fill,
+  tone,
+  value,
+}: {
+  readonly label: string;
+  /** Bar fill from 0 to 100. Null hides the bar. */
+  readonly fill: number | null;
+  readonly tone: StatusTone;
+  readonly value: string;
+}) {
+  return (
+    <>
+      <span className="text-muted-foreground">{label}</span>
+      {fill !== null ? (
+        <span className="relative h-[3px] w-8 shrink-0 rounded-full bg-muted-foreground/30 dark:bg-muted-foreground/20">
+          {fill > 0 ? (
+            <span
+              className={cn(
+                "absolute inset-y-0 left-0 rounded-full",
+                tone === "error"
+                  ? "bg-error"
+                  : tone === "warning"
+                    ? "bg-warning"
+                    : "bg-muted-foreground",
+              )}
+              style={{ width: `max(${fill}%, 3px)` }}
+            />
+          ) : null}
+        </span>
+      ) : null}
+      <span
+        className={cn(
+          "font-medium",
+          tone === "error"
+            ? "text-error-foreground"
+            : tone === "warning"
+              ? "text-warning-foreground"
+              : "text-foreground/80",
+        )}
+      >
+        {value}
+      </span>
+    </>
+  );
 }
 
 function StatusItem({
   label,
   tooltip,
+  className,
   children,
 }: {
   readonly label: string;
   readonly tooltip: ReactNode;
+  readonly className?: string | undefined;
   readonly children: ReactNode;
 }) {
   return (
@@ -236,12 +317,17 @@ function StatusItem({
         render={
           <span
             tabIndex={0}
-            className="min-w-0 shrink-0 cursor-default truncate rounded outline-none last:shrink focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+            className={cn(
+              "flex h-7 shrink-0 cursor-default items-center gap-1.5 rounded outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+              className,
+            )}
           />
         }
       >
         <span className="sr-only">{label}</span>
-        <span aria-hidden>{children}</span>
+        <span aria-hidden className="contents">
+          {children}
+        </span>
       </TooltipTrigger>
       <TooltipPopup side="top">
         <div className="flex flex-col gap-0.5">{tooltip}</div>
@@ -318,7 +404,7 @@ function ContextTooltip({ usage }: { readonly usage: ContextWindowSnapshot }) {
   );
 }
 
-function SubagentsTooltip({ turn }: { readonly turn: ThreadTurnSubagents }) {
+export function SubagentsTooltip({ turn }: { readonly turn: ThreadTurnSubagents }) {
   const running = turn.subagents.filter((subagent) => isOrchestrationV2WorkActive(subagent.status));
   const hidden = running.length - MAX_LISTED_SUBAGENTS;
   return (

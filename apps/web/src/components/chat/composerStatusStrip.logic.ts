@@ -62,12 +62,12 @@ export function shortWindowLabel(window: ServerProviderUsageWindow): string {
       const minutes = window.windowDurationMins;
       return minutes !== undefined && minutes > 0 && minutes % 60 === 0
         ? `${minutes / 60}h`
-        : "session";
+        : "Session";
     }
     case "weekly":
-      return isScoped(window) ? `wk ${window.label.split(" · ").slice(1).join(" · ")}` : "wk";
+      return isScoped(window) ? `Week ${window.label.split(" · ").slice(1).join(" · ")}` : "Week";
     case "monthly":
-      return "mo";
+      return "Month";
     default:
       return window.label;
   }

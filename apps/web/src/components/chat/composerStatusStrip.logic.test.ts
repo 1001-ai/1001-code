@@ -52,8 +52,8 @@ describe("pickLimitWindows", () => {
   });
 
   it("labels windows briefly", () => {
-    expect([session, weekly, scoped].map(shortWindowLabel)).toEqual(["5h", "wk", "wk Opus"]);
-    expect(shortWindowLabel(window("s", "session", "Session", 0))).toBe("session");
+    expect([session, weekly, scoped].map(shortWindowLabel)).toEqual(["5h", "Week", "Week Opus"]);
+    expect(shortWindowLabel(window("s", "session", "Session", 0))).toBe("Session");
   });
 });
 
