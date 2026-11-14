@@ -1,8 +1,13 @@
+import { fromMarkdown } from "mdast-util-from-markdown";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
   findQuestionAnswer,
+  findQuestionRefs,
+  latestQuestionCards,
   parseQuestionQuote,
+  questionCardsInMarkdown,
+  remarkQuestionRefs,
   readAnswerLine,
   selectedMultiOptions,
   toggleMultiOption,
@@ -232,5 +237,93 @@ describe("findQuestionAnswer", () => {
     ];
     expect(findQuestionAnswer(items, "a1", "Q1")).toBeNull();
     expect(findQuestionAnswer(items, "missing", "Q2")).toBeNull();
+  });
+});
+
+describe("findQuestionRefs", () => {
+  it.each([
+    ["in parentheses", "your Linear team key (Q40)", ["Q40"]],
+    ["in a list of ids", "Q40, Q45 and Q46 are at the end", ["Q40", "Q45", "Q46"]],
+    ["before a colon or dash", "Q7: yes, Q8–Q9", ["Q7", "Q8", "Q9"]],
+    ["inside other words", "FAQ40, Q40a, Q4_2, QQ1", []],
+    ["with no number or a leading zero", "Q, Q0, Q01", []],
+  ])("finds ids %s", (_name, text, ids) => {
+    expect(findQuestionRefs(text).map((ref) => ref.id)).toEqual(ids);
+  });
+
+  it("reports where each id is", () => {
+    expect(findQuestionRefs("see (Q12)")).toEqual([{ id: "Q12", start: 5, end: 8 }]);
+  });
+});
+
+describe("questionCardsInMarkdown", () => {
+  const card = (id: string, prompt: string) =>
+    `> **${id} · ${prompt}**\n>\n> - Yes _(recommended)_\n> - No`;
+
+  it("finds every card in a message, in order", () => {
+    const text = `Two things.\n\n${card("Q1", "Ship it?")}\n\n${card("Q2", "Keep it?")}\n\nThanks.`;
+    expect(questionCardsInMarkdown(text).map((question) => question.id)).toEqual(["Q1", "Q2"]);
+  });
+
+  it.each([
+    ["an ordinary quote", "> Just a quote about Q1."],
+    ["a quote in a code fence", `\`\`\`md\n${card("Q1", "Ship it?")}\n\`\`\``],
+    ["a quote a lazy line continues", `${card("Q1", "Ship it?")}\nmore text`],
+  ])("ignores %s", (_name, text) => {
+    expect(questionCardsInMarkdown(text)).toEqual([]);
+  });
+
+  it("finds a card after a closed fence", () => {
+    const text = `~~~\n${card("Q1", "Old?")}\n~~~\n\n${card("Q2", "New?")}`;
+    expect(questionCardsInMarkdown(text).map((question) => question.id)).toEqual(["Q2"]);
+  });
+});
+
+describe("latestQuestionCards", () => {
+  const card = (id: string, prompt: string) => `> **${id} · ${prompt}**\n> - A\n> - B`;
+  const assistant = (messageId: string, text: string, streaming = false) => ({
+    item: { type: "assistant_message", messageId, text, streaming },
+  });
+
+  it("maps each id to its newest card, so a re-asked question lands on the live one", () => {
+    const items = [
+      assistant("m1", card("Q40", "Team key?")),
+      { item: { type: "user_message", messageId: "u1", text: card("Q41", "Not asked") } },
+      assistant("m2", `${card("Q40", "Team key, again?")}\n\n${card("Q45", "Label?")}`),
+      assistant("m3", "Q40 and Q45 are above."),
+      assistant("m4", card("Q45", "Still streaming?"), true),
+    ];
+    expect(latestQuestionCards(items)).toEqual(
+      new Map([
+        ["Q40", { messageId: "m2", prompt: "Team key, again?" }],
+        ["Q45", { messageId: "m2", prompt: "Label?" }],
+      ]),
+    );
+  });
+});
+
+describe("remarkQuestionRefs", () => {
+  const linkedIds = (markdown: string) => {
+    const tree = fromMarkdown(markdown);
+    remarkQuestionRefs()(tree);
+    const ids: string[] = [];
+    const visit = (node: { type: string; url?: string; children?: unknown[] }) => {
+      if (node.type === "link" && node.url?.startsWith("t3-context://v1/question/")) {
+        ids.push(node.url.slice("t3-context://v1/question/".length));
+      }
+      for (const child of node.children ?? []) visit(child as typeof node);
+    };
+    visit(tree);
+    return ids;
+  };
+
+  it.each([
+    ["prose, lists and emphasis", "I need (Q40).\n\n- Q45 and *Q46*", ["Q40", "Q45", "Q46"]],
+    ["code", "`Q40` and\n\n```\nQ41\n```", []],
+    ["existing links", "[about Q40](https://example.com)", []],
+    ["a card's own header line", "> **Q40 · Which key?**\n> - A\n> - B", []],
+    ["bold that only mentions an id", "**Q40 is still open**", ["Q40"]],
+  ])("links ids in %s", (_name, markdown, ids) => {
+    expect(linkedIds(markdown)).toEqual(ids);
   });
 });
