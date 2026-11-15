@@ -1,6 +1,8 @@
 import type {
   BoardColumn,
   BoardIssue,
+  BoardPriority,
+  BoardThreadLink,
   EnvironmentId,
   PullRequestChecksState,
   PullRequestReviewDecision,
@@ -25,22 +27,48 @@ export function filterBoardColumns(
   }));
 }
 
-export type BoardIssueTarget =
+export type BoardThreadTarget =
   | { readonly kind: "thread"; readonly ref: ScopedThreadRef }
-  | { readonly kind: "linear"; readonly url: string };
+  | { readonly kind: "unreachable" };
 
 /** A linked thread opens in place when this client is connected to its environment. */
-export function boardIssueTarget(
-  issue: Pick<BoardIssue, "thread" | "url">,
+export function boardThreadTarget(
+  thread: Pick<BoardThreadLink, "environmentId" | "threadId">,
   connectedEnvironmentIds: ReadonlySet<EnvironmentId>,
-): BoardIssueTarget {
-  if (issue.thread !== null && connectedEnvironmentIds.has(issue.thread.environmentId)) {
-    return {
-      kind: "thread",
-      ref: scopeThreadRef(issue.thread.environmentId, issue.thread.threadId),
-    };
-  }
-  return { kind: "linear", url: issue.url };
+): BoardThreadTarget {
+  return connectedEnvironmentIds.has(thread.environmentId)
+    ? { kind: "thread", ref: scopeThreadRef(thread.environmentId, thread.threadId) }
+    : { kind: "unreachable" };
+}
+
+/** The thread a card shows: the newest one this client reaches, else the newest. */
+export function boardCardThread(
+  threads: ReadonlyArray<BoardThreadLink>,
+  connectedEnvironmentIds: ReadonlySet<EnvironmentId>,
+): BoardThreadLink | null {
+  return (
+    threads.find((thread) => connectedEnvironmentIds.has(thread.environmentId)) ??
+    threads[0] ??
+    null
+  );
+}
+
+export const BOARD_PRIORITY_LABELS: Record<BoardPriority, string> = {
+  0: "No priority",
+  1: "Urgent",
+  2: "High",
+  3: "Medium",
+  4: "Low",
+};
+
+/** In progress shows when the work started; anything else when the issue last changed. */
+export function boardIssueTime(
+  issue: Pick<BoardIssue, "startedAt" | "updatedAt">,
+  stateType: string,
+): { readonly verb: "started" | "updated"; readonly at: string } {
+  return stateType === "started" && issue.startedAt !== null
+    ? { verb: "started", at: issue.startedAt }
+    : { verb: "updated", at: issue.updatedAt };
 }
 
 export interface BoardPullRequestStatus {

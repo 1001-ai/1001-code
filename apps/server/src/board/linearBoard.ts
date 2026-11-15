@@ -6,10 +6,14 @@ import {
   type BoardColumn,
   type BoardData,
   type BoardIssue,
+  type BoardIssueDetail,
+  type BoardPriority,
   type BoardPullRequest,
   type BoardThreadLink,
+  type BoardUser,
   type BoardWorkflowState,
 } from "@t3tools/contracts";
+import { DEFAULT_HOSTED_APP_URL } from "@t3tools/shared/connectAuth";
 import { parseThreadLinkHref } from "@t3tools/shared/threadLinks";
 import * as Schema from "effect/Schema";
 
@@ -44,6 +48,10 @@ export const TEAM_QUERY = `query BoardTeam($key: String!, $project: String!, $wi
   }
 }`;
 
+const USER_FIELDS = "id name displayName avatarUrl isMe";
+
+const HOSTED_THREAD_LINK = JSON.stringify(`${DEFAULT_HOSTED_APP_URL}/threads/`);
+
 export const ISSUES_QUERY = `query BoardIssues($filter: IssueFilter!, $first: Int!, $after: String) {
   issues(filter: $filter, first: $first, after: $after) {
     nodes {
@@ -51,14 +59,38 @@ export const ISSUES_QUERY = `query BoardIssues($filter: IssueFilter!, $first: In
       identifier
       title
       url
+      priority
+      createdAt
+      startedAt
       updatedAt
       sortOrder
       state { id }
-      assignee { id name displayName avatarUrl isMe }
-      labels(first: 20) { nodes { id name color } }
-      attachments(first: 20) { nodes { url sourceType metadata } }
+      assignee { ${USER_FIELDS} }
+      labels(first: 10) { nodes { id name color } }
+      threadLinks: attachments(
+        first: 10
+        filter: { or: [{ url: { startsWith: "t3-thread://v2/" } }, { url: { startsWith: ${HOSTED_THREAD_LINK} } }] }
+      ) {
+        nodes { url createdAt creator { ${USER_FIELDS} } }
+      }
+      attachments(
+        first: 20
+        filter: { and: [{ url: { notStartsWith: "t3-thread://" } }, { url: { notStartsWith: ${HOSTED_THREAD_LINK} } }] }
+      ) {
+        nodes { url sourceType metadata }
+      }
     }
     pageInfo { hasNextPage endCursor }
+  }
+}`;
+
+export const ISSUE_DETAIL_QUERY = `query BoardIssueDetail($id: String!) {
+  issue(id: $id) {
+    id
+    team { id }
+    project { id }
+    description
+    creator { ${USER_FIELDS} }
   }
 }`;
 
@@ -126,24 +158,35 @@ export function linearProject(
   return { id: found.id, name: found.name, url: found.url };
 }
 
+const LinearUser = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  displayName: Schema.String,
+  avatarUrl: Schema.NullOr(Schema.String),
+  isMe: Schema.Boolean,
+});
+type LinearUser = typeof LinearUser.Type;
+
 const LinearIssue = Schema.Struct({
   id: Schema.String,
   identifier: Schema.String,
   title: Schema.String,
   url: Schema.String,
+  priority: Schema.Number,
+  createdAt: Schema.String,
+  startedAt: Schema.NullOr(Schema.String),
   updatedAt: Schema.String,
   sortOrder: Schema.Number,
   state: Schema.Struct({ id: Schema.String }),
-  assignee: Schema.NullOr(
+  assignee: Schema.NullOr(LinearUser),
+  labels: Nodes(Schema.Struct({ id: Schema.String, name: Schema.String, color: Schema.String })),
+  threadLinks: Nodes(
     Schema.Struct({
-      id: Schema.String,
-      name: Schema.String,
-      displayName: Schema.String,
-      avatarUrl: Schema.NullOr(Schema.String),
-      isMe: Schema.Boolean,
+      url: Schema.String,
+      createdAt: Schema.String,
+      creator: Schema.NullOr(LinearUser),
     }),
   ),
-  labels: Nodes(Schema.Struct({ id: Schema.String, name: Schema.String, color: Schema.String })),
   attachments: Nodes(
     Schema.Struct({
       url: Schema.String,
@@ -164,6 +207,19 @@ export const IssuesData = Schema.Struct({
   }),
 });
 export type IssuesData = typeof IssuesData.Type;
+
+export const IssueDetailData = Schema.Struct({
+  issue: Schema.NullOr(
+    Schema.Struct({
+      id: Schema.String,
+      team: Schema.Struct({ id: Schema.String }),
+      project: Schema.NullOr(Schema.Struct({ id: Schema.String })),
+      description: Schema.NullOr(Schema.String),
+      creator: Schema.NullOr(LinearUser),
+    }),
+  ),
+});
+export type IssueDetailData = typeof IssueDetailData.Type;
 
 const GraphqlErrors = Schema.Struct({
   errors: Schema.Array(
@@ -214,6 +270,13 @@ export function linearFailure(input: {
       detail: `Linear is unavailable (HTTP ${input.status}).`,
     });
   }
+  // Only the issue detail looks an entity up by id; the board's own queries filter.
+  if (errors.length > 0 && errors.every((error) => error.message?.startsWith("Entity not found"))) {
+    return new BoardError({
+      reason: "issue-not-found",
+      detail: "This issue does not exist or is not visible to your Linear account.",
+    });
+  }
   if (errors.length > 0 || input.status !== 200) {
     const message = errors.find((error) => error.message)?.message ?? `HTTP ${input.status}`;
     return new BoardError({
@@ -262,42 +325,73 @@ function boardPullRequest(attachment: LinearIssue["attachments"]["nodes"][number
 const decodeEnvironmentId = Schema.decodeUnknownOption(EnvironmentId);
 const decodeThreadId = Schema.decodeUnknownOption(ThreadId);
 
+const boardUser = (user: LinearUser | null): BoardUser | null =>
+  user === null
+    ? null
+    : {
+        id: user.id,
+        name: user.displayName || user.name,
+        avatarUrl: user.avatarUrl,
+        isMe: user.isMe,
+      };
+
 /** A thread link names its environment; one without it cannot be opened from a board. */
-function boardThreadLink(url: string): BoardThreadLink | null {
-  const link = parseThreadLinkHref(url);
+function boardThreadLink(
+  attachment: LinearIssue["threadLinks"]["nodes"][number],
+): BoardThreadLink | null {
+  const link = parseThreadLinkHref(attachment.url);
   if (link === null || link.environmentId === null) return null;
   const environmentId = decodeEnvironmentId(link.environmentId);
   const threadId = decodeThreadId(link.threadId);
   return environmentId._tag === "Some" && threadId._tag === "Some"
-    ? { environmentId: environmentId.value, threadId: threadId.value }
+    ? {
+        environmentId: environmentId.value,
+        threadId: threadId.value,
+        linkedAt: attachment.createdAt,
+        linkedBy: boardUser(attachment.creator),
+      }
     : null;
 }
 
+/** Newest first; a thread linked in several forms keeps its newest link. */
+function boardThreadLinks(issue: LinearIssue): ReadonlyArray<BoardThreadLink> {
+  const links = issue.threadLinks.nodes
+    .flatMap((attachment) => boardThreadLink(attachment) ?? [])
+    .sort((a, b) => Date.parse(b.linkedAt) - Date.parse(a.linkedAt));
+  const seen = new Set<string>();
+  return links.filter((link) => {
+    const key = JSON.stringify([link.environmentId, link.threadId]);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+const boardPriority = (priority: number): BoardPriority =>
+  priority === 1 || priority === 2 || priority === 3 || priority === 4 ? priority : 0;
+
 function boardIssue(issue: LinearIssue): BoardIssue {
-  const attachments = issue.attachments.nodes;
   return {
     id: issue.id,
     identifier: issue.identifier,
     title: issue.title,
     url: issue.url,
     stateId: issue.state.id,
-    assignee:
-      issue.assignee === null
-        ? null
-        : {
-            id: issue.assignee.id,
-            name: issue.assignee.displayName || issue.assignee.name,
-            avatarUrl: issue.assignee.avatarUrl,
-            isMe: issue.assignee.isMe,
-          },
+    assignee: boardUser(issue.assignee),
     labels: issue.labels.nodes.map(({ id, name, color }) => ({ id, name, color })),
+    priority: boardPriority(issue.priority),
+    createdAt: issue.createdAt,
+    startedAt: issue.startedAt,
     updatedAt: issue.updatedAt,
-    pullRequests: attachments.flatMap((attachment) => boardPullRequest(attachment) ?? []),
-    thread: attachments.reduce<BoardThreadLink | null>(
-      (found, attachment) => found ?? boardThreadLink(attachment.url),
-      null,
+    pullRequests: issue.attachments.nodes.flatMap(
+      (attachment) => boardPullRequest(attachment) ?? [],
     ),
+    threads: boardThreadLinks(issue),
   };
+}
+
+export function boardIssueDetail(issue: NonNullable<IssueDetailData["issue"]>): BoardIssueDetail {
+  return { description: issue.description, creator: boardUser(issue.creator) };
 }
 
 /** One column per state, in board order, each with its issues in Linear's manual order. */

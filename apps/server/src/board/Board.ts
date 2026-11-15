@@ -3,6 +3,8 @@ import {
   BoardViewer,
   type BoardConnection,
   type BoardData,
+  type BoardIssueDetail,
+  type BoardIssueDetailInput,
   type BoardSignIn,
   type BoardSnapshot,
   type ProjectId,
@@ -35,8 +37,10 @@ import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
 import * as TeamCatalog from "../teamCatalog/TeamCatalog.ts";
 import {
+  ISSUE_DETAIL_QUERY,
   ISSUE_PAGE_SIZE,
   ISSUES_QUERY,
+  IssueDetailData,
   IssuesData,
   LINEAR_API_URL,
   type LinearIssue,
@@ -46,6 +50,7 @@ import {
   VIEWER_QUERY,
   ViewerData,
   boardColumns,
+  boardIssueDetail,
   issuesFilter,
   linearFailure,
   linearProject,
@@ -89,6 +94,10 @@ export class Board extends Context.Service<
     /** The board now, then again when it is refreshed, changes in Linear, or the sign-in changes. */
     readonly changes: (projectId: ProjectId) => Stream.Stream<BoardSnapshot>;
     readonly refresh: (projectId: ProjectId) => Effect.Effect<BoardSnapshot>;
+    /** What a card leaves out of an issue on the project's board, read from Linear now. */
+    readonly issueDetail: (
+      input: BoardIssueDetailInput,
+    ) => Effect.Effect<BoardIssueDetail, BoardError>;
   }
 >()("t3/board/Board") {}
 
@@ -378,7 +387,8 @@ const make = Effect.gen(function* () {
     );
   });
 
-  const fetchBoard = Effect.fn("Board.fetchBoard")(function* (
+  /** The catalog's Linear team and project, as this sign-in sees them. */
+  const findTeam = Effect.fn("Board.findTeam")(function* (
     generation: number,
     target: TeamCatalogLinear,
   ) {
@@ -415,7 +425,14 @@ const make = Effect.gen(function* () {
         detail: `The Linear team ${team.key} has no project named ${target.project}.`,
       });
     }
+    return { team, project };
+  });
 
+  const fetchBoard = Effect.fn("Board.fetchBoard")(function* (
+    generation: number,
+    target: TeamCatalogLinear,
+  ) {
+    const { team, project } = yield* findTeam(generation, target);
     const filter = issuesFilter(team.id, project?.id ?? null);
     const issues: LinearIssue[] = [];
     let after: string | null = null;
@@ -461,6 +478,10 @@ const make = Effect.gen(function* () {
     return { _tag: "linear", linear: entry.project.linear } satisfies Target;
   });
 
+  // Keyed by sign-in too, so a read still in flight when it changes cannot be served later.
+  const cacheKey = (generation: number, linear: TeamCatalogLinear) =>
+    `${generation}\u0000${linear.team}\u0000${linear.project ?? ""}`;
+
   const read: Board["Service"]["read"] = Effect.fn("Board.read")(function* (projectId, options) {
     const generation = credentialGeneration;
     const credential = yield* readCredential;
@@ -468,8 +489,7 @@ const make = Effect.gen(function* () {
     const target = yield* resolveTarget(projectId);
     if (target._tag === "unconfigured") return target.snapshot;
 
-    // Keyed by sign-in too, so a read still in flight when it changes cannot be served later.
-    const key = `${generation}\u0000${target.linear.team}\u0000${target.linear.project ?? ""}`;
+    const key = cacheKey(generation, target.linear);
     return yield* readLock.withPermits(1)(
       Effect.gen(function* () {
         const now = yield* Clock.currentTimeMillis;
@@ -502,6 +522,40 @@ const make = Effect.gen(function* () {
       }),
     );
   });
+
+  const issueDetail: Board["Service"]["issueDetail"] = Effect.fn("Board.issueDetail")(
+    function* (input) {
+      const generation = credentialGeneration;
+      if ((yield* readCredential) === null) {
+        return yield* new BoardError({
+          reason: "unauthorized",
+          detail: "Sign in to Linear in Settings → Board to read this issue.",
+        });
+      }
+      const notOnBoard = new BoardError({
+        reason: "issue-not-found",
+        detail: "This issue is not on the project's board.",
+      });
+      const target = yield* resolveTarget(input.projectId);
+      if (target._tag === "unconfigured") return yield* notOnBoard;
+      const cached = cache.get(cacheKey(generation, target.linear))?.board;
+      const scope = cached ?? (yield* findTeam(generation, target.linear));
+      const { issue } = yield* linear(
+        generation,
+        ISSUE_DETAIL_QUERY,
+        { id: input.issueId },
+        IssueDetailData,
+      );
+      if (
+        issue === null ||
+        issue.team.id !== scope.team.id ||
+        (scope.project !== null && issue.project?.id !== scope.project.id)
+      ) {
+        return yield* notOnBoard;
+      }
+      return boardIssueDetail(issue);
+    },
+  );
 
   // One poll per project however many clients have its board open; the last to leave stops it.
   const polls = new Map<ProjectId, Poll>();
@@ -820,6 +874,7 @@ const make = Effect.gen(function* () {
     read,
     changes,
     refresh,
+    issueDetail,
   });
 });
 
