@@ -202,12 +202,53 @@ export const BoardIssueDetailInput = Schema.Struct({
 });
 export type BoardIssueDetailInput = typeof BoardIssueDetailInput.Type;
 
+export const BoardComment = Schema.Struct({
+  id: TrimmedNonEmptyString,
+  /** Markdown. */
+  body: Schema.String,
+  author: Schema.String,
+  createdAt: IsoDateTime,
+  /** Written by a teammate's agent: the body starts with "agent:". */
+  agent: Schema.Boolean,
+});
+export type BoardComment = typeof BoardComment.Type;
+
+/** A top-level comment and its replies. */
+export const BoardCommentThread = Schema.Struct({
+  ...BoardComment.fields,
+  /** Oldest first. */
+  replies: Schema.Array(BoardComment),
+});
+export type BoardCommentThread = typeof BoardCommentThread.Type;
+
 /** What a card leaves out, read from Linear when the issue is opened. */
 export const BoardIssueDetail = Schema.Struct({
   description: Schema.NullOr(Schema.String),
   creator: Schema.NullOr(BoardUser),
+  /** Oldest first. */
+  comments: Schema.Array(BoardCommentThread),
+  /**
+   * The local thread a comment posted from the board also goes to: the newest link to a thread on
+   * this environment that the signed-in person attached, as the comment inbox picks it.
+   */
+  linkedThreadId: Schema.NullOr(ThreadId),
 });
 export type BoardIssueDetail = typeof BoardIssueDetail.Type;
+
+export const BoardCommentInput = Schema.Struct({
+  projectId: ProjectId,
+  issueId: TrimmedNonEmptyString,
+  body: TrimmedNonEmptyString,
+  /** The top-level comment this replies to. */
+  parentId: Schema.optionalKey(TrimmedNonEmptyString),
+});
+export type BoardCommentInput = typeof BoardCommentInput.Type;
+
+export const BoardCommentResult = Schema.Struct({
+  /** The local thread the comment was queued in; null when none is linked or queueing failed. */
+  threadId: Schema.NullOr(ThreadId),
+});
+export type BoardCommentResult = typeof BoardCommentResult.Type;
 
 export const BoardConnectionSubscribeInput = Schema.Struct({});
 

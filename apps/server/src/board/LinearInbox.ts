@@ -216,7 +216,7 @@ const make = Effect.gen(function* () {
     const fields = { comment: comment.id, issue: comment.issue?.identifier ?? null };
     const route = routeComment(comment, { viewerId, environmentId, memberIds });
     if (route._tag === "skip") {
-      return yield* Effect.logDebug("Linear inbox skips a comment.", {
+      return yield* Effect.logInfo("Linear inbox skips a comment.", {
         ...fields,
         reason: route.reason,
       });

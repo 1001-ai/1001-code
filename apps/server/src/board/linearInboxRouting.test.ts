@@ -7,6 +7,7 @@ import {
   commentKind,
   exchangeSkipReason,
   framedComment,
+  linkedThreadId,
   routeComment,
   senderThread,
   threadSkipReason,
@@ -62,9 +63,19 @@ describe("routeComment", () => {
       "not-a-team-member",
     ],
     [
-      "an issue not in progress",
-      comment({ issue: issueWith({ state: { type: "unstarted" } }) }),
-      "issue-not-started",
+      "an issue in the backlog",
+      comment({ issue: issueWith({ state: { type: "backlog" } }) }),
+      "thread",
+    ],
+    [
+      "an issue done",
+      comment({ issue: issueWith({ state: { type: "completed" } }) }),
+      "issue-closed",
+    ],
+    [
+      "an issue canceled",
+      comment({ issue: issueWith({ state: { type: "canceled" } }) }),
+      "issue-closed",
     ],
     [
       "a thread link someone else attached",
@@ -92,30 +103,29 @@ describe("routeComment", () => {
     expect(route._tag === "thread" ? "thread" : route.reason).toBe(expected);
   });
 
-  it("names the sender, tells agents from people, and takes my newest link", () => {
-    const route = routeComment(
-      comment({
-        body: "  Agent: counter",
-        issue: issueWith({
-          attachments: {
-            nodes: [
-              link("t3-thread://v2/env-me/thread-old", ME, "2026-11-15T09:00:00.000Z"),
-              link("https://github.com/acme/web/pull/1"),
-              link("t3-thread://v2/env-me/thread-new", ME, "2026-11-15T11:00:00.000Z"),
-              link("t3-thread://v2/env-me/thread-forged", LAWRENCE, "2026-11-15T11:30:00.000Z"),
-            ],
-          },
-        }),
-      }),
-      context,
-    );
-    expect(route).toEqual({
+  it("names the sender and tells agents from people", () => {
+    expect(routeComment(comment({ body: "  Agent: counter" }), context)).toEqual({
       _tag: "thread",
-      threadId: "thread-new",
+      threadId: "thread-mine",
       kind: "agent",
       sender: "Lawrence",
     });
     expect(commentKind("Let's keep the poll in Board.ts. agent: no")).toBe("person");
+  });
+});
+
+describe("linkedThreadId", () => {
+  it("takes my newest link to a thread here, never one someone else attached", () => {
+    const attachments = [
+      link("t3-thread://v2/env-me/thread-old", ME, "2026-11-15T09:00:00.000Z"),
+      link("https://github.com/acme/web/pull/1"),
+      link("t3-thread://v2/env-me/thread-new", ME, "2026-11-15T11:00:00.000Z"),
+      link("t3-thread://v2/env-other/thread-away", ME, "2026-11-15T11:15:00.000Z"),
+      link("t3-thread://v2/env-me/thread-forged", LAWRENCE, "2026-11-15T11:30:00.000Z"),
+    ];
+    expect(linkedThreadId(attachments, ME, ENVIRONMENT)).toBe("thread-new");
+    expect(linkedThreadId(attachments, LAWRENCE, ENVIRONMENT)).toBe("thread-forged");
+    expect(linkedThreadId(attachments.slice(1, 2), ME, ENVIRONMENT)).toBeNull();
   });
 });
 

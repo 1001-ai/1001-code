@@ -101,7 +101,7 @@ export type SkipReason =
   | "own-comment"
   | "not-a-person"
   | "not-a-team-member"
-  | "issue-not-started"
+  | "issue-closed"
   | "no-thread-link"
   | "thread-missing"
   | "thread-archived"
@@ -129,10 +129,32 @@ export const commentKind = (body: string): CommentKind =>
   /^agent:/i.test(body.trimStart()) ? "agent" : "person";
 
 /**
- * Which local thread a comment is for. Only a thread link the viewer attached, naming this
- * environment, counts: anyone in the workspace can attach links or comment, so neither may
- * pick the thread. The newest such link wins when an agent moved the work to another thread.
+ * The local thread an issue is linked to. Only a thread link the viewer attached, naming this
+ * environment, counts: anyone in the workspace can attach links, so others' links may not pick
+ * the thread. The newest such link wins when an agent moved the work to another thread.
  */
+export function linkedThreadId(
+  attachments: ReadonlyArray<{
+    readonly url: string;
+    readonly createdAt: string;
+    readonly creator: { readonly id: string } | null;
+  }>,
+  viewerId: string,
+  environmentId: EnvironmentId,
+): ThreadId | null {
+  return (
+    attachments
+      .filter((attachment) => attachment.creator?.id === viewerId)
+      .toSorted((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map((attachment) => parseThreadLinkHref(attachment.url))
+      .find((link) => link?.environmentId === environmentId)?.threadId ?? null
+  );
+}
+
+/** Linear's state types for an issue that is done with; its comments wake no thread. */
+const CLOSED_STATE_TYPES: ReadonlySet<string> = new Set(["completed", "canceled"]);
+
+/** Which local thread a comment is for: the issue's linked thread, never one the comment names. */
 export function routeComment(
   comment: LinearComment,
   context: {
@@ -147,13 +169,13 @@ export function routeComment(
   }
   if (comment.user.id === context.viewerId) return skip("own-comment");
   if (!context.memberIds.has(comment.user.id)) return skip("not-a-team-member");
-  if (comment.issue.state.type !== "started") return skip("issue-not-started");
-  const threadId = comment.issue.attachments.nodes
-    .filter((attachment) => attachment.creator?.id === context.viewerId)
-    .toSorted((a, b) => b.createdAt.localeCompare(a.createdAt))
-    .map((attachment) => parseThreadLinkHref(attachment.url))
-    .find((link) => link?.environmentId === context.environmentId)?.threadId;
-  if (threadId === undefined) return skip("no-thread-link");
+  if (CLOSED_STATE_TYPES.has(comment.issue.state.type)) return skip("issue-closed");
+  const threadId = linkedThreadId(
+    comment.issue.attachments.nodes,
+    context.viewerId,
+    context.environmentId,
+  );
+  if (threadId === null) return skip("no-thread-link");
   return {
     _tag: "thread",
     threadId,

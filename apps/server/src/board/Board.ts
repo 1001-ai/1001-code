@@ -1,6 +1,10 @@
 import {
   BoardError,
   BoardViewer,
+  CommandId,
+  MessageId,
+  type BoardCommentInput,
+  type BoardCommentResult,
   type BoardConnection,
   type BoardData,
   type BoardIssueDetail,
@@ -9,6 +13,7 @@ import {
   type BoardSnapshot,
   type ProjectId,
   type TeamCatalogLinear,
+  type ThreadId,
   teamCatalogRepositoryMatches,
 } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -33,10 +38,15 @@ import { HttpClient, HttpClientRequest } from "effect/http";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../config.ts";
+import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
+import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
 import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
 import * as TeamCatalog from "../teamCatalog/TeamCatalog.ts";
+import { linkedThreadId } from "./linearInboxRouting.ts";
 import {
+  COMMENT_CREATE_MUTATION,
+  CommentCreateData,
   ISSUE_DETAIL_QUERY,
   ISSUE_PAGE_SIZE,
   ISSUES_QUERY,
@@ -51,9 +61,11 @@ import {
   ViewerData,
   boardColumns,
   boardIssueDetail,
+  commentAuthor,
   issuesFilter,
   linearFailure,
   linearProject,
+  postedCommentText,
 } from "./linearBoard.ts";
 import {
   LINEAR_OAUTH_ENDPOINTS,
@@ -98,6 +110,11 @@ export class Board extends Context.Service<
     readonly issueDetail: (
       input: BoardIssueDetailInput,
     ) => Effect.Effect<BoardIssueDetail, BoardError>;
+    /**
+     * Posts a comment on an issue on the project's board as the signed-in person, then queues it
+     * in the issue's linked thread, if any, as the user's message.
+     */
+    readonly comment: (input: BoardCommentInput) => Effect.Effect<BoardCommentResult, BoardError>;
     /** Linear as whoever is signed in now, or null while nobody is. */
     readonly session: Effect.Effect<BoardLinearSession | null>;
   }
@@ -216,6 +233,8 @@ const make = Effect.gen(function* () {
   const identities = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
   const random = yield* SecureRandom.SecureRandom;
   const digest = yield* Digest.Digest;
+  const threads = yield* ThreadManagement.ThreadManagementService;
+  const environmentId = yield* (yield* ServerEnvironment.ServerEnvironment).getEnvironmentId;
 
   const clientId = environment[CLIENT_ID_ENV]?.trim() || null;
   const devEndpoint = environment[DEV_LINEAR_API_URL_ENV]?.trim();
@@ -535,39 +554,117 @@ const make = Effect.gen(function* () {
     );
   });
 
+  /** An issue on the project's board, read from Linear now as the signed-in person. */
+  const readIssue = Effect.fn("Board.readIssue")(function* (input: BoardIssueDetailInput) {
+    const generation = credentialGeneration;
+    const credential = yield* readCredential;
+    if (credential === null) {
+      return yield* new BoardError({
+        reason: "unauthorized",
+        detail: "Sign in to Linear in Settings → Board to read this issue.",
+      });
+    }
+    const notOnBoard = new BoardError({
+      reason: "issue-not-found",
+      detail: "This issue is not on the project's board.",
+    });
+    const target = yield* resolveTarget(input.projectId);
+    if (target._tag === "unconfigured") return yield* notOnBoard;
+    const cached = cache.get(cacheKey(generation, target.linear))?.board;
+    const scope = cached ?? (yield* findTeam(generation, target.linear));
+    const { issue } = yield* linear(
+      generation,
+      ISSUE_DETAIL_QUERY,
+      { id: input.issueId },
+      IssueDetailData,
+    );
+    if (
+      issue === null ||
+      issue.team.id !== scope.team.id ||
+      (scope.project !== null && issue.project?.id !== scope.project.id)
+    ) {
+      return yield* notOnBoard;
+    }
+    const threadId = linkedThreadId(issue.threadLinks.nodes, credential.viewer.id, environmentId);
+    return { generation, issue, threadId };
+  });
+
   const issueDetail: Board["Service"]["issueDetail"] = Effect.fn("Board.issueDetail")(
     function* (input) {
-      const generation = credentialGeneration;
-      if ((yield* readCredential) === null) {
-        return yield* new BoardError({
-          reason: "unauthorized",
-          detail: "Sign in to Linear in Settings → Board to read this issue.",
-        });
-      }
-      const notOnBoard = new BoardError({
-        reason: "issue-not-found",
-        detail: "This issue is not on the project's board.",
-      });
-      const target = yield* resolveTarget(input.projectId);
-      if (target._tag === "unconfigured") return yield* notOnBoard;
-      const cached = cache.get(cacheKey(generation, target.linear))?.board;
-      const scope = cached ?? (yield* findTeam(generation, target.linear));
-      const { issue } = yield* linear(
-        generation,
-        ISSUE_DETAIL_QUERY,
-        { id: input.issueId },
-        IssueDetailData,
-      );
-      if (
-        issue === null ||
-        issue.team.id !== scope.team.id ||
-        (scope.project !== null && issue.project?.id !== scope.project.id)
-      ) {
-        return yield* notOnBoard;
-      }
-      return boardIssueDetail(issue);
+      const { issue, threadId } = yield* readIssue(input);
+      return boardIssueDetail(issue, threadId);
     },
   );
+
+  /** Queues the user's comment in the linked thread; Linear has it already, so failing here only logs. */
+  const queueComment = Effect.fn("Board.queueComment")(function* (
+    threadId: ThreadId,
+    commentId: string,
+    text: string,
+  ) {
+    const thread = yield* threads.getThreadShell(threadId);
+    if (thread === null) return null;
+    const key = `board-comment:${threadId}:${commentId}`;
+    yield* threads.sendToThread({
+      projectId: thread.projectId,
+      commandId: CommandId.make(key),
+      threadId,
+      messageId: MessageId.make(key),
+      text,
+      attachments: [],
+      mode: "queue",
+      createdBy: "user",
+      creationSource: "web",
+    });
+    return threadId;
+  });
+
+  const comment: Board["Service"]["comment"] = Effect.fn("Board.comment")(function* (input) {
+    const { generation, issue, threadId } = yield* readIssue(input);
+    const { commentCreate } = yield* linear(
+      generation,
+      COMMENT_CREATE_MUTATION,
+      {
+        input: {
+          issueId: issue.id,
+          body: input.body,
+          ...(input.parentId === undefined ? {} : { parentId: input.parentId }),
+        },
+      },
+      CommentCreateData,
+    );
+    if (!commentCreate.success) {
+      return yield* new BoardError({
+        reason: "invalid-response",
+        detail: "Linear did not accept the comment.",
+      });
+    }
+    if (threadId === null) return { threadId: null };
+    const parent =
+      input.parentId === undefined
+        ? undefined
+        : issue.comments.nodes.find((candidate) => candidate.id === input.parentId);
+    const text = postedCommentText({
+      issue: issue.identifier,
+      body: input.body,
+      replyTo:
+        input.parentId === undefined
+          ? null
+          : parent === undefined
+            ? "someone"
+            : commentAuthor(parent),
+    });
+    const queued = yield* queueComment(threadId, commentCreate.comment.id, text).pipe(
+      Effect.catch((error) =>
+        Effect.logWarning("Board could not send a comment to its thread.", {
+          comment: commentCreate.comment.id,
+          threadId,
+          error,
+        }).pipe(Effect.as(null)),
+      ),
+    );
+    return { threadId: queued };
+  });
 
   // One poll per project however many clients have its board open; the last to leave stops it.
   const polls = new Map<ProjectId, Poll>();
@@ -887,6 +984,7 @@ const make = Effect.gen(function* () {
     changes,
     refresh,
     issueDetail,
+    comment,
     session: Effect.gen(function* () {
       // Taken before the read, so a sign-in change in between fails the session's queries.
       const generation = credentialGeneration;

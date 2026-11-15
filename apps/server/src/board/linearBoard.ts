@@ -4,6 +4,8 @@ import {
   EnvironmentId,
   ThreadId,
   type BoardColumn,
+  type BoardComment,
+  type BoardCommentThread,
   type BoardData,
   type BoardIssue,
   type BoardIssueDetail,
@@ -16,6 +18,8 @@ import {
 import { DEFAULT_HOSTED_APP_URL } from "@t3tools/shared/connectAuth";
 import { parseThreadLinkHref } from "@t3tools/shared/threadLinks";
 import * as Schema from "effect/Schema";
+
+import { commentKind } from "./linearInboxRouting.ts";
 
 /** Linear's GraphQL API, read with an OAuth access token. Queries checked against Linear's public schema. */
 export const LINEAR_API_URL = "https://api.linear.app/graphql";
@@ -51,6 +55,7 @@ export const TEAM_QUERY = `query BoardTeam($key: String!, $project: String!, $wi
 const USER_FIELDS = "id name displayName avatarUrl isMe";
 
 const HOSTED_THREAD_LINK = JSON.stringify(`${DEFAULT_HOSTED_APP_URL}/threads/`);
+const THREAD_LINK_FILTER = `{ or: [{ url: { startsWith: "t3-thread://v2/" } }, { url: { startsWith: ${HOSTED_THREAD_LINK} } }] }`;
 
 export const ISSUES_QUERY = `query BoardIssues($filter: IssueFilter!, $first: Int!, $after: String) {
   issues(filter: $filter, first: $first, after: $after) {
@@ -67,10 +72,7 @@ export const ISSUES_QUERY = `query BoardIssues($filter: IssueFilter!, $first: In
       state { id }
       assignee { ${USER_FIELDS} }
       labels(first: 10) { nodes { id name color } }
-      threadLinks: attachments(
-        first: 10
-        filter: { or: [{ url: { startsWith: "t3-thread://v2/" } }, { url: { startsWith: ${HOSTED_THREAD_LINK} } }] }
-      ) {
+      threadLinks: attachments(first: 10, filter: ${THREAD_LINK_FILTER}) {
         nodes { url createdAt creator { ${USER_FIELDS} } }
       }
       attachments(
@@ -84,14 +86,36 @@ export const ISSUES_QUERY = `query BoardIssues($filter: IssueFilter!, $first: In
   }
 }`;
 
+/** Comments come flat, replies included; the newest ones when there are more. */
+const COMMENT_PAGE_SIZE = 100;
+
 export const ISSUE_DETAIL_QUERY = `query BoardIssueDetail($id: String!) {
   issue(id: $id) {
     id
+    identifier
     team { id }
     project { id }
     description
     creator { ${USER_FIELDS} }
+    threadLinks: attachments(first: 50, filter: ${THREAD_LINK_FILTER}) {
+      nodes { url createdAt creator { id } }
+    }
+    comments(first: ${COMMENT_PAGE_SIZE}, orderBy: createdAt) {
+      nodes {
+        id
+        body
+        createdAt
+        parent { id }
+        user { name displayName }
+        botActor { name }
+        externalUser { name }
+      }
+    }
   }
+}`;
+
+export const COMMENT_CREATE_MUTATION = `mutation BoardComment($input: CommentCreateInput!) {
+  commentCreate(input: $input) { success comment { id } }
 }`;
 
 /** Open issues of the team (and project), plus those closed within RECENTLY_CLOSED. */
@@ -208,18 +232,46 @@ export const IssuesData = Schema.Struct({
 });
 export type IssuesData = typeof IssuesData.Type;
 
+const LinearIssueComment = Schema.Struct({
+  id: Schema.String,
+  body: Schema.String,
+  createdAt: Schema.String,
+  parent: Schema.NullOr(Schema.Struct({ id: Schema.String })),
+  user: Schema.NullOr(Schema.Struct({ name: Schema.String, displayName: Schema.String })),
+  botActor: Schema.NullOr(Schema.Struct({ name: Schema.NullOr(Schema.String) })),
+  externalUser: Schema.NullOr(Schema.Struct({ name: Schema.String })),
+});
+type LinearIssueComment = typeof LinearIssueComment.Type;
+
 export const IssueDetailData = Schema.Struct({
   issue: Schema.NullOr(
     Schema.Struct({
       id: Schema.String,
+      identifier: Schema.String,
       team: Schema.Struct({ id: Schema.String }),
       project: Schema.NullOr(Schema.Struct({ id: Schema.String })),
       description: Schema.NullOr(Schema.String),
       creator: Schema.NullOr(LinearUser),
+      threadLinks: Nodes(
+        Schema.Struct({
+          url: Schema.String,
+          createdAt: Schema.String,
+          creator: Schema.NullOr(Schema.Struct({ id: Schema.String })),
+        }),
+      ),
+      comments: Nodes(LinearIssueComment),
     }),
   ),
 });
 export type IssueDetailData = typeof IssueDetailData.Type;
+export type LinearIssueDetail = NonNullable<IssueDetailData["issue"]>;
+
+export const CommentCreateData = Schema.Struct({
+  commentCreate: Schema.Struct({
+    success: Schema.Boolean,
+    comment: Schema.Struct({ id: Schema.String }),
+  }),
+});
 
 const GraphqlErrors = Schema.Struct({
   errors: Schema.Array(
@@ -390,8 +442,64 @@ function boardIssue(issue: LinearIssue): BoardIssue {
   };
 }
 
-export function boardIssueDetail(issue: NonNullable<IssueDetailData["issue"]>): BoardIssueDetail {
-  return { description: issue.description, creator: boardUser(issue.creator) };
+export const commentAuthor = (comment: LinearIssueComment): string =>
+  (comment.user === null
+    ? (comment.botActor?.name ?? comment.externalUser?.name)
+    : comment.user.displayName || comment.user.name) || "Someone";
+
+const boardComment = (comment: LinearIssueComment): BoardComment => ({
+  id: comment.id,
+  body: comment.body,
+  author: commentAuthor(comment),
+  createdAt: comment.createdAt,
+  agent: commentKind(comment.body) === "agent",
+});
+
+/** Top-level comments with their replies, oldest first; a reply whose comment was not read stands alone. */
+function boardCommentThreads(
+  comments: ReadonlyArray<LinearIssueComment>,
+): ReadonlyArray<BoardCommentThread> {
+  const sorted = comments.toSorted((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const ids = new Set(sorted.map((comment) => comment.id));
+  const replies = new Map<string, Array<BoardComment>>();
+  for (const comment of sorted) {
+    if (comment.parent === null || !ids.has(comment.parent.id)) continue;
+    const list = replies.get(comment.parent.id) ?? [];
+    list.push(boardComment(comment));
+    replies.set(comment.parent.id, list);
+  }
+  return sorted
+    .filter((comment) => comment.parent === null || !ids.has(comment.parent.id))
+    .map((comment) => ({ ...boardComment(comment), replies: replies.get(comment.id) ?? [] }));
+}
+
+export function boardIssueDetail(
+  issue: LinearIssueDetail,
+  linkedThreadId: ThreadId | null,
+): BoardIssueDetail {
+  return {
+    description: issue.description,
+    creator: boardUser(issue.creator),
+    comments: boardCommentThreads(issue.comments.nodes),
+    linkedThreadId,
+  };
+}
+
+/**
+ * What the linked thread's agent gets when the user comments from the board. It is the user's own
+ * message, so it needs no framing, only where it was posted and whom it answers.
+ */
+export function postedCommentText(input: {
+  readonly issue: string;
+  readonly body: string;
+  /** The author of the comment this replies to; null for a top-level comment. */
+  readonly replyTo: string | null;
+}): string {
+  const where =
+    input.replyTo === null
+      ? `I commented on ${input.issue} in Linear:`
+      : `I replied to ${input.replyTo}'s comment on ${input.issue} in Linear:`;
+  return `${where}\n\n${input.body.trim()}`;
 }
 
 /** One column per state, in board order, each with its issues in Linear's manual order. */

@@ -369,6 +369,8 @@ import {
 } from "./teamCatalog.ts";
 import { TeamCatalogProposal, TeamCatalogProposeInput } from "./teamProjectLinks.ts";
 import {
+  BoardCommentInput,
+  BoardCommentResult,
   BoardConnectInput,
   BoardConnection,
   BoardConnectionSubscribeInput,
@@ -586,6 +588,7 @@ export const WS_METHODS = {
   boardSubscribe: "board.subscribe",
   boardRefresh: "board.refresh",
   boardIssueDetail: "board.issueDetail",
+  boardComment: "board.comment",
   boardSubscribeConnection: "board.subscribeConnection",
   boardConnect: "board.connect",
   boardDisconnect: "board.disconnect",
@@ -1103,6 +1106,12 @@ const WsBoardRefreshRpc = Rpc.make(WS_METHODS.boardRefresh, {
 const WsBoardIssueDetailRpc = Rpc.make(WS_METHODS.boardIssueDetail, {
   payload: BoardIssueDetailInput,
   success: BoardIssueDetail,
+  error: Schema.Union([BoardError, EnvironmentAuthorizationError]),
+});
+
+const WsBoardCommentRpc = Rpc.make(WS_METHODS.boardComment, {
+  payload: BoardCommentInput,
+  success: BoardCommentResult,
   error: Schema.Union([BoardError, EnvironmentAuthorizationError]),
 });
 
@@ -2281,6 +2290,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsBoardSubscribeRpc,
   WsBoardRefreshRpc,
   WsBoardIssueDetailRpc,
+  WsBoardCommentRpc,
   WsBoardSubscribeConnectionRpc,
   WsBoardConnectRpc,
   WsBoardDisconnectRpc,

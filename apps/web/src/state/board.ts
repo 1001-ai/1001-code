@@ -12,6 +12,7 @@ import {
   type ProjectId,
   WS_METHODS,
 } from "@t3tools/contracts";
+import * as Effect from "effect/Effect";
 import { AsyncResult, Atom } from "effect/reactivity";
 
 import { connectionAtomRuntime } from "../connection/runtime";
@@ -63,6 +64,21 @@ const boardIssueDetailQuery = createEnvironmentRpcQueryAtomFamily(connectionAtom
     boardIssueUpdatedAt(JSON.stringify([environmentId, input.projectId, input.issueId])),
 });
 
+/** Posts a comment on the issue and re-reads its detail, so the comment shows. */
+export const boardComment = createEnvironmentRpcCommand(connectionAtomRuntime, {
+  label: "environment-data:board:comment",
+  tag: WS_METHODS.boardComment,
+  onSuccess: ({ environmentId, input }, registry) =>
+    Effect.sync(() =>
+      registry.refresh(
+        boardIssueDetailQuery({
+          environmentId,
+          input: { projectId: input.projectId, issueId: input.issueId },
+        }),
+      ),
+    ),
+});
+
 export const boardConnect = createEnvironmentRpcCommand(connectionAtomRuntime, {
   label: "environment-data:board:connect",
   tag: WS_METHODS.boardConnect,
@@ -81,7 +97,7 @@ const EMPTY_ISSUE_DETAIL_ATOM = Atom.make(AsyncResult.initial<BoardIssueDetail, 
   Atom.withLabel("web-board-issue-detail:empty"),
 );
 
-/** An issue's description and creator, read from Linear while the issue is open. */
+/** An issue's description, creator and comments, read from Linear while the issue is open. */
 export function useBoardIssueDetail(
   environmentId: EnvironmentId,
   projectId: ProjectId | null,

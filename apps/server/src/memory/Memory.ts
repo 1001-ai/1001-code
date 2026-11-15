@@ -90,7 +90,7 @@ const MAX_PROPOSALS_PER_PROJECT = 200;
 const threadLinkInstructions = (link: string): string =>
   [
     "<thread_link>",
-    `This thread's link is ${link}. When you work on an issue on this project's Linear board, add this link to that issue once, as a link attachment (not only in a comment), so the board and teammates' agents can find this thread. Include it in the "agent:" comments you write there too.`,
+    `This thread's link is ${link}. When you file an issue on this project's Linear board or work on one, add this link to that issue once, as a link attachment (not only in a comment), so the board and teammates' agents can find this thread. Include it in the "agent:" comments you write there too.`,
     "</thread_link>",
   ].join("\n");
 
