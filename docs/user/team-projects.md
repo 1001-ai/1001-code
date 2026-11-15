@@ -130,6 +130,13 @@ issues closed more than a week ago.
 Each environment reads Linear as the person who signed in on it, so sign in on each machine you
 use the board from.
 
+When an agent's message links to an issue of the board's Linear team, or writes its id such as
+`COD-60`, selecting it opens the issue on the board instead of in Linear. An issue the board does
+not show, such as one in another Linear project of the team, gets a note with **Open in Linear**.
+Links to other teams' issues, links you select while holding a modifier key, and every link while
+you are signed out of Linear open Linear as before. Ids in code are left as they are. The mobile app
+has no board.
+
 ### Set up Linear sign-in
 
 Sign-in needs a Linear OAuth application, created once for the team by a Linear workspace

@@ -1,8 +1,8 @@
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type {
   BoardColumn,
   BoardIssue,
   BoardSnapshot,
-  BoardWorkflowState,
   EnvironmentId,
   ProjectId,
   ScopedThreadRef,
@@ -19,7 +19,7 @@ import { useServerConfigs } from "~/state/entities";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { cn } from "~/lib/utils";
 import { PullRequestLabelChip } from "../pullRequest/pullRequestPresentation";
-import { Alert, AlertDescription } from "../ui/alert";
+import { Alert, AlertAction, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "../ui/empty";
 import { RefreshIcon } from "../ui/refresh-icon";
@@ -34,6 +34,8 @@ import {
   filterBoardColumns,
 } from "./board.logic";
 import { BoardIssueDetail } from "./BoardIssueDetail";
+import { boardLinearIssueUrl, findBoardIssue } from "./boardIssueRefs.logic";
+import { type BoardOpenIssue, useBoardOpenIssueStore } from "./boardOpenIssueStore";
 import { Assignee, BoardThreadChip, PriorityGlyph, PullRequestBadge, StateDot } from "./boardParts";
 
 type ReadyBoard = Extract<BoardSnapshot, { status: "ready" }>;
@@ -56,7 +58,14 @@ export default function BoardPanel(props: {
   const [refreshing, setRefreshing] = useState(false);
   const [view, setView] = useState<BoardView>("board");
   const [filter, setFilter] = useState<BoardFilter>("all");
-  const [openIssueId, setOpenIssueId] = useState<string | null>(null);
+  const threadKey = scopedThreadKey(props.threadRef);
+  const openIssue = useBoardOpenIssueStore((state) => state.byThreadKey[threadKey] ?? null);
+  const setOpenIssue = (issue: BoardOpenIssue | null) =>
+    useBoardOpenIssueStore.getState().setOpenIssue(threadKey, issue);
+  const open =
+    openIssue !== null && snapshot?.status === "ready"
+      ? findBoardIssue(snapshot.board.columns, openIssue.issue)
+      : null;
   const panelRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const openLink = useOpenLink(props.threadRef);
@@ -76,12 +85,12 @@ export default function BoardPanel(props: {
   const focusIn = (selector: string) =>
     panelRef.current?.querySelector<HTMLElement>(selector)?.focus();
   const onOpenIssue = (issueId: string) => {
-    flushSync(() => setOpenIssueId(issueId));
+    flushSync(() => setOpenIssue({ issue: issueId, fromOutside: false, linearUrl: null }));
     focusIn("[data-board-back]");
   };
   const onBack = () => {
-    const issueId = openIssueId;
-    flushSync(() => setOpenIssueId(null));
+    const issueId = open?.issue.id ?? null;
+    flushSync(() => setOpenIssue(null));
     if (issueId !== null) focusIn(`[data-board-issue="${CSS.escape(issueId)}"]`);
   };
   const card: CardContext = {
@@ -151,8 +160,12 @@ export default function BoardPanel(props: {
         </BoardMessage>
       );
     case "ready": {
-      const open = openIssueId === null ? null : findIssue(snapshot.board.columns, openIssueId);
-      if (openIssueId !== null && open === null) setOpenIssueId(null);
+      // An issue opened from the board that left it just closes; one opened from a chat link says so.
+      const missing = openIssue?.fromOutside === true && open === null ? openIssue : null;
+      const missingLinearUrl =
+        missing === null
+          ? null
+          : (missing.linearUrl ?? boardLinearIssueUrl(snapshot.board.columns, missing.issue));
       return (
         <div ref={panelRef} className="flex min-h-0 flex-1 flex-col">
           {open !== null ? (
@@ -166,6 +179,28 @@ export default function BoardPanel(props: {
               onBack={onBack}
               onOpenUrl={onOpenUrl}
             />
+          ) : null}
+          {missing !== null ? (
+            <div className="px-3 pt-2">
+              <Alert variant="info">
+                <AlertDescription>{missing.issue} is not on this board.</AlertDescription>
+                <AlertAction>
+                  {missingLinearUrl !== null ? (
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      onClick={(event) => onOpenUrl(missingLinearUrl, event)}
+                    >
+                      <ExternalLinkIcon />
+                      Open in Linear
+                    </Button>
+                  ) : null}
+                  <Button size="xs" variant="ghost" onClick={() => setOpenIssue(null)}>
+                    Dismiss
+                  </Button>
+                </AlertAction>
+              </Alert>
+            </div>
           ) : null}
           <ReadyBoardView
             snapshot={snapshot}
@@ -182,17 +217,6 @@ export default function BoardPanel(props: {
       );
     }
   }
-}
-
-function findIssue(
-  columns: ReadonlyArray<BoardColumn>,
-  issueId: string,
-): { readonly issue: BoardIssue; readonly state: BoardWorkflowState } | null {
-  for (const column of columns) {
-    const issue = column.issues.find((entry) => entry.id === issueId);
-    if (issue !== undefined) return { issue, state: column.state };
-  }
-  return null;
 }
 
 function failureTitle(reason: Extract<BoardSnapshot, { status: "failed" }>["failure"]["reason"]) {
