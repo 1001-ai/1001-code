@@ -202,6 +202,7 @@ import * as ThreadCost from "./usage/ThreadCost.ts";
 import * as TeamCatalog from "./teamCatalog/TeamCatalog.ts";
 import * as Board from "./board/Board.ts";
 import * as LinearInbox from "./board/LinearInbox.ts";
+import * as LinearWriteWatch from "./board/LinearWriteWatch.ts";
 import * as LiveAppCheckout from "./liveAppCheckout.ts";
 import * as MemoryLayer from "./memory/layer.ts";
 import * as BoardHttp from "./board/http.ts";
@@ -695,7 +696,10 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   ReplayMarkers.layer,
   ThreadCost.layer,
   TeamCatalog.layer,
-  LinearInbox.layer.pipe(Layer.provideMerge(Board.layer), Layer.provide(TeamCatalog.layer)),
+  Layer.merge(LinearInbox.layer, LinearWriteWatch.layer).pipe(
+    Layer.provideMerge(Board.layer),
+    Layer.provide(TeamCatalog.layer),
+  ),
   LiveAppCheckout.layer,
   Layer.effectDiscard(ProjectSettingsOverrideSweep.sweep),
 ).pipe(

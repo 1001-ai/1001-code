@@ -78,9 +78,9 @@ import {
 
 /**
  * A team project's Linear board, read as the person who signed in to Linear on this environment.
- * The OAuth tokens live in the server secret store and never reach clients. Reads happen when a
- * client opens or refreshes a board and every 30 seconds while one is open. `LinearInbox` reads
- * new comments through `session` while someone is signed in.
+ * The OAuth tokens live in the server secret store and never reach clients. Open boards are read
+ * every 30 seconds and soon after an agent changes Linear. `LinearInbox` reads comments through
+ * `session`.
  */
 export class Board extends Context.Service<
   Board,
@@ -106,6 +106,11 @@ export class Board extends Context.Service<
     /** The board now, then again when it is refreshed, changes in Linear, or the sign-in changes. */
     readonly changes: (projectId: ProjectId) => Stream.Stream<BoardSnapshot>;
     readonly refresh: (projectId: ProjectId) => Effect.Effect<BoardSnapshot>;
+    /**
+     * Reads every open board from Linear again in a second, as its poll would; calls in that
+     * second share the read.
+     */
+    readonly refreshOpen: Effect.Effect<void>;
     /** What a card leaves out of an issue on the project's board, read from Linear now. */
     readonly issueDetail: (
       input: BoardIssueDetailInput,
@@ -144,6 +149,8 @@ const DEV_LINEAR_API_URL_ENV = "T3CODE_DEV_LINEAR_API_URL";
 const FRESH_FOR_MS = 30_000;
 /** How often an open board is read again from Linear. */
 const POLL_INTERVAL = Duration.seconds(30);
+/** How long `refreshOpen` waits, so a burst of agent writes costs one read per open board. */
+const OPEN_REFRESH_DELAY = Duration.seconds(1);
 /** How long polling waits after a rate limit that names no retry time. */
 const RATE_LIMIT_BACKOFF = Duration.minutes(5);
 const REQUEST_TIMEOUT = "20 seconds";
@@ -727,20 +734,21 @@ const make = Effect.gen(function* () {
    * served, normally from the cache; later ones skip it, so a poll never republishes a cached read
    * over a newer warning. Unlike `refresh`, a poll does not fetch the team catalog.
    */
-  const poll = (projectId: ProjectId, state: Poll) => {
-    const step = Effect.fn("Board.poll")(function* () {
-      if ((yield* Clock.currentTimeMillis) < state.quietUntilMs) return;
-      const generation = credentialGeneration;
-      const snapshot = yield* read(projectId, { refresh: state.shown !== null });
-      const fingerprint = pollFingerprint(snapshot);
-      if (state.shown !== null && fingerprint !== state.shown) {
-        yield* publish(projectId, snapshot, generation, state);
-        return;
-      }
-      state.shown = fingerprint;
-      state.quietUntilMs = quietUntil(snapshot, yield* Clock.currentTimeMillis);
-    });
-    return step().pipe(
+  const pollStep = Effect.fn("Board.poll")(function* (projectId: ProjectId, state: Poll) {
+    if ((yield* Clock.currentTimeMillis) < state.quietUntilMs) return;
+    const generation = credentialGeneration;
+    const snapshot = yield* read(projectId, { refresh: state.shown !== null });
+    const fingerprint = pollFingerprint(snapshot);
+    if (state.shown !== null && fingerprint !== state.shown) {
+      yield* publish(projectId, snapshot, generation, state);
+      return;
+    }
+    state.shown = fingerprint;
+    state.quietUntilMs = quietUntil(snapshot, yield* Clock.currentTimeMillis);
+  });
+
+  const poll = (projectId: ProjectId, state: Poll) =>
+    pollStep(projectId, state).pipe(
       Effect.repeat(
         Schedule.spaced(POLL_INTERVAL).pipe(
           Schedule.modifyDelay(({ duration }) =>
@@ -752,7 +760,28 @@ const make = Effect.gen(function* () {
       ),
       Effect.asVoid,
     );
-  };
+
+  // Cleared before the reads, so a write made while they run gets a read after it.
+  let openRefreshQueued = false;
+  const refreshOpen: Board["Service"]["refreshOpen"] = Effect.suspend(() => {
+    if (openRefreshQueued) return Effect.void;
+    openRefreshQueued = true;
+    return Effect.sleep(OPEN_REFRESH_DELAY).pipe(
+      Effect.andThen(
+        Effect.suspend(() => {
+          openRefreshQueued = false;
+          return Effect.forEach(
+            [...polls],
+            ([projectId, state]) =>
+              polls.get(projectId) === state ? pollStep(projectId, state) : Effect.void,
+            { discard: true },
+          );
+        }),
+      ),
+      Effect.forkIn(layerScope),
+      Effect.asVoid,
+    );
+  }).pipe(Effect.withSpan("Board.refreshOpen"));
 
   const openPoll = (projectId: ProjectId) =>
     pollsLock.withPermits(1)(
@@ -998,6 +1027,7 @@ const make = Effect.gen(function* () {
     read,
     changes,
     refresh,
+    refreshOpen,
     issueDetail,
     comment,
     session: Effect.gen(function* () {
