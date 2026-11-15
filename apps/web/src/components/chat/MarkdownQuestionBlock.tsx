@@ -133,6 +133,7 @@ export function QuestionCard({
   const send = (next: string) => {
     if (sendAnswer?.(question.id, next)) {
       setSent({ answer: next.trim(), after: answer?.messageId ?? null });
+      setChangingFrom(null);
     }
   };
   const submitFreeText = (event: FormEvent<HTMLFormElement>) => {
@@ -234,9 +235,14 @@ export function QuestionCard({
           )}
         </div>
       ) : null}
-      {showControls && sendingAnswer !== null ? (
-        <div className="min-w-0 text-muted-foreground text-sm [overflow-wrap:anywhere]">
-          Sending: {sendingAnswer}
+      {sendingAnswer !== null ? (
+        // A send that never lands (a discarded queued message) must not lock the card.
+        <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-muted-foreground text-sm">
+          <span className="min-w-0 [overflow-wrap:anywhere]">Sending: {sendingAnswer}</span>
+          <span aria-hidden>·</span>
+          <QuietAction aria-label={`Answer ${question.id} again`} onClick={() => setSent(null)}>
+            Answer again
+          </QuietAction>
         </div>
       ) : showControls ? (
         <>
