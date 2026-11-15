@@ -88,7 +88,7 @@ const NOT_IN_CATALOG = "This project is not in the team catalog.";
 const MAX_PROPOSALS_PER_PROJECT = 200;
 
 /** The board reads a thread from an issue's link attachments, so a comment alone is not enough. */
-const boardInstructions = (linear: TeamCatalogLinear, link: string): string => {
+export const boardInstructions = (linear: TeamCatalogLinear, link: string): string => {
   const board =
     linear.project === undefined
       ? `the ${linear.team} team in Linear`
@@ -96,6 +96,7 @@ const boardInstructions = (linear: TeamCatalogLinear, link: string): string => {
   return [
     "<board>",
     `This project's board is ${board}. Use it for every issue you read, file or update, unless the user names another board.`,
+    "Once the requirements are clear and you are about to make your first change (a file edit, a branch or a worktree), the work needs an issue on this board. Look for one that covers it. If none does, file one before that first change. Assign it to the person you work for and move it to In Progress. Even a small fix gets an issue. Answering questions, reading code and planning need none.",
     `This thread's link is ${link}. When you file an issue on this board or work on one, add this link to that issue once, as a link attachment (not only in a comment), so the board and teammates' agents can find this thread. Include it in the "agent:" comments you write there too.`,
     "</board>",
   ].join("\n");
