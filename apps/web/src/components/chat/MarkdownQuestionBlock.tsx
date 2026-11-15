@@ -7,7 +7,6 @@ import {
   use,
   useId,
   useRef,
-  useState,
   type ComponentProps,
   type FormEvent,
   type KeyboardEvent,
@@ -52,7 +51,7 @@ const questionAnswerAtomFamily = Atom.family((key: string) => {
   }).pipe(Atom.setIdleTTL(0));
 });
 
-// Kept alive so typing and an open "Change answer" survive the card remounting when streaming ends.
+// Kept alive so typing, an open "Change answer" and a send in flight survive the card remounting when streaming ends.
 const questionFreeTextAtomFamily = Atom.family((key: string) =>
   Atom.make("").pipe(Atom.keepAlive, Atom.withLabel(`question-free-text:${key}`)),
 );
@@ -60,6 +59,14 @@ const questionChangingFromAtomFamily = Atom.family((key: string) =>
   Atom.make<string | null>(null).pipe(
     Atom.keepAlive,
     Atom.withLabel(`question-changing-from:${key}`),
+  ),
+);
+// What the card sent, shown until a failed send puts it back in the draft or an answer newer
+// than `after` arrives.
+const questionSentAtomFamily = Atom.family((key: string) =>
+  Atom.make<{ answer: string; after: string | null } | null>(null).pipe(
+    Atom.keepAlive,
+    Atom.withLabel(`question-sent:${key}`),
   ),
 );
 
@@ -111,9 +118,8 @@ export function QuestionCard({
   const setFreeText = useAtomSet(questionFreeTextAtomFamily(cardKey));
   const answer = useAtomValue(questionAnswerAtomFamily(cardKey));
   const sendAnswer = use(QuestionAnswerSendContext);
-  // What the card sent, shown until a failed send puts it back in the draft or an answer newer
-  // than `after` arrives.
-  const [sent, setSent] = useState<{ answer: string; after: string | null } | null>(null);
+  const sent = useAtomValue(questionSentAtomFamily(cardKey));
+  const setSent = useAtomSet(questionSentAtomFamily(cardKey));
   const draftAnswer = useComposerDraftStore((store) => {
     const prompt = store.getComposerDraft(threadRef)?.prompt;
     return prompt ? readAnswerLine(prompt, question.id) : null;
