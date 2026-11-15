@@ -477,7 +477,7 @@ export function ExchangeReLines({ rowId, lines }: { rowId: string; lines: Readon
       onClick={() => ctx.open({ rowId, control: "re-line" })}
       className={cn(
         className,
-        "cursor-pointer rounded-sm transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring",
+        "cursor-pointer rounded-sm underline-offset-2 transition-colors hover:text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-ring",
       )}
     >
       {content}
