@@ -473,18 +473,19 @@ export const make = Effect.gen(function* () {
       const decrypted = yield* decodeSecretBytes(catalogPath, document.value.encryptedCatalog).pipe(
         Effect.flatMap((encryptedCatalog) =>
           safeStorage.decryptString(encryptedCatalog).pipe(
-            Effect.mapError(
-              (cause) =>
-                new DesktopConnectionCatalogStoreProtectionError({
-                  operation: "decrypt-catalog",
+            Effect.asSome,
+            // A catalog sealed under another Keychain key reads as missing; the next save replaces it.
+            Effect.catchTags({
+              ElectronSafeStorageDecryptError: (error) =>
+                Effect.logWarning("Ignoring a connection catalog this app cannot decrypt.", {
                   catalogPath,
-                  cause,
-                }),
-            ),
+                  error: error.message,
+                }).pipe(Effect.as(Option.none<string>())),
+            }),
           ),
         ),
       );
-      return Option.some(decrypted);
+      return decrypted;
     }).pipe(Effect.withSpan("desktop.connectionCatalogStore.get")),
     set: Effect.fn("desktop.connectionCatalogStore.set")(function* (catalog) {
       if (!(yield* encryptionAvailable)) {
