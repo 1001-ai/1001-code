@@ -83,14 +83,17 @@ export function MarkdownQuestionQuote({
   return <QuestionCard question={question} threadRef={threadRef} askedInItemId={askedInItemId} />;
 }
 
-function QuestionCard({
+export function QuestionCard({
   question,
   threadRef,
   askedInItemId,
+  embedded = false,
 }: {
   readonly question: QuestionBlock;
   readonly threadRef: ScopedThreadRef;
   readonly askedInItemId: string;
+  /** A row inside a box that already draws the border, as on the Questions page. */
+  readonly embedded?: boolean;
 }) {
   const promptId = useId();
   const freeTextHintId = useId();
@@ -155,7 +158,10 @@ function QuestionCard({
     <section
       aria-labelledby={promptId}
       data-chat-markdown-question={question.id}
-      className="my-4 flex w-full min-w-0 flex-col gap-1 rounded-xl border border-border/70 bg-card px-4 py-3"
+      className={cn(
+        "flex w-full min-w-0 flex-col gap-1 px-4 py-3",
+        !embedded && "my-4 rounded-xl border border-border/70 bg-card",
+      )}
     >
       <div className="min-w-0 text-sm [overflow-wrap:anywhere]">
         <span className="me-2 font-mono text-2xs text-muted-foreground">{question.id}</span>
