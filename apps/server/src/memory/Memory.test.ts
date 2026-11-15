@@ -242,12 +242,13 @@ it.effect("names a project's Linear board and the thread's link, even without me
       return { ...base, projects: [{ ...entry, project: { ...entry.project, linear } }] };
     };
     const threadLink =
-      "<board>\nThis project's board is the COD team in Linear. Use it for every issue you read, file or update, unless the user names another board.\nThis thread's link is t3-thread://v2/env-1/thread-1.";
+      "<board>\nThis project's board is the COD team in Linear. Use it for every issue you read, file or update, unless the user names another board.\nOnce the requirements are clear and you are about to make your first change (a file edit, a branch or a worktree), the work needs an issue on this board.";
 
     const memory = yield* makeMemory({ catalog: boardCatalog() }).build;
     const view = yield* memory.read(PROJECT_ID);
     const block = yield* memory.instructions(PROJECT_ID, THREAD_ID);
     expect(block).toContain(`${view.block}\n\n${threadLink}`);
+    expect(block).toContain("need none.\nThis thread's link is t3-thread://v2/env-1/thread-1.");
     expect(view.block).not.toContain("<board>");
 
     const empty = yield* makeMemory({

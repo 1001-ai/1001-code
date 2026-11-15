@@ -289,8 +289,22 @@ Passes per case, main's runtime text (3 samples) → this branch's "Link every o
 
 After the change, the first reference to a file is an absolute link. The remaining failures come from two other kinds of span. Some repeat the file later as relative inline code (Sonnet's other-checkout failures). Others quote values rather than cite files, such as `main` set to `src/index.ts` or the import `./ws`. Chat still turns those spans into pills.
 
+## Board cases
+
+`cases/board.ndjson` checks when an agent files an issue on the project's Linear board. Asked for a two-line fix, a real agent branched and edited files first and filed the issue only after the user complained. `setup.board` names the board, as the team catalog does: the thread's system text gets T3's `<board>` block (`boardInstructions` in `apps/server/src/memory/Memory.ts`), and ToolSearch can load a stand-in for Linear's MCP server (`board.ts`), whose results come from the case's `mocks`. The cases run on Claude only.
+
+| Case                         | Kind    | What it checks                                                           |
+| ---------------------------- | ------- | ------------------------------------------------------------------------ |
+| board-small-fix-files-issue  | bad     | No issue covers the fix, so the agent files one before its first `Edit`. |
+| board-question-files-nothing | control | A question about the code files no issue and edits nothing.              |
+
+```sh
+pnpm mcp-tool-use --cases mcp-tool-use/cases/board.ndjson --model claude-haiku-5-5 --samples 3 --out runs/board
+```
+
 ## Where T3's text lives
 
+- `apps/server/src/memory/Memory.ts` (`boardInstructions`, the `<board>` block)
 - `packages/provider-core/src/server/runtimeInstructions.ts`
 - `packages/provider-core/src/server/orchestrationInstructions.ts`
 - `apps/server/src/provider/CodexDeveloperInstructions.ts`
