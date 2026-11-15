@@ -140,12 +140,20 @@ const decodeCachedSources = Schema.decodeUnknownOption(
   Schema.Struct({ sources: Schema.Record(Schema.String, CachedSource) }),
 );
 
+export interface AccountRecords {
+  readonly records: ReadonlyArray<UsageRecord>;
+  /** A login's history could be read, even if it holds no records yet. */
+  readonly available: boolean;
+  readonly refreshing: boolean;
+}
+
 export class UsageService extends Context.Service<
   UsageService,
   {
     readonly readSummary: (input: UsageSummaryInput) => Effect.Effect<UsageSummary, UsageReadError>;
     readonly refreshRates: Effect.Effect<UsagePricing>;
     readonly readRates: Effect.Effect<RateTable>;
+    readonly readAccountRecords: (provider: UsageProviderKind) => Effect.Effect<AccountRecords>;
   }
 >()("t3/usage/UsageService") {}
 
@@ -1001,7 +1009,43 @@ export const make = Effect.gen(function* () {
     return rates;
   });
 
-  return { readSummary, refreshRates, awaitPersisted, readRates } as const;
+  // Like readRates: the account history in hand, while a stale copy refreshes behind.
+  const readAccountRecords = Effect.fn("UsageService.readAccountRecords")(
+    function* (provider: UsageProviderKind) {
+      const settings = yield* readSettings;
+      const retentionCutoffMs =
+        (yield* Clock.currentTimeMillis) - CACHE_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+      const sources = yield* Effect.forEach(
+        scanReaders.filter(({ reader }) => reader.provider === provider),
+        ({ driver, reader }) =>
+          usageInstances(driver, settings).pipe(
+            Effect.flatMap((instances) =>
+              reader.scan({
+                instances,
+                settings,
+                windowStartMs: retentionCutoffMs,
+                retentionCutoffMs,
+                awaitRefresh: false,
+              }),
+            ),
+            Effect.provideContext(readerContext),
+          ),
+      );
+      const flat = sources.flat();
+      return {
+        records: flat.flatMap((source) => source.files?.flatMap((file) => file.records) ?? []),
+        available: flat.some((source) => source.files !== null),
+        refreshing: flat.some((source) => source.refreshing === true),
+      } satisfies AccountRecords;
+    },
+    Effect.orElseSucceed((): AccountRecords => ({
+      records: [],
+      available: false,
+      refreshing: false,
+    })),
+  );
+
+  return { readSummary, refreshRates, awaitPersisted, readRates, readAccountRecords } as const;
 });
 
 export const layer = Layer.effect(UsageService, make);

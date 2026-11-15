@@ -40,6 +40,23 @@ const threadCostQuery = createEnvironmentRpcQueryAtomFamily(connectionAtomRuntim
     costSignalAtom(JSON.stringify([environmentId, input.threadId])),
 });
 
+// Cursor's dashboard refreshes about once a minute and lands a turn's billing within one or two.
+const BILLING_RECHECK_MS = 30_000;
+
+// Asks again while the server says billing may still replace estimated turns; no turn ends meanwhile.
+const threadCostAtom = Atom.family((key: string) => {
+  const [environmentId, threadId] = JSON.parse(key) as [EnvironmentId, ThreadId];
+  const query = threadCostQuery({ environmentId, input: { threadId } });
+  return Atom.make((get) => {
+    const result = get(query);
+    if (result._tag === "Success" && !result.waiting && result.value.billingPending === true) {
+      const timer = setTimeout(() => get.refresh(query), BILLING_RECHECK_MS);
+      get.addFinalizer(() => clearTimeout(timer));
+    }
+    return result;
+  }).pipe(Atom.setIdleTTL(0), Atom.withLabel(`web-thread-cost:${key}`));
+});
+
 const EMPTY_COST_ATOM = Atom.make(AsyncResult.initial<ThreadCostEstimate, never>()).pipe(
   Atom.withLabel("web-thread-cost:empty"),
 );
@@ -50,7 +67,7 @@ export function useThreadCostEstimate(
   threadId: ThreadId | null,
 ): ThreadCostEstimate | null {
   const result = useAtomValue(
-    threadId === null ? EMPTY_COST_ATOM : threadCostQuery({ environmentId, input: { threadId } }),
+    threadId === null ? EMPTY_COST_ATOM : threadCostAtom(JSON.stringify([environmentId, threadId])),
   );
   return AsyncResult.getOrElse(result, () => null);
 }
