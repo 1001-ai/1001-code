@@ -22,11 +22,15 @@ const issue = (overrides: Partial<LinearIssue> & Pick<LinearIssue, "id">): Linea
   identifier: `ENG-${overrides.id}`,
   title: `Issue ${overrides.id}`,
   url: `https://linear.app/acme/issue/ENG-${overrides.id}`,
+  priority: 0,
+  createdAt: "2026-11-13T10:00:00.000Z",
+  startedAt: null,
   updatedAt: "2026-11-14T10:00:00.000Z",
   sortOrder: 0,
   state: { id: "todo" },
   assignee: null,
   labels: { nodes: [] },
+  threadLinks: { nodes: [] },
   attachments: { nodes: [] },
   ...overrides,
 });
@@ -53,20 +57,38 @@ describe("boardColumns", () => {
     expect(columns.flatMap((column) => column.issues)).toHaveLength(3);
   });
 
-  it("maps assignees, labels, pull requests and thread links", () => {
+  it("maps assignees, labels, priority, pull requests and thread links", () => {
+    const dana = { id: "u1", name: "Dana Kim", displayName: "dana", avatarUrl: null, isMe: true };
+    const ana = { id: "u2", name: "Ana Ruiz", displayName: "", avatarUrl: "a.png", isMe: false };
     const [todo] = boardColumns(
       [states[2]!],
       [
         issue({
           id: "7",
-          assignee: {
-            id: "u1",
-            name: "Dana Kim",
-            displayName: "dana",
-            avatarUrl: null,
-            isMe: true,
-          },
+          priority: 2,
+          startedAt: "2026-11-14T08:00:00.000Z",
+          assignee: dana,
           labels: { nodes: [{ id: "l1", name: "Bug", color: "#eb5757" }] },
+          threadLinks: {
+            nodes: [
+              {
+                url: "t3-thread://v2/env-1/thread-9",
+                createdAt: "2026-11-14T07:00:00.000Z",
+                creator: dana,
+              },
+              {
+                url: "https://app.t3.codes/threads/env-2/thread-3",
+                createdAt: "2026-11-14T09:00:00.000Z",
+                creator: ana,
+              },
+              {
+                url: "https://app.t3.codes/threads/env-1/thread-9",
+                createdAt: "2026-11-14T08:00:00.000Z",
+                creator: null,
+              },
+              { url: "t3-thread://v2/env-1", createdAt: "2026-11-14T10:00:00.000Z", creator: null },
+            ],
+          },
           attachments: {
             nodes: [
               {
@@ -76,11 +98,6 @@ describe("boardColumns", () => {
               },
               { url: "https://github.com/acme/web/issues/9", sourceType: "github", metadata: {} },
               { url: "https://example.com/acme/web/pull/3", sourceType: null, metadata: null },
-              {
-                url: "https://app.t3.codes/threads/env-1/thread-9",
-                sourceType: "api",
-                metadata: {},
-              },
             ],
           },
         }),
@@ -94,6 +111,9 @@ describe("boardColumns", () => {
       stateId: "todo",
       assignee: { id: "u1", name: "dana", avatarUrl: null, isMe: true },
       labels: [{ id: "l1", name: "Bug", color: "#eb5757" }],
+      priority: 2,
+      createdAt: "2026-11-13T10:00:00.000Z",
+      startedAt: "2026-11-14T08:00:00.000Z",
       updatedAt: "2026-11-14T10:00:00.000Z",
       pullRequests: [
         {
@@ -104,7 +124,20 @@ describe("boardColumns", () => {
           linearStatus: "merged",
         },
       ],
-      thread: { environmentId: "env-1", threadId: "thread-9" },
+      threads: [
+        {
+          environmentId: "env-2",
+          threadId: "thread-3",
+          linkedAt: "2026-11-14T09:00:00.000Z",
+          linkedBy: { id: "u2", name: "Ana Ruiz", avatarUrl: "a.png", isMe: false },
+        },
+        {
+          environmentId: "env-1",
+          threadId: "thread-9",
+          linkedAt: "2026-11-14T08:00:00.000Z",
+          linkedBy: null,
+        },
+      ],
     });
   });
 });

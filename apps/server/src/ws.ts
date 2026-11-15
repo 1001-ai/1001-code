@@ -2711,6 +2711,7 @@ export const layerWsRpc = (
         [WS_METHODS.teamCatalogSetSource]: (input) => teamCatalog.setSource(input.source),
         [WS_METHODS.boardSubscribe]: (input) => board.changes(input.projectId),
         [WS_METHODS.boardRefresh]: (input) => board.refresh(input.projectId),
+        [WS_METHODS.boardIssueDetail]: (input) => board.issueDetail(input),
         [WS_METHODS.boardSubscribeConnection]: () => board.connectionChanges,
         [WS_METHODS.boardConnect]: (input) => board.startSignIn(input.callbackOrigin),
         [WS_METHODS.boardDisconnect]: () => board.disconnect,

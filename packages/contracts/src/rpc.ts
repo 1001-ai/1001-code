@@ -374,6 +374,8 @@ import {
   BoardConnectionSubscribeInput,
   BoardDisconnectInput,
   BoardError,
+  BoardIssueDetail,
+  BoardIssueDetailInput,
   BoardProjectInput,
   BoardSignIn,
   BoardSnapshot,
@@ -583,6 +585,7 @@ export const WS_METHODS = {
   teamCatalogSetSource: "teamCatalog.setSource",
   boardSubscribe: "board.subscribe",
   boardRefresh: "board.refresh",
+  boardIssueDetail: "board.issueDetail",
   boardSubscribeConnection: "board.subscribeConnection",
   boardConnect: "board.connect",
   boardDisconnect: "board.disconnect",
@@ -1095,6 +1098,12 @@ const WsBoardRefreshRpc = Rpc.make(WS_METHODS.boardRefresh, {
   payload: BoardProjectInput,
   success: BoardSnapshot,
   error: EnvironmentAuthorizationError,
+});
+
+const WsBoardIssueDetailRpc = Rpc.make(WS_METHODS.boardIssueDetail, {
+  payload: BoardIssueDetailInput,
+  success: BoardIssueDetail,
+  error: Schema.Union([BoardError, EnvironmentAuthorizationError]),
 });
 
 const WsBoardSubscribeConnectionRpc = Rpc.make(WS_METHODS.boardSubscribeConnection, {
@@ -2271,6 +2280,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsTeamCatalogSetSourceRpc,
   WsBoardSubscribeRpc,
   WsBoardRefreshRpc,
+  WsBoardIssueDetailRpc,
   WsBoardSubscribeConnectionRpc,
   WsBoardConnectRpc,
   WsBoardDisconnectRpc,

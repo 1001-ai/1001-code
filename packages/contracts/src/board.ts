@@ -45,6 +45,8 @@ export const BoardFailureReason = Schema.Literals([
   "rate-limited",
   "unreachable",
   "invalid-response",
+  /** The issue is not on the project's board. */
+  "issue-not-found",
 ]);
 export type BoardFailureReason = typeof BoardFailureReason.Type;
 
@@ -115,8 +117,15 @@ export type BoardPullRequest = typeof BoardPullRequest.Type;
 export const BoardThreadLink = Schema.Struct({
   environmentId: EnvironmentId,
   threadId: ThreadId,
+  linkedAt: IsoDateTime,
+  /** The Linear user whose sign-in added the link; null when Linear records none. */
+  linkedBy: Schema.NullOr(BoardUser),
 });
 export type BoardThreadLink = typeof BoardThreadLink.Type;
+
+/** Linear's priority: 0 none, 1 urgent, 2 high, 3 medium, 4 low. */
+export const BoardPriority = Schema.Literals([0, 1, 2, 3, 4]);
+export type BoardPriority = typeof BoardPriority.Type;
 
 export const BoardIssue = Schema.Struct({
   id: TrimmedNonEmptyString,
@@ -126,9 +135,14 @@ export const BoardIssue = Schema.Struct({
   stateId: TrimmedNonEmptyString,
   assignee: Schema.NullOr(BoardUser),
   labels: Schema.Array(BoardLabel),
+  priority: BoardPriority,
+  createdAt: IsoDateTime,
+  /** When the issue last moved into a started state; null once moved back. */
+  startedAt: Schema.NullOr(IsoDateTime),
   updatedAt: IsoDateTime,
   pullRequests: Schema.Array(BoardPullRequest),
-  thread: Schema.NullOr(BoardThreadLink),
+  /** Newest link first, one per thread. */
+  threads: Schema.Array(BoardThreadLink),
 });
 export type BoardIssue = typeof BoardIssue.Type;
 
@@ -181,6 +195,19 @@ export type BoardSnapshot = typeof BoardSnapshot.Type;
 
 export const BoardProjectInput = Schema.Struct({ projectId: ProjectId });
 export type BoardProjectInput = typeof BoardProjectInput.Type;
+
+export const BoardIssueDetailInput = Schema.Struct({
+  projectId: ProjectId,
+  issueId: TrimmedNonEmptyString,
+});
+export type BoardIssueDetailInput = typeof BoardIssueDetailInput.Type;
+
+/** What a card leaves out, read from Linear when the issue is opened. */
+export const BoardIssueDetail = Schema.Struct({
+  description: Schema.NullOr(Schema.String),
+  creator: Schema.NullOr(BoardUser),
+});
+export type BoardIssueDetail = typeof BoardIssueDetail.Type;
 
 export const BoardConnectionSubscribeInput = Schema.Struct({});
 
