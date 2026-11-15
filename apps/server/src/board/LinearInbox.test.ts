@@ -1,7 +1,10 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   EnvironmentId,
   type OrchestrationV2ThreadShell,
+  ProjectId,
+  type RuntimeMode,
   type TeamCatalogSnapshot,
 } from "@t3tools/contracts";
 import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
@@ -10,17 +13,16 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
-import * as Logger from "effect/Logger";
 import * as Path from "effect/Path";
 
 import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
-import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
+import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import * as TeamCatalog from "../teamCatalog/TeamCatalog.ts";
 import * as Board from "./Board.ts";
 import * as LinearInbox from "./LinearInbox.ts";
-import type { InboxData } from "./linearInboxRouting.ts";
+import type { InboxData, LinearComment } from "./linearInboxRouting.ts";
 
 const ME = "user-me";
 
@@ -50,13 +52,18 @@ const catalog: TeamCatalogSnapshot = {
   viewer: { login: null, problem: null },
 };
 
-const lawrenceComment = (id: string, createdAt: string) => ({
+const lawrenceComment = (
+  id: string,
+  createdAt: string,
+  body = "agent: proposal",
+): LinearComment => ({
   id,
-  body: "agent: proposal",
+  body,
   createdAt,
   user: { id: "user-lawrence", name: "Lawrence Smith", displayName: "Lawrence" },
   botActor: null,
   externalUser: null,
+  parent: null,
   issue: {
     identifier: "COD-2",
     state: { type: "started" },
@@ -72,103 +79,159 @@ const lawrenceComment = (id: string, createdAt: string) => ({
   },
 });
 
-/** Linear's answer: newest first, a page at a time. */
-const answer = (variables: Record<string, unknown>): InboxData => {
-  const firstPage = variables["after"] === null;
-  const comment = firstPage
-    ? lawrenceComment("comment-2", "2026-11-15T12:00:00.000Z")
-    : lawrenceComment("comment-1", "2026-11-15T11:00:00.000Z");
-  const fresh = comment.createdAt > String(variables["since"]);
-  return {
-    teams: { nodes: [{ members: { nodes: [{ id: ME }, { id: "user-lawrence" }] } }] },
-    comments: {
-      nodes: fresh ? [comment] : [],
-      pageInfo: { hasNextPage: firstPage && fresh, endCursor: firstPage ? "page-2" : null },
-    },
+/** A server with one Linear team and one local Claude thread whose mode a test can change. */
+const makeInbox = (baseDir: string, comments: Array<LinearComment>) => {
+  const sent: Array<ThreadManagement.ThreadManagementSendInput> = [];
+  const thread = {
+    runtimeMode: "auto" as RuntimeMode,
+    latestUserAuthoredMessageAt: null as DateTime.Utc | null,
   };
+  const layer = LinearInbox.layer.pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        Layer.mock(Board.Board)({
+          session: Effect.succeed({
+            viewerId: ME,
+            query: ((_query: string, variables: Record<string, unknown>) =>
+              Effect.sync((): InboxData => {
+                // Like Linear: newest first, here one comment per page.
+                const fresh = comments
+                  .filter((c) => c.createdAt > String(variables["since"]))
+                  .toSorted((a, b) => b.createdAt.localeCompare(a.createdAt));
+                const page = variables["after"] === null ? 0 : Number(variables["after"]);
+                return {
+                  teams: { nodes: [{ members: { nodes: [{ id: ME }, { id: "user-lawrence" }] } }] },
+                  comments: {
+                    nodes: fresh.slice(page, page + 1),
+                    pageInfo: { hasNextPage: page + 1 < fresh.length, endCursor: String(page + 1) },
+                  },
+                };
+              })) as Board.BoardLinearSession["query"],
+          }),
+        }),
+        Layer.mock(TeamCatalog.TeamCatalog)({ snapshot: Effect.succeed(catalog) }),
+        Layer.mock(ThreadManagement.ThreadManagementService)({
+          getThreadShell: (threadId) =>
+            Effect.succeed(
+              threadId === "thread-mine"
+                ? ({
+                    projectId: ProjectId.make("project-web"),
+                    providerInstanceId: "claude",
+                    updatedAt: DateTime.makeUnsafe(0),
+                    archivedAt: null,
+                    ...thread,
+                  } as unknown as OrchestrationV2ThreadShell)
+                : null,
+            ),
+          sendToThread: (input) =>
+            Effect.sync(() => {
+              sent.push(input);
+              return { delivery: "started" } as ThreadManagement.ThreadManagementSendResult;
+            }),
+        }),
+        Layer.mock(ProviderInstanceRegistry.ProviderInstanceRegistry)({
+          getInstance: () => Effect.succeed({ driverKind: "claudeAgent" } as ProviderInstance),
+        }),
+        Layer.mock(ServerEnvironment.ServerEnvironment)({
+          getEnvironmentId: Effect.succeed(EnvironmentId.make("env-me")),
+        }),
+        ServerConfig.layerTest(process.cwd(), baseDir),
+      ),
+    ),
+  );
+  // Each poll builds the service again, as a restart would.
+  const poll = LinearInbox.LinearInbox.pipe(
+    Effect.flatMap((inbox) => inbox.poll),
+    Effect.provide(layer),
+  );
+  return { poll, sent, thread };
 };
 
+const tempBaseDir = FileSystem.FileSystem.pipe(
+  Effect.flatMap((fileSystem) =>
+    fileSystem.makeTempDirectoryScoped({ prefix: "t3-linear-inbox-" }),
+  ),
+);
+
 it.effect(
-  "starts each team now, reads every page of newer comments, and keeps its place over restarts",
+  "delivers a teammate's agent comment once, labelled, and keeps its place over restarts",
   () =>
     Effect.gen(function* () {
-      const fileSystem = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const baseDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-linear-inbox-" });
-      const calls: Array<Record<string, unknown>> = [];
-      const logs: Array<unknown> = [];
-      const layer = LinearInbox.layer.pipe(
-        Layer.provide(
-          Layer.mergeAll(
-            Layer.mock(Board.Board)({
-              session: Effect.succeed({
-                viewerId: ME,
-                query: ((_query: string, variables: Record<string, unknown>) =>
-                  Effect.sync(() => {
-                    calls.push(variables);
-                    return answer(variables);
-                  })) as Board.BoardLinearSession["query"],
-              }),
-            }),
-            Layer.mock(TeamCatalog.TeamCatalog)({ snapshot: Effect.succeed(catalog) }),
-            Layer.mock(Orchestrator.OrchestratorV2)({
-              getThreadShell: (threadId) =>
-                Effect.succeed(
-                  threadId === "thread-mine"
-                    ? ({
-                        providerInstanceId: "claude",
-                        updatedAt: DateTime.makeUnsafe(0),
-                        archivedAt: null,
-                      } as unknown as OrchestrationV2ThreadShell)
-                    : null,
-                ),
-            }),
-            Layer.mock(ProviderInstanceRegistry.ProviderInstanceRegistry)({
-              getInstance: () => Effect.succeed({ driverKind: "claudeAgent" } as ProviderInstance),
-            }),
-            Layer.mock(ServerEnvironment.ServerEnvironment)({
-              getEnvironmentId: Effect.succeed(EnvironmentId.make("env-me")),
-            }),
-            ServerConfig.layerTest(process.cwd(), baseDir),
-          ),
-        ),
-      );
-      const logger = Logger.layer(
-        [Logger.make(({ logLevel, message }) => logLevel === "Info" && logs.push(message))],
-        { mergeWithExisting: false },
-      );
-      const poll = LinearInbox.LinearInbox.pipe(
-        Effect.flatMap((inbox) => inbox.poll),
-        Effect.provide(Layer.merge(layer, logger)),
-      );
+      const comments = [lawrenceComment("comment-1", "2026-11-15T12:00:00.000Z")];
+      const inbox = makeInbox(yield* tempBaseDir, comments);
 
-      yield* poll;
-      expect(calls).toEqual([]);
-      const config = yield* ServerConfig.ServerConfig.pipe(
-        Effect.provide(ServerConfig.layerTest(process.cwd(), baseDir)),
-      );
-      const cursorPath = path.join(config.stateDir, "linear-inbox.json");
-      expect(JSON.parse(yield* fileSystem.readFileString(cursorPath))).toEqual({
-        COD: "1970-01-01T00:00:00.000Z",
+      yield* inbox.poll;
+      expect(inbox.sent).toEqual([]);
+
+      yield* inbox.poll;
+      yield* inbox.poll;
+      expect(inbox.sent).toHaveLength(1);
+      expect(inbox.sent[0]).toMatchObject({
+        projectId: "project-web",
+        threadId: "thread-mine",
+        commandId: "linear-inbox:thread-mine:comment-1",
+        messageId: "linear-inbox:thread-mine:comment-1",
+        linkedSender: {
+          environmentId: "linear",
+          threadId: "linear-comment-comment-1",
+          title: "Lawrence's agent",
+        },
+        mode: "queue",
+        createdBy: "agent",
+        creationSource: "mcp",
       });
+      expect(inbox.sent[0]!.text).toMatch(
+        /^\[Linear comment ([0-9a-f]{8}) on COD-2 from Lawrence's agent\]\nagent: proposal\n\[End of Linear comment \1\. /,
+      );
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);
 
-      yield* poll;
-      expect(calls).toEqual([
-        { key: "COD", since: "1970-01-01T00:00:00.000Z", first: 100, after: null },
-        { key: "COD", since: "1970-01-01T00:00:00.000Z", first: 100, after: "page-2" },
-      ]);
-      const delivery = (comment: string) => [
-        "Linear inbox would deliver a comment.",
-        { comment, issue: "COD-2", threadId: "thread-mine", kind: "agent", sender: "Lawrence" },
-      ];
-      expect(logs).toEqual([delivery("comment-1"), delivery("comment-2")]);
+it.effect("holds a comment for a full-access thread until the user sends there", () =>
+  Effect.gen(function* () {
+    const inbox = makeInbox(yield* tempBaseDir, [
+      lawrenceComment("comment-1", "2026-11-15T12:00:00.000Z"),
+    ]);
+    inbox.thread.runtimeMode = "full-access";
 
-      yield* poll;
-      expect(calls.at(-1)).toEqual({
-        key: "COD",
-        since: "2026-11-15T12:00:00.000Z",
-        first: 100,
-        after: null,
-      });
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    yield* inbox.poll;
+    yield* inbox.poll;
+    yield* inbox.poll;
+    expect(inbox.sent).toEqual([]);
+
+    inbox.thread.latestUserAuthoredMessageAt = DateTime.makeUnsafe(1_000);
+    yield* inbox.poll;
+    yield* inbox.poll;
+    expect(inbox.sent.map((input) => input.commandId)).toEqual([
+      "linear-inbox:thread-mine:comment-1",
+    ]);
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);
+
+it.effect("stops at the daily limit for a thread, counting what earlier runs delivered", () =>
+  Effect.gen(function* () {
+    const baseDir = yield* tempBaseDir;
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const config = yield* ServerConfig.ServerConfig.pipe(
+      Effect.provide(ServerConfig.layerTest(process.cwd(), baseDir)),
+    );
+    yield* fileSystem.writeFileString(
+      path.join(config.stateDir, "linear-inbox.json"),
+      JSON.stringify({
+        cursors: { COD: "1970-01-01T00:00:00.000Z" },
+        delivered: { "thread-mine": Array.from({ length: 11 }, () => "1970-01-01T00:00:00.000Z") },
+        held: [],
+      }),
+    );
+    const inbox = makeInbox(baseDir, [
+      lawrenceComment("comment-1", "2026-11-15T12:00:00.000Z", "Can you take the cursor file?"),
+      lawrenceComment("comment-2", "2026-11-15T12:01:00.000Z", "And the dedupe?"),
+    ]);
+
+    yield* inbox.poll;
+    expect(inbox.sent.map((input) => input.commandId)).toEqual([
+      "linear-inbox:thread-mine:comment-1",
+    ]);
+    expect(inbox.sent[0]!.linkedSender?.title).toBe("Lawrence");
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
