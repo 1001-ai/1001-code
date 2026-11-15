@@ -305,6 +305,13 @@ One entry for each place this fork changes a file upstream owns, or replaces som
 - **On conflict:** take upstream's code and put each hook back. If upstream changes `readResult` or the envelopes it unwraps, keep `readToolResultData` on it. If upstream moves where dynamic tool output is compacted for the wire, add `boardTask` there. If upstream changes how `session-logic.ts` classifies turn items or moves the event row's `if` chain, keep a `save_issue` card an `event` entry, persistent, rendered before the generic lifecycle row.
 - **Check:** `git grep -n "readToolResultData\|withBoardTaskChange\|isBoardTaskItem\|BoardTaskCard" -- packages/shared/src/toolOutput.ts apps/server/src/orchestration-v2/WireProjection.ts apps/web/src/session-logic.ts apps/web/src/components/chat/TimelineV2EventRow.tsx` shows each hook; `vp test run src/board` (from `apps/server`) and `vp test run src/components/board` (from `apps/web`) pass.
 
+### The fork's MCP tools are known T3 tools
+
+- **Where:** `FORK_T3_MCP_TOOL_NAMES` in fork-only `packages/shared/src/forkT3McpTools.ts` (the board tools and `memory_propose`, by their contract constants). `packages/shared/src/t3McpToolPresentation.ts` carries the hook: the import, and the spread into `T3_MCP_TOOL_NAMES`.
+- **Why:** ACP agents that report a call only by its title (such as Antigravity, Kimi and glm) are recognised as calling T3's MCP server only for names in `T3_MCP_TOOL_NAMES` (`extractMcpToolCallIdentity` in `packages/provider-acp/src/server/runtimeModel.ts`). Without the fork's names there, their `board_add`, `board_update` and `memory_propose` calls were never named `t3-code.<tool>`, so the Board task card and the memory card did not show. The names join only that set, not `T3_MCP_TOOLS`, so their tool rows keep the generic MCP presentation.
+- **On conflict:** take upstream's code and put the import and the spread back on whatever set upstream's ACP identity check reads.
+- **Check:** `vp test run src/server/forkT3McpTools.test.ts` (from `packages/provider-acp`) passes.
+
 ### Back after a link jumps the chat
 
 - **Where:** fork-only files hold the feature: `apps/web/src/components/chat/JumpBack.tsx` (the `useJumpBack` hook and the Back pill) and `chat/jumpBack.logic.ts`. Upstream files carry only the hooks:

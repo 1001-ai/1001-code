@@ -1,3 +1,5 @@
+import { FORK_T3_MCP_TOOL_NAMES } from "./forkT3McpTools.ts";
+
 export type T3McpToolLogo = "t3-code";
 
 export interface T3McpToolPresentation {
@@ -374,7 +376,10 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
   html_render: tool(["Render", "Rendering", "Rendered", "an HTML page"], "html-render"),
 };
 
-export const T3_MCP_TOOL_NAMES: ReadonlySet<string> = new Set(Object.keys(T3_MCP_TOOLS));
+export const T3_MCP_TOOL_NAMES: ReadonlySet<string> = new Set([
+  ...Object.keys(T3_MCP_TOOLS),
+  ...FORK_T3_MCP_TOOL_NAMES,
+]);
 
 function normalizeT3McpToolLabel(value: string): string {
   return value.replace(/\s+(?:complete|completed)\s*$/i, "").trim();
