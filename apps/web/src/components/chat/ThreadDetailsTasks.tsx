@@ -26,7 +26,7 @@ export function ThreadDetailsTasks(props: {
 
   return (
     <ThreadDetailsSection headingId="thread-details-tasks-heading" title="Tasks">
-      <ul aria-label="Linked Linear issues" className="m-0 list-none p-0">
+      <ul aria-label="Linked Linear issues" className="m-0 list-none p-0" data-thread-details-tasks>
         {tasks.map(({ issue, state }) => (
           <li key={issue.id} className="flex h-8 items-center rounded-lg">
             <Tooltip>
