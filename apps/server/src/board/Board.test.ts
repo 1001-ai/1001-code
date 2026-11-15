@@ -1679,22 +1679,34 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Board", (it) => 
       }).pipe(Effect.scoped),
   );
 
-  it.effect("a task list right after a write asks Linear, not the cache", () =>
+  it.effect("a task list after a write asks Linear, even when a read was in flight", () =>
     Effect.gen(function* () {
       let created: Array<ReturnType<typeof linearIssue>> = [];
+      const readStarted = yield* Deferred.make<void>();
+      const releaseRead = yield* Deferred.make<void>();
+      let held = false;
       const linear = fakeLinear((operation, variables) => {
+        if (operation === "BoardIssues" && held) {
+          held = false;
+          const before = boardAnswers([created], [taskTeam])(operation, variables);
+          return Deferred.succeed(readStarted, undefined).pipe(
+            Effect.andThen(Deferred.await(releaseRead)),
+            Effect.as(before),
+          );
+        }
         if (operation === "BoardIssueCreate") {
-          created = [linearIssue("7", "s-progress")];
+          const number = String(created.length + 7);
+          created = [...created, linearIssue(number, "s-progress")];
           return {
             body: {
               data: {
                 issueCreate: {
                   success: true,
                   issue: {
-                    id: "issue-new",
-                    identifier: "ENG-7",
-                    title: "Issue 7",
-                    url: "https://linear.app/acme/issue/ENG-7",
+                    id: `issue-${number}`,
+                    identifier: `ENG-${number}`,
+                    title: `Issue ${number}`,
+                    url: `https://linear.app/acme/issue/ENG-${number}`,
                     state: { name: "In Progress", type: "started" },
                     assignee: null,
                     project: { name: "Web" },
@@ -1722,6 +1734,15 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Board", (it) => 
       expect(yield* identifiers).toEqual([]);
       yield* board.addTask({ projectId: PROJECT_ID, thread: THREAD, title: "Issue 7" });
       expect(yield* identifiers).toEqual(["ENG-7"]);
+
+      // A read that fetched before the next write must not cache over it.
+      held = true;
+      const staleRead = yield* board.read(PROJECT_ID, { refresh: true }).pipe(Effect.forkScoped);
+      yield* Deferred.await(readStarted);
+      yield* board.addTask({ projectId: PROJECT_ID, thread: THREAD, title: "Issue 8" });
+      yield* Deferred.succeed(releaseRead, undefined);
+      yield* Fiber.join(staleRead);
+      expect(yield* identifiers).toEqual(["ENG-7", "ENG-8"]);
     }).pipe(Effect.orDie, Effect.scoped),
   );
 

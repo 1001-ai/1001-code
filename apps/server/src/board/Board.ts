@@ -375,6 +375,8 @@ const make = Effect.gen(function* () {
   const boardSignals = yield* PubSub.unbounded<BoardSignal>();
   const cache = new Map<string, CachedBoard>();
   const readLock = yield* Semaphore.make(1);
+  /** Counts task writes, so a read that fetched before one does not cache over it. */
+  let taskWrites = 0;
   // Bumped on every sign-in change; a refresh publishes only if no change happened while it read.
   let credentialGeneration = 0;
   // Every read or write of the stored sign-in, including a refresh, happens under this lock.
@@ -629,12 +631,13 @@ const make = Effect.gen(function* () {
         if (options?.refresh !== true && cached && now - cached.readAtMs < FRESH_FOR_MS) {
           return { status: "ready", board: cached.board, failure: null } satisfies BoardSnapshot;
         }
+        const writesBefore = taskWrites;
         const outcome = yield* fetchBoard(generation, target.linear).pipe(
           Effect.map((board) => ({ board, error: null })),
           Effect.catch((error) => Effect.succeed({ board: null, error })),
         );
         if (outcome.board !== null) {
-          cache.set(key, { board: outcome.board, readAtMs: now });
+          if (writesBefore === taskWrites) cache.set(key, { board: outcome.board, readAtMs: now });
           return { status: "ready", board: outcome.board, failure: null } satisfies BoardSnapshot;
         }
         const { error } = outcome;
@@ -1198,6 +1201,7 @@ const make = Effect.gen(function* () {
   /** Drops the cached read a later `board_list` would see, then reads open boards again. */
   const afterWrite = (scope: TaskBoard) =>
     Effect.suspend(() => {
+      taskWrites += 1;
       cache.delete(cacheKey(scope.generation, scope.linear));
       return refreshOpen;
     });
