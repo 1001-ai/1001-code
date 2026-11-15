@@ -152,7 +152,7 @@ export function linkedThreadIds(
 }
 
 /** Linear's state types for an issue that is done with; its comments wake no thread. */
-const CLOSED_STATE_TYPES: ReadonlySet<string> = new Set(["completed", "canceled"]);
+export const CLOSED_STATE_TYPES: ReadonlySet<string> = new Set(["completed", "canceled"]);
 
 /** Which local thread a comment is for: the issue's linked thread, never one the comment names. */
 export function routeComment(

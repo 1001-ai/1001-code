@@ -84,6 +84,8 @@ import {
 } from "./toolkits/device/tools.ts";
 import * as HtmlHandlers from "./toolkits/html/handlers.ts";
 import { HtmlPreviewTool, HtmlPreviewToolkit, HtmlRenderToolkit } from "./toolkits/html/tools.ts";
+import * as BoardHandlers from "./toolkits/board/handlers.ts";
+import { BoardToolkit } from "./toolkits/board/tools.ts";
 import * as MemoryHandlers from "./toolkits/memory/handlers.ts";
 import { MemoryToolkit } from "./toolkits/memory/tools.ts";
 import { requestUrl } from "../requestUrl.ts";
@@ -1375,5 +1377,7 @@ export const layer = layerMcpTransport(
     layerToolSearch,
     // Fork: memory proposals; see fork/README.md.
     toolkitRegistration(MemoryToolkit, MemoryHandlers.layer),
+    // Fork: Board tasks; see fork/README.md.
+    toolkitRegistration(BoardToolkit, BoardHandlers.layer),
   ),
 );

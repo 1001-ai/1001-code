@@ -264,6 +264,44 @@ export type BoardSignIn = typeof BoardSignIn.Type;
 
 export const BoardDisconnectInput = Schema.Struct({});
 
+/** Fork: agents' tools for the thread's project board; see fork/README.md. */
+export const BOARD_ADD_TOOL_NAME = "board_add";
+export const BOARD_UPDATE_TOOL_NAME = "board_update";
+export const BOARD_LIST_TOOL_NAME = "board_list";
+
+/** A task as an agent's board tools return it, and as a chat card shows it. */
+export const BoardTask = Schema.Struct({
+  /** Such as COD-12. */
+  identifier: TrimmedNonEmptyString,
+  title: Schema.String,
+  url: TrimmedNonEmptyString,
+  status: Schema.Struct({
+    name: Schema.String,
+    /** One of BOARD_STATE_TYPES; kept open because Linear may add types. */
+    type: Schema.String,
+  }),
+  /** The assignee's name; null when nobody is assigned. */
+  assignee: Schema.NullOr(Schema.String),
+  /** The Linear project's name; null when the task is in none. */
+  project: Schema.NullOr(Schema.String),
+});
+export type BoardTask = typeof BoardTask.Type;
+
+export const BoardTaskWriteResult = Schema.Struct({
+  task: BoardTask,
+  /** The task carries a link to the calling thread, so the board and teammates' agents find it. */
+  threadLinked: Schema.Boolean,
+});
+export type BoardTaskWriteResult = typeof BoardTaskWriteResult.Type;
+
+export const BoardTaskList = Schema.Struct({
+  /** The board's open tasks, column by column in board order. */
+  tasks: Schema.Array(BoardTask),
+  /** The board has more tasks than one read fetches; these are the first ones. */
+  truncated: Schema.Boolean,
+});
+export type BoardTaskList = typeof BoardTaskList.Type;
+
 /**
  * What an agent's Linear `save_issue` call did to a task: filed it, picked it up (set its
  * assignee) or moved it (set its state). The server reads it from the call's input and Linear's

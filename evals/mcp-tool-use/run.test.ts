@@ -706,7 +706,7 @@ it("lists link tools only while a case turns the beta on, and sends chips as T3 
   assert.include(prompt?.text, "environmentId: environment-vps");
 });
 
-it("gives a board case T3's board text and Linear's tools, and grades the issue before the edit", () => {
+it("gives a board case T3's board text, its board tools and Linear's, and grades the task before the edit", () => {
   const cases = NodeFS.readFileSync(new URL("./cases/board.ndjson", import.meta.url), "utf8")
     .trim()
     .split("\n")
@@ -722,10 +722,11 @@ it("gives a board case T3's board text and Linear's tools, and grades the issue 
   const environment = EnvironmentId.make("eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee");
   assert.include(system, boardMemory({ team: "COD" }, environment));
   assert.include(system, "mcp__linear__save_issue");
-  assert.include(
+  assert.includeMembers(
     base.deferred.map((tool) => tool.name),
-    "mcp__linear__save_issue",
+    ["mcp__linear__save_issue", "mcp__t3-code__board_add", "mcp__t3-code__board_update"],
   );
+  assert.equal(normalizeToolName("mcp__t3-code__board_add"), "board_add");
   const plain = buildBase(template, { model: "claude-haiku-5-5", keepUserInstructions: false });
   assert.notInclude(plain.system.map((block) => String(block.text)).join("\n"), "<board>");
 
@@ -734,16 +735,18 @@ it("gives a board case T3's board text and Linear's tools, and grades the issue 
     text: "",
     stopReason: "end_turn",
   });
-  const filed: [string, unknown] = ["save_issue", { team: "COD", title: "Fix 1 minutes" }];
+  const filed: [string, unknown] = ["board_add", { title: "Fix 1 minutes", assignee: "me" }];
+  const linearFiled: [string, unknown] = ["save_issue", { team: "COD", title: "Fix 1 minutes" }];
   const edit: [string, unknown] = ["Edit", { file_path: "src/format.ts" }];
-  assert.deepEqual(failed(fix.expect, run(["list_issues", {}], filed, edit)), []);
-  assert.deepEqual(failed(fix.expect, run(edit, filed)), ["order save_issue > Edit"]);
-  assert.deepEqual(failed(fix.expect, run(edit)), [
-    'calls save_issue {"team":"~cod"}',
-    "order save_issue > Edit",
+  assert.deepEqual(failed(fix.expect, run(["board_list", {}], filed, edit)), []);
+  assert.deepEqual(failed(fix.expect, run(edit, filed)), ["order board_add > Edit"]);
+  assert.deepEqual(failed(fix.expect, run(linearFiled, edit)), [
+    "calls board_add",
+    "notCalls save_issue",
+    "order board_add > Edit",
   ]);
   assert.deepEqual(failed(question.expect, run(["Read", { file_path: "src/format.ts" }])), []);
-  assert.deepEqual(failed(question.expect, run(filed)), ["notCalls save_issue"]);
+  assert.deepEqual(failed(question.expect, run(filed)), ["notCalls board_add"]);
 });
 
 it("replays earlier capability results with the model under test as the caller", () => {
