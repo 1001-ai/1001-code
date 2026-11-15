@@ -19,7 +19,7 @@ import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
 import * as TeamCatalog from "../teamCatalog/TeamCatalog.ts";
-import * as Preferences from "./Preferences.ts";
+import * as Memory from "./Memory.ts";
 
 const PROJECT_ID = ProjectId.make("project-web");
 const THREAD_ID = ThreadId.make("thread-1");
@@ -51,13 +51,13 @@ const catalog = (fields: Partial<TeamCatalogSnapshot> = {}): TeamCatalogSnapshot
 });
 
 const FILES: Record<string, string> = {
-  "preferences/team.md": "- Prefer small pull requests.\n",
-  "preferences/projects/web.md": "- Run the web tests before pushing.\n",
-  "preferences/people/alice.md": "- Keep replies short.\n",
-  "preferences/people/bob.md": "- Bob's own rule.\n",
+  "memory/team.md": "- Prefer small pull requests.\n",
+  "memory/projects/web.md": "- Run the web tests before pushing.\n",
+  "memory/people/alice.md": "- Keep replies short.\n",
+  "memory/people/bob.md": "- Bob's own rule.\n",
 };
 
-const makePreferences = (input: {
+const makeMemory = (input: {
   readonly catalog: TeamCatalogSnapshot;
   readonly identity?: RepositoryIdentity | null;
   readonly readFile?: TeamCatalog.TeamCatalog["Service"]["readFile"];
@@ -66,7 +66,7 @@ const makePreferences = (input: {
   readonly liveLogin?: string | null;
 }) => {
   const proposals: Array<TeamCatalog.TeamCatalogFilesProposal> = [];
-  const build = Preferences.layer.pipe(
+  const build = Memory.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
         Layer.mock(TeamCatalog.TeamCatalog)({
@@ -118,7 +118,7 @@ const makePreferences = (input: {
       ),
     ),
     Layer.build,
-    Effect.map((context) => Context.get(context, Preferences.Preferences)),
+    Effect.map((context) => Context.get(context, Memory.Memory)),
   );
   return { build, proposals };
 };
@@ -127,32 +127,32 @@ it.effect(
   "reads the team file, the project's file by its remote, and only the viewer's own file",
   () =>
     Effect.gen(function* () {
-      const preferences = yield* makePreferences({ catalog: catalog() }).build;
-      const view = yield* preferences.read(PROJECT_ID);
+      const memory = yield* makeMemory({ catalog: catalog() }).build;
+      const view = yield* memory.read(PROJECT_ID);
       expect(view.documents).toEqual([
         {
           scope: "team",
-          file: "preferences/team.md",
+          file: "memory/team.md",
           label: null,
-          text: FILES["preferences/team.md"],
+          text: FILES["memory/team.md"],
           unavailable: null,
         },
         {
           scope: "project",
-          file: "preferences/projects/web.md",
+          file: "memory/projects/web.md",
           label: "Web app",
-          text: FILES["preferences/projects/web.md"],
+          text: FILES["memory/projects/web.md"],
           unavailable: null,
         },
         {
           scope: "personal",
-          file: "preferences/people/alice.md",
+          file: "memory/people/alice.md",
           label: "Alice",
-          text: FILES["preferences/people/alice.md"],
+          text: FILES["memory/people/alice.md"],
           unavailable: null,
         },
       ]);
-      const block = yield* preferences.instructions(PROJECT_ID, THREAD_ID);
+      const block = yield* memory.instructions(PROJECT_ID, THREAD_ID);
       expect(block).toBe(view.block);
       expect(block).toContain("in github.com/acme/home");
       const team = block!.indexOf("Prefer small pull requests");
@@ -167,26 +167,26 @@ it.effect(
 
 it.effect("says why a scope has no file, and sends nothing without a catalog", () =>
   Effect.gen(function* () {
-    const signedOut = yield* makePreferences({
+    const signedOut = yield* makeMemory({
       catalog: catalog({ viewer: { login: null, problem: "The GitHub CLI is not signed in." } }),
       identity: null,
     }).build;
     const view = yield* signedOut.read(PROJECT_ID);
     expect(view.documents.map((document) => [document.file, document.unavailable])).toEqual([
-      ["preferences/team.md", null],
+      ["memory/team.md", null],
       [null, "This project is not in the team catalog."],
       [null, "The GitHub CLI is not signed in."],
     ]);
     expect(view.block).toContain("Prefer small pull requests");
     expect(view.block).not.toContain("Keep replies short");
 
-    const none = yield* makePreferences({ catalog: catalog({ source: null }) }).build;
+    const none = yield* makeMemory({ catalog: catalog({ source: null }) }).build;
     expect(yield* none.read(PROJECT_ID)).toMatchObject({ documents: [], block: null });
     expect(yield* none.instructions(PROJECT_ID, THREAD_ID)).toBeUndefined();
   }).pipe(Effect.scoped),
 );
 
-it.effect("gives a thread on a Linear board its own link, even without preference files", () =>
+it.effect("gives a thread on a Linear board its own link, even without memory files", () =>
   Effect.gen(function* () {
     const boardCatalog = (fields: Partial<TeamCatalogSnapshot> = {}) => {
       const base = catalog(fields);
@@ -198,29 +198,29 @@ it.effect("gives a thread on a Linear board its own link, even without preferenc
     };
     const threadLink = "<thread_link>\nThis thread's link is t3-thread://v2/env-1/thread-1.";
 
-    const preferences = yield* makePreferences({ catalog: boardCatalog() }).build;
-    const view = yield* preferences.read(PROJECT_ID);
-    const block = yield* preferences.instructions(PROJECT_ID, THREAD_ID);
+    const memory = yield* makeMemory({ catalog: boardCatalog() }).build;
+    const view = yield* memory.read(PROJECT_ID);
+    const block = yield* memory.instructions(PROJECT_ID, THREAD_ID);
     expect(block).toContain(`${view.block}\n\n${threadLink}`);
     expect(view.block).not.toContain("<thread_link>");
 
-    const empty = yield* makePreferences({
+    const empty = yield* makeMemory({
       catalog: boardCatalog(),
       readFile: () => Effect.succeed(null),
     }).build;
     expect((yield* empty.instructions(PROJECT_ID, THREAD_ID))?.startsWith(threadLink)).toBe(true);
 
-    const unmatched = yield* makePreferences({ catalog: boardCatalog(), identity: null }).build;
+    const unmatched = yield* makeMemory({ catalog: boardCatalog(), identity: null }).build;
     expect(yield* unmatched.instructions(PROJECT_ID, THREAD_ID)).not.toContain("<thread_link>");
   }).pipe(Effect.scoped),
 );
 
 it.effect("proposes the edited file, and refuses an unchanged one or a scope without a file", () =>
   Effect.gen(function* () {
-    const fixture = makePreferences({ catalog: catalog(), identity: null });
-    const preferences = yield* fixture.build;
+    const fixture = makeMemory({ catalog: catalog(), identity: null });
+    const memory = yield* fixture.build;
     const propose = (scope: "team" | "project" | "personal", text: string) =>
-      preferences.propose({ projectId: PROJECT_ID, scope, baseRevision: "rev-1", text });
+      memory.propose({ projectId: PROJECT_ID, scope, baseRevision: "rev-1", text });
 
     expect((yield* Effect.flip(propose("project", "- Anything."))).detail).toBe(
       "This project is not in the team catalog.",
@@ -235,18 +235,18 @@ it.effect("proposes the edited file, and refuses an unchanged one or a scope wit
         baseRevision: "rev-1",
         files: [
           {
-            file: "preferences/people/alice.md",
+            file: "memory/people/alice.md",
             text: "- Keep replies short.\n- Say what changed.\n",
           },
         ],
-        title: "Update personal preferences for Alice",
-        body: expect.stringContaining("preferences/people/alice.md"),
-        branchStem: "preferences/personal-alice",
+        title: "Update personal memory for Alice",
+        body: expect.stringContaining("memory/people/alice.md"),
+        branchStem: "memory/personal-alice",
       },
     ]);
 
     // After a GitHub CLI account switch, a personal edit goes to the signed-in person's file.
-    const switched = makePreferences({ catalog: catalog(), liveLogin: "Bob" });
+    const switched = makeMemory({ catalog: catalog(), liveLogin: "Bob" });
     const bob = yield* switched.build;
     yield* bob.propose({
       projectId: PROJECT_ID,
@@ -255,9 +255,9 @@ it.effect("proposes the edited file, and refuses an unchanged one or a scope wit
       text: "- Bob's new rule.",
     });
     expect(switched.proposals.map((proposal) => proposal.files)).toEqual([
-      [{ file: "preferences/people/bob.md", text: "- Bob's new rule.\n" }],
+      [{ file: "memory/people/bob.md", text: "- Bob's new rule.\n" }],
     ]);
-    const signedOut = yield* makePreferences({ catalog: catalog(), liveLogin: null }).build;
+    const signedOut = yield* makeMemory({ catalog: catalog(), liveLogin: null }).build;
     const refused = yield* Effect.flip(
       signedOut.propose({
         projectId: PROJECT_ID,
@@ -273,20 +273,20 @@ it.effect("proposes the edited file, and refuses an unchanged one or a scope wit
 it.effect("refreshes a stale catalog in the background, and a failed read sends nothing", () =>
   Effect.gen(function* () {
     const refreshed = yield* Deferred.make<void>();
-    const preferences = yield* makePreferences({ catalog: catalog(), refreshed }).build;
+    const memory = yield* makeMemory({ catalog: catalog(), refreshed }).build;
     yield* TestClock.adjust("11 minutes");
-    expect(yield* preferences.instructions(PROJECT_ID, THREAD_ID)).toContain(
+    expect(yield* memory.instructions(PROJECT_ID, THREAD_ID)).toContain(
       "Prefer small pull requests",
     );
     yield* Deferred.await(refreshed);
 
-    const broken = yield* makePreferences({
+    const broken = yield* makeMemory({
       catalog: catalog(),
       readFile: () => Effect.die("disk gone"),
     }).build;
     expect(yield* broken.instructions(PROJECT_ID, THREAD_ID)).toBeUndefined();
 
-    const cancelled = yield* makePreferences({
+    const cancelled = yield* makeMemory({
       catalog: catalog(),
       readFile: () => Effect.interrupt,
     }).build;

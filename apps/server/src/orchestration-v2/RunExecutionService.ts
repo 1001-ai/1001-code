@@ -57,8 +57,8 @@ import {
 import * as RunFinalizationService from "./RunFinalizationService.ts";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import * as TurnItemPositionStore from "./TurnItemPositionStore.ts";
-import * as Preferences from "../preferences/Preferences.ts";
-import { preferencesTurnInput } from "../preferences/preferencesProviders.ts";
+import * as Memory from "../memory/Memory.ts";
+import { memoryTurnInput } from "../memory/memoryProviders.ts";
 import { userFacingDatabaseErrorMessage } from "./UserFacingErrors.ts";
 
 export interface ProviderEventRoutingState {
@@ -633,7 +633,7 @@ export const layer: Layer.Layer<
     const finalizationObserver = yield* RunFinalizationService.RunFinalizationObserver;
     const turnAnalytics = yield* ProviderUsageAnalytics.ProviderTurnAnalytics;
     const threadCommands = yield* ThreadCommandExecutor.ThreadCommandExecutor;
-    const preferences = yield* Effect.serviceOption(Preferences.Preferences);
+    const memory = yield* Effect.serviceOption(Memory.Memory);
 
     const writeFinalRunEvents = Effect.fn("RunExecutionService.writeFinalRunEvents")(
       function* (input: {
@@ -1885,11 +1885,7 @@ export const layer: Layer.Layer<
           modelSelection: input.modelSelection,
           runtimePolicy: input.runtimePolicy,
           ...(appContext.length === 0 ? {} : { appContext }),
-          ...(yield* preferencesTurnInput(
-            preferences,
-            input.appThread.projectId,
-            input.run.threadId,
-          )),
+          ...(yield* memoryTurnInput(memory, input.appThread.projectId, input.run.threadId)),
         };
         // Check after the context read: ingestion can settle the run while
         // it awaits. A failed ownership read fails the start below.

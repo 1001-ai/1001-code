@@ -69,7 +69,7 @@ export * from "./forkBuild.ts";
 export * from "./teamCatalog.ts";
 export * from "./board.ts";
 export * from "./teamProjectLinks.ts";
-export * from "./preferences.ts";
+export * from "./memory.ts";
 export * from "./scheduledTask.ts";
 export * from "./worktreeMcp.ts";
 export * from "./resourceTelemetry.ts";

@@ -23,7 +23,7 @@ const RIGHT_PANEL_KINDS = [
   "pull-requests",
   "side-chat",
   "board",
-  "preferences",
+  "memory",
 ] as const;
 export type RightPanelKind = (typeof RIGHT_PANEL_KINDS)[number];
 
@@ -82,7 +82,7 @@ export type RightPanelSurface =
   | { id: "pull-requests"; kind: "pull-requests" }
   | { id: `side-chat:${string}`; kind: "side-chat"; threadId: ThreadId }
   | { id: "board"; kind: "board" }
-  | { id: "preferences"; kind: "preferences" };
+  | { id: "memory"; kind: "memory" };
 
 const RIGHT_PANEL_STORAGE_KEY = "t3code:right-panel-state:v2";
 const RIGHT_PANEL_STORAGE_VERSION = 14;
@@ -231,8 +231,8 @@ const singletonSurface = (
       return { id: "device", kind };
     case "board":
       return { id: "board", kind };
-    case "preferences":
-      return { id: "preferences", kind };
+    case "memory":
+      return { id: "memory", kind };
   }
 };
 

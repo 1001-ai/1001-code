@@ -538,8 +538,8 @@ export interface ProviderAdapterV2TurnInput {
   readonly modelSelection: ModelSelection;
   readonly runtimePolicy: ProviderAdapterV2RuntimePolicy;
   readonly appContext?: ReadonlyArray<{ readonly key: string; readonly text: string }>;
-  /** Fork: the `<preferences>` block, sent where each adapter sends T3's own instructions. */
-  readonly preferences?: string;
+  /** Fork: the `<memory>` block, sent where each adapter sends T3's own instructions. */
+  readonly memory?: string;
 }
 
 export interface ProviderAdapterV2SteerInput {

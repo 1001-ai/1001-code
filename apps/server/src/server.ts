@@ -202,7 +202,7 @@ import * as ThreadCost from "./usage/ThreadCost.ts";
 import * as TeamCatalog from "./teamCatalog/TeamCatalog.ts";
 import * as Board from "./board/Board.ts";
 import * as LiveAppCheckout from "./liveAppCheckout.ts";
-import * as PreferencesLayer from "./preferences/layer.ts";
+import * as MemoryLayer from "./memory/layer.ts";
 import * as BoardHttp from "./board/http.ts";
 import * as CodexUsageHistory from "./usage/CodexUsageHistory.ts";
 import * as RuntimeLayer from "./orchestration-v2/runtimeLayer.ts";
@@ -573,7 +573,7 @@ const layerScheduledTaskWebhookOrigin = Layer.effect(
 );
 
 const layerOrchestrationV2Runtime = RuntimeLayer.layerProduction.pipe(
-  Layer.provideMerge(PreferencesLayer.layerForOrchestration),
+  Layer.provideMerge(MemoryLayer.layerForOrchestration),
   Layer.provide(layerScheduledTaskWebhookOrigin),
   Layer.provide(ProviderUsageAnalytics.layer),
   Layer.provide(layerCheckpointStore),
