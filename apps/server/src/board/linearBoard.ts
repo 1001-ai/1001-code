@@ -209,13 +209,15 @@ export const IssuesData = Schema.Struct({
 export type IssuesData = typeof IssuesData.Type;
 
 export const IssueDetailData = Schema.Struct({
-  issue: Schema.Struct({
-    id: Schema.String,
-    team: Schema.Struct({ id: Schema.String }),
-    project: Schema.NullOr(Schema.Struct({ id: Schema.String })),
-    description: Schema.NullOr(Schema.String),
-    creator: Schema.NullOr(LinearUser),
-  }),
+  issue: Schema.NullOr(
+    Schema.Struct({
+      id: Schema.String,
+      team: Schema.Struct({ id: Schema.String }),
+      project: Schema.NullOr(Schema.Struct({ id: Schema.String })),
+      description: Schema.NullOr(Schema.String),
+      creator: Schema.NullOr(LinearUser),
+    }),
+  ),
 });
 export type IssueDetailData = typeof IssueDetailData.Type;
 
@@ -266,6 +268,13 @@ export function linearFailure(input: {
     return new BoardError({
       reason: "unreachable",
       detail: `Linear is unavailable (HTTP ${input.status}).`,
+    });
+  }
+  // Only the issue detail looks an entity up by id; the board's own queries filter.
+  if (errors.length > 0 && errors.every((error) => error.message?.startsWith("Entity not found"))) {
+    return new BoardError({
+      reason: "issue-not-found",
+      detail: "This issue does not exist or is not visible to your Linear account.",
     });
   }
   if (errors.length > 0 || input.status !== 200) {
@@ -381,7 +390,7 @@ function boardIssue(issue: LinearIssue): BoardIssue {
   };
 }
 
-export function boardIssueDetail(issue: IssueDetailData["issue"]): BoardIssueDetail {
+export function boardIssueDetail(issue: NonNullable<IssueDetailData["issue"]>): BoardIssueDetail {
   return { description: issue.description, creator: boardUser(issue.creator) };
 }
 

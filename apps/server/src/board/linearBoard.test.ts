@@ -170,6 +170,21 @@ describe("linearFailure", () => {
     ["HTTP 401", 401, null, undefined, { reason: "unauthorized" }],
     ["HTTP 503", 503, null, undefined, { reason: "unreachable" }],
     [
+      "a lookup of an issue that does not exist",
+      200,
+      {
+        data: null,
+        errors: [
+          {
+            message: "Entity not found: Issue",
+            extensions: { type: "invalid input", code: "INPUT_ERROR" },
+          },
+        ],
+      },
+      undefined,
+      { reason: "issue-not-found" },
+    ],
+    [
       "a query error",
       400,
       { errors: [{ message: "Field 'x' does not exist" }] },

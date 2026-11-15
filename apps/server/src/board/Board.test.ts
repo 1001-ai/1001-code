@@ -914,11 +914,16 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Board", (it) => 
           expect(
             yield* board.issueDetail({ projectId: PROJECT_ID, issueId: "9" }).pipe(Effect.flip),
           ).toMatchObject({ reason: "issue-not-found" });
+          expect(
+            yield* board.issueDetail({ projectId: PROJECT_ID, issueId: "gone" }).pipe(Effect.flip),
+          ).toMatchObject({ reason: "issue-not-found" });
         }).pipe(Effect.orDie),
       (operation, variables) =>
-        operation === "BoardIssueDetail"
-          ? detail(String(variables.id), variables.id === "9" ? "team-2" : team.id)
-          : answer(operation, variables),
+        operation !== "BoardIssueDetail"
+          ? answer(operation, variables)
+          : variables.id === "gone"
+            ? { body: { data: { issue: null } } }
+            : detail(String(variables.id), variables.id === "9" ? "team-2" : team.id),
     );
   });
 

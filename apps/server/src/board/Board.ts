@@ -547,6 +547,7 @@ const make = Effect.gen(function* () {
         IssueDetailData,
       );
       if (
+        issue === null ||
         issue.team.id !== scope.team.id ||
         (scope.project !== null && issue.project?.id !== scope.project.id)
       ) {
