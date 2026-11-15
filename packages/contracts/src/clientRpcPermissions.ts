@@ -29,6 +29,8 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   [WS_METHODS.serverListTextGeneratorModels]: AuthSettingsWriteScope,
   [WS_METHODS.teamCatalogSetSource]: AuthSettingsWriteScope,
   [WS_METHODS.boardConnect]: AuthSettingsWriteScope,
+  // Posts to Linear as the signed-in person and starts a turn in the linked thread.
+  [WS_METHODS.boardComment]: AuthOrchestrationOperateScope,
   [WS_METHODS.boardDisconnect]: AuthSettingsWriteScope,
   [WS_METHODS.teamCatalogPropose]: AuthSourceControlWriteScope,
   [WS_METHODS.memoryPropose]: AuthSourceControlWriteScope,

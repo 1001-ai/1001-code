@@ -96,7 +96,7 @@ const boardInstructions = (linear: TeamCatalogLinear, link: string): string => {
   return [
     "<board>",
     `This project's board is ${board}. Use it for every issue you read, file or update, unless the user names another board.`,
-    `This thread's link is ${link}. When you work on an issue on this board, add this link to that issue once, as a link attachment (not only in a comment), so the board and teammates' agents can find this thread. Include it in the "agent:" comments you write there too.`,
+    `This thread's link is ${link}. When you file an issue on this board or work on one, add this link to that issue once, as a link attachment (not only in a comment), so the board and teammates' agents can find this thread. Include it in the "agent:" comments you write there too.`,
     "</board>",
   ].join("\n");
 };

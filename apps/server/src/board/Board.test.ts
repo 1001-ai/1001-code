@@ -2,6 +2,8 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   type BoardSnapshot,
+  EnvironmentId,
+  type OrchestrationV2ThreadShell,
   ProjectId,
   type RepositoryIdentity,
   type TeamCatalogSnapshot,
@@ -26,7 +28,9 @@ import { HttpClient, type HttpClientRequest, HttpClientResponse } from "effect/h
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../config.ts";
+import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
+import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
 import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
 import * as TeamCatalog from "../teamCatalog/TeamCatalog.ts";
 import * as Board from "./Board.ts";
@@ -200,7 +204,7 @@ const fakeLinear = (
       const body = JSON.parse(
         request.body._tag === "Uint8Array" ? new TextDecoder().decode(request.body.body) : "{}",
       ) as { query: string; variables: Record<string, unknown> };
-      const operation = /query (\w+)/.exec(body.query)?.[1] ?? "";
+      const operation = /(?:query|mutation) (\w+)/.exec(body.query)?.[1] ?? "";
       const account = accessTokens.get(
         (request.headers.authorization ?? "").replace(/^Bearer /u, ""),
       );
@@ -290,6 +294,7 @@ const makeBoard = (input: {
   readonly secrets: Context.Context<
     ServerSecretStore.ServerSecretStore | ServerConfig.ServerConfig
   >;
+  readonly threads?: Partial<ThreadManagement.ThreadManagementService["Service"]>;
 }) => {
   let current = input.catalog;
   return Board.layer.pipe(
@@ -318,6 +323,10 @@ const makeBoard = (input: {
         }),
         Layer.mock(RepositoryIdentityResolver.RepositoryIdentityResolver)({
           resolve: () => Effect.succeed(identity),
+        }),
+        Layer.mock(ThreadManagement.ThreadManagementService)(input.threads ?? {}),
+        Layer.mock(ServerEnvironment.ServerEnvironment)({
+          getEnvironmentId: Effect.succeed(EnvironmentId.make("env-me")),
         }),
         Layer.succeedContext(input.secrets),
       ),
@@ -365,6 +374,7 @@ const connected = (
   ) => Effect.Effect<void, never, Scope.Scope>,
   answer: Parameters<typeof fakeLinear>[0],
   catalogSnapshot = catalog([catalogEntry({ team: "ENG" })]),
+  threads?: Partial<ThreadManagement.ThreadManagementService["Service"]>,
 ) =>
   Effect.gen(function* () {
     const linear = fakeLinear(answer);
@@ -372,10 +382,88 @@ const connected = (
       client: linear.client,
       catalog: catalogSnapshot,
       secrets: yield* buildSecrets(),
+      ...(threads === undefined ? {} : { threads }),
     });
     yield* signIn(board, linear);
     yield* test(board, linear);
   }).pipe(Effect.scoped);
+
+const linearComment = (
+  id: string,
+  createdAt: string,
+  body: string,
+  author: { user?: string; bot?: string },
+  parent: string | null = null,
+) => ({
+  id,
+  body,
+  createdAt,
+  parent: parent === null ? null : { id: parent },
+  user:
+    author.user === undefined ? null : { name: `${author.user} Full`, displayName: author.user },
+  botActor: author.bot === undefined ? null : { name: author.bot },
+  externalUser: null,
+});
+
+/** An issue's detail; `linked` adds my link to a thread here among links that must not count. */
+const detailAnswer = (id: string, teamId: string, linked = true): Answer => ({
+  body: {
+    data: {
+      issue: {
+        id,
+        identifier: `ENG-${id}`,
+        team: { id: teamId },
+        project: null,
+        description: "Fix the **login** flow.",
+        creator: { id: "u1", name: "Dana Kim", displayName: "dana", avatarUrl: null, isMe: true },
+        threadLinks: {
+          nodes: [
+            ...(linked
+              ? [
+                  {
+                    url: "t3-thread://v2/env-me/thread-mine",
+                    createdAt: "2026-11-14T08:00:00.000Z",
+                    creator: { id: "user-1" },
+                  },
+                ]
+              : []),
+            {
+              url: "t3-thread://v2/env-me/thread-forged",
+              createdAt: "2026-11-14T09:00:00.000Z",
+              creator: { id: "user-2" },
+            },
+          ],
+        },
+        // Newest first, as Linear lists them.
+        comments: {
+          nodes: [
+            linearComment("c-3", "2026-11-14T11:00:00.000Z", "Linked a pull request.", {
+              bot: "GitHub",
+            }),
+            // A reply to a reply, which Linear's API allows; it belongs under the root.
+            linearComment(
+              "c-4",
+              "2026-11-14T10:30:00.000Z",
+              "Thanks.",
+              { user: "Lawrence" },
+              "c-2",
+            ),
+            linearComment(
+              "c-2",
+              "2026-11-14T10:00:00.000Z",
+              "agent: accept — on it.",
+              { user: "dana" },
+              "c-1",
+            ),
+            linearComment("c-1", "2026-11-14T09:00:00.000Z", "Can you take this?", {
+              user: "Lawrence",
+            }),
+          ],
+        },
+      },
+    },
+  },
+});
 
 const ready = (snapshot: BoardSnapshot) => {
   expect(snapshot.status).toBe("ready");
@@ -885,25 +973,6 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Board", (it) => 
   );
 
   it.effect("reads an issue's detail only when the issue is on the project's board", () => {
-    const detail = (id: string, teamId: string) => ({
-      body: {
-        data: {
-          issue: {
-            id,
-            team: { id: teamId },
-            project: null,
-            description: "Fix the **login** flow.",
-            creator: {
-              id: "u1",
-              name: "Dana Kim",
-              displayName: "dana",
-              avatarUrl: null,
-              isMe: true,
-            },
-          },
-        },
-      },
-    });
     const answer = boardAnswers([[linearIssue("1", "s-todo")]]);
     return connected(
       (board, linear) =>
@@ -911,6 +980,40 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Board", (it) => 
           expect(yield* board.issueDetail({ projectId: PROJECT_ID, issueId: "1" })).toEqual({
             description: "Fix the **login** flow.",
             creator: { id: "u1", name: "dana", avatarUrl: null, isMe: true },
+            comments: [
+              {
+                id: "c-1",
+                body: "Can you take this?",
+                author: "Lawrence",
+                createdAt: "2026-11-14T09:00:00.000Z",
+                agent: false,
+                replies: [
+                  {
+                    id: "c-2",
+                    body: "agent: accept — on it.",
+                    author: "dana",
+                    createdAt: "2026-11-14T10:00:00.000Z",
+                    agent: true,
+                  },
+                  {
+                    id: "c-4",
+                    body: "Thanks.",
+                    author: "Lawrence",
+                    createdAt: "2026-11-14T10:30:00.000Z",
+                    agent: false,
+                  },
+                ],
+              },
+              {
+                id: "c-3",
+                body: "Linked a pull request.",
+                author: "GitHub",
+                createdAt: "2026-11-14T11:00:00.000Z",
+                agent: false,
+                replies: [],
+              },
+            ],
+            linkedThreadId: "thread-mine",
           });
           expect(
             linear.calls.find((call) => call.operation === "BoardIssueDetail")?.variables,
@@ -927,7 +1030,94 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Board", (it) => 
           ? answer(operation, variables)
           : variables.id === "gone"
             ? { body: { data: { issue: null } } }
-            : detail(String(variables.id), variables.id === "9" ? "team-2" : team.id),
+            : detailAnswer(String(variables.id), variables.id === "9" ? "team-2" : team.id),
+      undefined,
+      {
+        getThreadShell: (threadId) =>
+          Effect.succeed(threadId === "thread-mine" ? ({} as OrchestrationV2ThreadShell) : null),
+      },
+    );
+  });
+
+  it.effect("posts a comment as the signed-in person, then queues it in the linked thread", () => {
+    const answer = boardAnswers([[linearIssue("1", "s-todo")]]);
+    const sent: Array<ThreadManagement.ThreadManagementSendInput> = [];
+    const threads: Partial<ThreadManagement.ThreadManagementService["Service"]> = {
+      getThreadShell: (threadId) =>
+        Effect.succeed(
+          threadId === "thread-mine"
+            ? ({ projectId: ProjectId.make("project-thread") } as OrchestrationV2ThreadShell)
+            : null,
+        ),
+      sendToThread: (input) =>
+        Effect.sync(() => {
+          sent.push(input);
+          return {} as ThreadManagement.ThreadManagementSendResult;
+        }),
+    };
+    return connected(
+      (board, linear) =>
+        Effect.gen(function* () {
+          const posts = () => linear.calls.filter((call) => call.operation === "BoardComment");
+          expect(
+            yield* board.comment({
+              projectId: PROJECT_ID,
+              issueId: "1",
+              body: "On it.",
+              parentId: "c-1",
+            }),
+          ).toEqual({ threadId: "thread-mine" });
+          expect(posts().map((call) => call.variables)).toEqual([
+            { input: { issueId: "1", body: "On it.", parentId: "c-1" } },
+          ]);
+          expect(posts()[0]?.account).toBe(GOOD);
+          expect(sent).toEqual([
+            expect.objectContaining({
+              projectId: "project-thread",
+              threadId: "thread-mine",
+              commandId: "board-comment:thread-mine:c-new",
+              text: "I replied to Lawrence's comment on ENG-1 in Linear:\n\nOn it.",
+              mode: "queue",
+              createdBy: "user",
+            }),
+          ]);
+
+          // No linked thread: Linear only.
+          expect(
+            yield* board.comment({ projectId: PROJECT_ID, issueId: "2", body: "Linear only." }),
+          ).toEqual({ threadId: null });
+          expect(posts()).toHaveLength(2);
+          expect(sent).toHaveLength(1);
+
+          // Linear refuses: no thread hears of it.
+          expect(
+            yield* board
+              .comment({ projectId: PROJECT_ID, issueId: "3", body: "Refused." })
+              .pipe(Effect.flip),
+          ).toMatchObject({ reason: "invalid-response" });
+          expect(sent).toHaveLength(1);
+        }).pipe(Effect.orDie),
+      (operation, variables) => {
+        if (operation === "BoardIssueDetail") {
+          return detailAnswer(String(variables.id), team.id, variables.id !== "2");
+        }
+        if (operation === "BoardComment") {
+          const input = variables.input as { issueId: string };
+          return {
+            body: {
+              data: {
+                commentCreate:
+                  input.issueId === "3"
+                    ? { success: false, comment: { id: "c-refused" } }
+                    : { success: true, comment: { id: "c-new" } },
+              },
+            },
+          };
+        }
+        return answer(operation, variables);
+      },
+      undefined,
+      threads,
     );
   });
 
