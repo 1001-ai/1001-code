@@ -310,9 +310,8 @@ earlier messages, and the thread marks where it began with **New session**.
 Earlier messages and diffs stay in the thread. Dismiss the notice above the
 composer to keep the current session instead.
 
-On web and desktop, turn on **Context window** in **Settings → Appearance →
-Thread details** to see context usage in the thread details card. It appears
-once the provider reports usage.
+On web and desktop, the thread details card shows context usage (**Context window** in
+**Settings → Appearance → Thread details**). It appears once the provider reports usage.
 
 Claude instances can also compact idle threads for you. See
 [compact long conversations](./providers-claude.md#compact-long-conversations).

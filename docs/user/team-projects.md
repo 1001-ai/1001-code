@@ -108,7 +108,7 @@ ones.
 1. Open **Settings → Threads → Board** and select **Sign in with Linear**. Linear opens in your
    browser; approve access there and it sends you back to the environment, which says you can
    close the tab. Settings then shows who you are signed in as. **Disconnect** signs out and
-   revokes the access at Linear.
+   revokes the access at Linear. A new installation also offers **Sign in** on the Welcome page.
 2. In a thread of the project, open **Board** from the right panel's new surface menu or the
    command palette.
 
@@ -123,8 +123,20 @@ every 30 seconds while it is open, and when you select refresh, which also picks
 It does not change issues. When Linear's rate limit is reached, the board keeps its last read with
 a warning and waits as long as Linear asks before reading again.
 
+On web and desktop, **Tasks** in the thread details card lists the board's issues that link the
+thread, with each one's status; select one to open it on the board. Like the board, it leaves out
+issues closed more than a week ago.
+
 Each environment reads Linear as the person who signed in on it, so sign in on each machine you
 use the board from.
+
+When an agent's message links to an issue of the board's Linear team, or writes its id such as
+`COD-60`, selecting it opens the issue on the board instead of in Linear. An issue the board does
+not show, such as one in another Linear project of the team, or any issue while the board cannot
+load, gets a note with **Open in Linear**.
+Links to other teams' issues, links you select while holding a modifier key, and every link while
+you are signed out of Linear open Linear as before. Ids in code are left as they are. The mobile app
+has no board.
 
 ### Set up Linear sign-in
 

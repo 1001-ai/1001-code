@@ -13,6 +13,7 @@ import {
   type TeamCatalogProject,
   type TeamCatalogProposal,
   TeamCatalogError,
+  type TeamCatalogLinear,
   type TeamCatalogSnapshot,
   type TeamCatalogViewer,
   type ThreadId,
@@ -87,12 +88,18 @@ const NOT_IN_CATALOG = "This project is not in the team catalog.";
 const MAX_PROPOSALS_PER_PROJECT = 200;
 
 /** The board reads a thread from an issue's link attachments, so a comment alone is not enough. */
-const threadLinkInstructions = (link: string): string =>
-  [
-    "<thread_link>",
-    `This thread's link is ${link}. When you file an issue on this project's Linear board or work on one, add this link to that issue once, as a link attachment (not only in a comment), so the board and teammates' agents can find this thread. Include it in the "agent:" comments you write there too.`,
-    "</thread_link>",
+const boardInstructions = (linear: TeamCatalogLinear, link: string): string => {
+  const board =
+    linear.project === undefined
+      ? `the ${linear.team} team in Linear`
+      : `the Linear project "${linear.project}" in the ${linear.team} team`;
+  return [
+    "<board>",
+    `This project's board is ${board}. Use it for every issue you read, file or update, unless the user names another board.`,
+    `This thread's link is ${link}. When you file an issue on this board or work on one, add this link to that issue once, as a link attachment (not only in a comment), so the board and teammates' agents can find this thread. Include it in the "agent:" comments you write there too.`,
+    "</board>",
   ].join("\n");
+};
 
 /** Turns use the cached catalog; one older than this starts a background fetch. */
 const STALE_AFTER_MS = 10 * 60_000;
@@ -269,8 +276,8 @@ const make = Effect.gen(function* () {
       const { view, project } = yield* readWithProject(projectId);
       if (project?.linear === undefined) return view.block ?? undefined;
       const link = `${THREAD_LINK_PROTOCOL}://v2/${environmentId}/${threadId}`;
-      const threadLink = threadLinkInstructions(link);
-      return view.block === null ? threadLink : `${view.block}\n\n${threadLink}`;
+      const board = boardInstructions(project.linear, link);
+      return view.block === null ? board : `${view.block}\n\n${board}`;
     },
     // A cancelled run must stay cancelled; only a failed read degrades to no memory.
     Effect.catchCauseIf(
