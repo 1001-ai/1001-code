@@ -124,7 +124,7 @@ It does not change issues. When Linear's rate limit is reached, the board keeps 
 a warning and waits as long as Linear asks before reading again.
 
 On web and desktop, **Tasks** in the thread details card lists the board's issues that link the
-thread, with each one's status; select one to open it in Linear. Like the board, it leaves out
+thread, with each one's status; select one to open it on the board. Like the board, it leaves out
 issues closed more than a week ago.
 
 Each environment reads Linear as the person who signed in on it, so sign in on each machine you
