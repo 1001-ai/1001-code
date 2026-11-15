@@ -182,6 +182,7 @@ import {
 import { resolvePullRequestPreviewTarget } from "@t3tools/client-runtime/change-request-links";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { useOpenChangeRequestLink } from "~/lib/openPullRequestLink";
+import { boardIssueLinksFirst, useOpenBoardIssueLink } from "./board/boardIssueLinks";
 import { useOpenLink } from "../browser/useOpenLink";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
 import { isPreviewAvailableFor } from "../browser/previewRuntime";
@@ -688,7 +689,10 @@ function useChatMarkdownState({
         : payload.html,
     );
   };
-  const openChangeRequestLink = useOpenChangeRequestLink(threadRef, pullRequestPanelRef);
+  const openChangeRequestLink = boardIssueLinksFirst(
+    useOpenBoardIssueLink(threadRef),
+    useOpenChangeRequestLink(threadRef, pullRequestPanelRef),
+  );
   const openDeferredMarkdownLink = useOpenLink(threadRef);
   // Subscribe so hydrated settings apply before the anchor synchronously decides whether to intercept _blank.
   const linkTargetPreference = useClientSettings((settings) => settings.browserLinkTarget);

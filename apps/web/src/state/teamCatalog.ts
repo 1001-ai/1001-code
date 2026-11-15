@@ -14,6 +14,10 @@ const teamCatalogSubscription = createEnvironmentRpcSubscriptionAtomFamily(conne
   idleTtlMs: 60_000,
 });
 
+/** The catalog subscription itself, for atoms that derive from it. */
+export const teamCatalogAtom = (environmentId: EnvironmentId) =>
+  teamCatalogSubscription({ environmentId, input: {} });
+
 export const teamCatalogRefresh = createEnvironmentRpcCommand(connectionAtomRuntime, {
   label: "environment-data:team-catalog:refresh",
   tag: WS_METHODS.teamCatalogRefresh,

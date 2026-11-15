@@ -32,6 +32,10 @@ const boardConnectionSubscription = createEnvironmentRpcSubscriptionAtomFamily(
   },
 );
 
+/** Who the environment reads Linear as, for atoms that derive from it. */
+export const boardConnectionAtom = (environmentId: EnvironmentId) =>
+  boardConnectionSubscription({ environmentId, input: {} });
+
 export const boardRefresh = createEnvironmentRpcCommand(connectionAtomRuntime, {
   label: "environment-data:board:refresh",
   tag: WS_METHODS.boardRefresh,
@@ -109,6 +113,6 @@ export function useBoard(
 
 /** Who the environment reads Linear as; null until the server answers. */
 export function useBoardConnection(environmentId: EnvironmentId): BoardConnection | null {
-  const result = useAtomValue(boardConnectionSubscription({ environmentId, input: {} }));
+  const result = useAtomValue(boardConnectionAtom(environmentId));
   return AsyncResult.getOrElse(result, () => null);
 }
