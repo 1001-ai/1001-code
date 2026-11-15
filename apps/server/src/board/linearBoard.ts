@@ -669,7 +669,7 @@ export const boardTask = (task: LinearTask): BoardTask => ({
   title: task.title,
   url: task.url,
   status: { name: task.state.name, type: task.state.type },
-  assignee: task.assignee === null ? null : task.assignee.displayName || task.assignee.name,
+  assignee: task.assignee === null ? null : task.assignee.name || task.assignee.displayName,
   project: task.project?.name ?? null,
 });
 

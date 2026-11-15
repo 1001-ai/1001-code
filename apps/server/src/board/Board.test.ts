@@ -1635,7 +1635,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Board", (it) => 
             title: "Fix the login flow",
             url: "https://linear.app/acme/issue/ENG-7",
             status: { name: "In Progress", type: "started" },
-            assignee: "dana",
+            assignee: "Dana Kim",
             project: "Web",
           },
           threadLinked: true,
@@ -1692,7 +1692,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Board", (it) => 
             task: expect.objectContaining({
               identifier: "ENG-1",
               status: { name: "Done", type: "completed" },
-              assignee: "Lawrence",
+              assignee: "Lawrence Ade",
             }),
             threadLinked: true,
           });
@@ -1824,7 +1824,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Board", (it) => 
                 title: "Issue 1",
                 url: "https://linear.app/acme/issue/ENG-1",
                 status: { name: "Todo", type: "unstarted" },
-                assignee: "dana",
+                assignee: "Dana Kim",
                 project: "Web",
               },
               {
