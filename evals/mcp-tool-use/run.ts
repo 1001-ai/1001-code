@@ -93,10 +93,12 @@ import {
   SecretExpect,
   secretDiagnostics,
 } from "./secret-grading.ts";
+import { boardMemory, LINEAR_PREFIX, linearTools } from "./board.ts";
 /** Agent models by id, with the display name a harness gives them. */
 const MODELS = {
   "claude-sonnet-5-5": "Sonnet 5.5",
   "claude-opus-5-5": "Opus 5.5",
+  "claude-haiku-5-5": "Haiku 5.5",
   "gpt-6.1-sol": "GPT-6.1 Sol",
   "gpt-6-astra": "GPT-6 Astra",
 } as const;
@@ -306,6 +308,8 @@ export const McpToolUseCase = Schema.Struct({
     linkedEnvironments: Schema.optional(Schema.Boolean),
     /** T3 runs in dev mode from this git checkout, so its text tells agents how to show web changes. */
     liveAppCheckout: Schema.optional(Schema.String),
+    /** The project's Linear board: T3 adds its `<board>` block, and Linear's MCP tools are loadable. */
+    board: Schema.optional(Contracts.TeamCatalogLinear),
     /** delegate_task `role` for a delegated child. T3 builds the child's first message from it. */
     delegateRole: Schema.optional(OrchestratorMcpTaskRole),
     context: Schema.optional(Schema.String),
@@ -427,6 +431,7 @@ const CODEX_NAMES: Readonly<Record<string, string>> = {
 };
 export const normalizeToolName = (name: string) => {
   const bare = name.slice(name.lastIndexOf(".") + 1);
+  if (bare.startsWith(LINEAR_PREFIX)) return bare.slice(LINEAR_PREFIX.length);
   return isT3Name(bare)
     ? bare.slice(T3_PREFIX.length)
     : (CODEX_NAMES[bare] ?? bare.slice(bare.lastIndexOf("_") + 1));
@@ -522,7 +527,12 @@ const visibleT3Tools = (options: { readonly subagent?: boolean; readonly links?:
  * `browser` say whether the thread holds the `device` and `preview` capabilities, as agent device
  * and browser access decide.
  */
-const claudeQueryOptions = (model: Model, device = true, browser = true) => {
+const claudeQueryOptions = (
+  model: Model,
+  device = true,
+  browser = true,
+  memory?: string | undefined,
+) => {
   // Refs whose text follows a capability read its flag; older ones ignore it.
   const input: Parameters<typeof makeClaudeQueryOptions>[0] & {
     readonly deviceToolsAvailable?: boolean;
@@ -535,13 +545,19 @@ const claudeQueryOptions = (model: Model, device = true, browser = true) => {
     mcpServers: { "t3-code": { type: "http", url: "http://127.0.0.1/mcp" } },
     deviceToolsAvailable: device,
     browserToolsAvailable: browser,
+    memory,
   };
   return makeClaudeQueryOptions(input);
 };
 
 /** Text T3 appends to Claude Code's system prompt. Delegated children get the same text. */
-export const t3SystemAppend = (model: Model, device = true, browser = true) => {
-  const { systemPrompt } = claudeQueryOptions(model, device, browser);
+export const t3SystemAppend = (
+  model: Model,
+  device = true,
+  browser = true,
+  memory?: string | undefined,
+) => {
+  const { systemPrompt } = claudeQueryOptions(model, device, browser, memory);
   if (isRecord(systemPrompt) && systemPrompt.type === "preset" && systemPrompt.append) {
     return systemPrompt.append;
   }
@@ -630,9 +646,12 @@ export const buildBase = (
     readonly deviceAccess?: boolean;
     /** false: the thread has no agent browser access, so T3's text leaves the browser out. */
     readonly browserAccess?: boolean;
+    /** The project's Linear board: T3's `<board>` block joins the append, Linear's tools the list. */
+    readonly board?: Contracts.TeamCatalogLinear | undefined;
   },
 ) => {
   const t3 = visibleT3Tools(options);
+  const mcpTools = options.board === undefined ? [] : linearTools;
   const firstAssistant = template.messages.findIndex((message) => message.role === "assistant");
   const head = template.messages.slice(0, firstAssistant === -1 ? undefined : firstAssistant);
   const systemTexts = [
@@ -648,6 +667,7 @@ export const buildBase = (
   const nativeDeferred = deferredList.split("\n").filter((name) => name && !isT3Name(name));
   const names = [
     ...nativeDeferred,
+    ...mcpTools.map((tool) => tool.name),
     ...t3.filter((tool) => !alwaysLoaded.has(tool.name)).map((tool) => tool.name),
   ]
     .toSorted()
@@ -655,7 +675,12 @@ export const buildBase = (
   const { model } = options;
   const append = options.nativeSubagent
     ? ""
-    : t3SystemAppend(model, options.deviceAccess, options.browserAccess);
+    : t3SystemAppend(
+        model,
+        options.deviceAccess,
+        options.browserAccess,
+        options.board === undefined ? undefined : boardMemory(options.board, EVAL_ENVIRONMENT_ID),
+      );
   const modelLine = `You are powered by the model named ${MODELS[model]}. The exact model ID is ${model}.`;
   const joined = systemTexts.join("\n");
   // The capture's home directory names its user. Cases use `/home/user` paths instead.
@@ -701,7 +726,11 @@ export const buildBase = (
     ],
     /** Tools ToolSearch loads: T3 tools from source, and native tools the template only names. */
     t3,
-    deferred: [...t3, ...nativeDeferred.map((name) => ({ name, ...nativeSchema(name) }))],
+    deferred: [
+      ...t3,
+      ...mcpTools,
+      ...nativeDeferred.map((name) => ({ name, ...nativeSchema(name) })),
+    ],
   };
 };
 
@@ -2517,6 +2546,7 @@ const main = Effect.gen(function* () {
     deviceAccess: boolean,
     browserAccess: boolean,
     links: boolean,
+    board: Contracts.TeamCatalogLinear | undefined,
   ): Effect.Effect<Base, Schema.SchemaError> =>
     codex
       ? decodeCodexCapture(template).pipe(
@@ -2542,6 +2572,7 @@ const main = Effect.gen(function* () {
               links,
               deviceAccess,
               browserAccess,
+              board,
             });
             return role === "native-subagent"
               ? Effect.promise(() =>
@@ -2552,8 +2583,8 @@ const main = Effect.gen(function* () {
         );
   // Codex has no native subagents; its cases with that role run as top-level threads.
   const baseKey = ({ setup }: McpToolUseCase) =>
-    `${codex && setup.role === "native-subagent" ? "top" : setup.role}:${setup.world?.deviceAgentAccess !== false}:${setup.world?.browserAgentAccess !== false}:${setup.linkedEnvironments === true}${setup.liveAppCheckout ? `:${setup.liveAppCheckout}` : ""}`;
-  const base = yield* buildFor("top", true, true, false);
+    `${codex && setup.role === "native-subagent" ? "top" : setup.role}:${setup.world?.deviceAgentAccess !== false}:${setup.world?.browserAgentAccess !== false}:${setup.linkedEnvironments === true}${setup.liveAppCheckout ? `:${setup.liveAppCheckout}` : ""}${setup.board ? `:board=${JSON.stringify(setup.board)}` : ""}`;
+  const base = yield* buildFor("top", true, true, false, undefined);
   const bases = new Map<string, Base>([["top:true:true:false", base]]);
   for (const testCase of selected) {
     const key = baseKey(testCase);
@@ -2568,7 +2599,13 @@ const main = Effect.gen(function* () {
       key,
       yield* withLiveAppCheckout(
         testCase.setup.liveAppCheckout,
-        buildFor(role, device === "true", browser === "true", links === "true"),
+        buildFor(
+          role,
+          device === "true",
+          browser === "true",
+          links === "true",
+          testCase.setup.board,
+        ),
       ),
     );
   }
