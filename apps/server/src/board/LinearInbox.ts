@@ -71,13 +71,21 @@ const InboxState = Schema.fromJsonString(
     cursors: Schema.Record(Schema.String, Schema.String),
     /** Per thread, when comments were delivered in the last day. */
     delivered: Schema.Record(Schema.String, Schema.Array(Schema.String)),
-    /** Comments waiting for the user in a full-access thread, with when they arrived. */
-    held: Schema.Array(Schema.Struct({ ...Delivery.fields, since: Schema.String })),
+    /**
+     * Comments not delivered yet, with when they arrived: waiting for the user in a full-access
+     * thread, or for another try after a failed delivery.
+     */
+    held: Schema.Array(
+      Schema.Struct({ ...Delivery.fields, since: Schema.String, attempts: Schema.Number }),
+    ),
   }),
 );
 type InboxState = typeof InboxState.Type;
 const decodeState = Schema.decodeUnknownOption(InboxState);
 const encodeState = Schema.encodeSync(InboxState);
+
+/** A comment whose delivery failed this many times is dropped. */
+const MAX_DELIVERY_ATTEMPTS = 5;
 
 /** Stands in for a sender whose comment links no thread, so clients still show its name. */
 const LINEAR_ENVIRONMENT = EnvironmentId.make("linear");
@@ -137,14 +145,54 @@ const make = Effect.gen(function* () {
     });
   });
 
-  /** Held comments go in once the user is back in the thread or it left full access. */
+  type Held = InboxState["held"][number];
+
+  /** Delivers now, or holds the comment for another try; a retried delivery is a receipt replay. */
+  const deliverOrHold = Effect.fnUntraced(function* (held: Held) {
+    const failure = yield* deliver(held).pipe(
+      Effect.as(null),
+      Effect.catch((error) => Effect.succeed(error)),
+    );
+    if (failure === null) return null;
+    const attempts = held.attempts + 1;
+    if (attempts >= MAX_DELIVERY_ATTEMPTS) {
+      yield* Effect.logError("Linear inbox gave up delivering a comment.", {
+        comment: held.commentId,
+        threadId: held.threadId,
+        error: failure,
+      });
+      return null;
+    }
+    yield* Effect.logWarning("Linear inbox will try a comment again.", {
+      comment: held.commentId,
+      threadId: held.threadId,
+      attempts,
+      error: failure,
+    });
+    return { ...held, attempts };
+  });
+
+  /**
+   * Held comments go in once the user is back in the thread or it left full access; failed ones
+   * are tried again. Only a deleted or archived thread drops them.
+   */
   const releaseHeld = Effect.fn("LinearInbox.releaseHeld")(function* () {
-    const kept: Array<InboxState["held"][number]> = [];
+    const kept: Array<Held> = [];
     for (const item of state.held) {
       const thread = yield* threads
         .getThreadShell(item.threadId)
-        .pipe(Effect.orElseSucceed(() => null));
-      if (thread === null || thread.archivedAt !== null) continue;
+        .pipe(Effect.orElseSucceed(() => undefined));
+      if (thread === undefined) {
+        kept.push(item);
+        continue;
+      }
+      if (thread === null || thread.archivedAt !== null) {
+        yield* Effect.logInfo("Linear inbox drops a comment for a thread that is gone.", {
+          comment: item.commentId,
+          threadId: item.threadId,
+        });
+        continue;
+      }
       const userSentSince =
         thread.latestUserAuthoredMessageAt != null &&
         thread.latestUserAuthoredMessageAt.epochMilliseconds > Date.parse(item.since);
@@ -152,14 +200,8 @@ const make = Effect.gen(function* () {
         kept.push(item);
         continue;
       }
-      yield* deliver(item).pipe(
-        Effect.catch((error) =>
-          Effect.logWarning("Linear inbox could not deliver a held comment.", {
-            comment: item.commentId,
-            error,
-          }),
-        ),
-      );
+      const retry = yield* deliverOrHold(item);
+      if (retry !== null) kept.push(retry);
     }
     state = { ...state, held: kept };
   });
@@ -179,9 +221,8 @@ const make = Effect.gen(function* () {
         reason: route.reason,
       });
     }
-    const thread = yield* threads
-      .getThreadShell(route.threadId)
-      .pipe(Effect.orElseSucceed(() => null));
+    // A failed read fails the poll before the cursor passes this comment, so it is read again.
+    const thread = yield* threads.getThreadShell(route.threadId);
     const instance =
       thread === null ? undefined : yield* instances.getInstance(thread.providerInstanceId);
     const waiting =
@@ -218,21 +259,16 @@ const make = Effect.gen(function* () {
         title,
       },
     };
+    const held: Held = { ...delivery, since: DateTime.formatIso(now), attempts: 0 };
     if (thread.runtimeMode === "full-access") {
-      state = {
-        ...state,
-        held: [...state.held, { ...delivery, since: DateTime.formatIso(now) }],
-      };
+      state = { ...state, held: [...state.held, held] };
       return yield* Effect.logInfo("Linear inbox holds a comment for a full-access thread.", {
         ...fields,
         threadId: route.threadId,
       });
     }
-    yield* deliver(delivery).pipe(
-      Effect.catch((error) =>
-        Effect.logWarning("Linear inbox could not deliver a comment.", { ...fields, error }),
-      ),
-    );
+    const retry = yield* deliverOrHold(held);
+    if (retry !== null) state = { ...state, held: [...state.held, retry] };
   });
 
   const pollTeam = Effect.fn("LinearInbox.pollTeam")(function* (
@@ -268,9 +304,8 @@ const make = Effect.gen(function* () {
       .toSorted((a, b) => a.createdAt.localeCompare(b.createdAt));
     for (const comment of comments) {
       yield* handleComment(comment, session.viewerId, memberIds, now);
+      state = { ...state, cursors: { ...state.cursors, [team]: comment.createdAt } };
     }
-    const newest = comments.at(-1)?.createdAt;
-    if (newest !== undefined) state = { ...state, cursors: { ...state.cursors, [team]: newest } };
   });
 
   const poll: LinearInbox["Service"]["poll"] = Effect.gen(function* () {
