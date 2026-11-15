@@ -76,6 +76,8 @@ export class TeamCatalog extends Context.Service<
     readonly proposeFiles: (
       input: TeamCatalogFilesProposal,
     ) => Effect.Effect<TeamCatalogProposal, TeamCatalogError>;
+    /** Merges a proposal's pull request at once, then fetches so turns read the result. */
+    readonly mergeProposal: (pullRequestUrl: string) => Effect.Effect<void, TeamCatalogError>;
   }
 >()("t3/teamCatalog/TeamCatalog") {}
 
@@ -616,6 +618,11 @@ const make = Effect.gen(function* () {
     return yield* commitProposal(source, input);
   }, lock.withPermits(1));
 
+  const mergeProposal = Effect.fn("TeamCatalog.mergeProposal")(function* (pullRequestUrl: string) {
+    yield* access.mergePullRequest(pullRequestUrl);
+    yield* refresh({ force: true });
+  });
+
   const readFile: TeamCatalog["Service"]["readFile"] = (file) =>
     SubscriptionRef.get(state).pipe(
       Effect.flatMap((current) =>
@@ -635,6 +642,7 @@ const make = Effect.gen(function* () {
     liveViewer,
     readFile,
     proposeFiles,
+    mergeProposal,
   });
 });
 

@@ -148,17 +148,31 @@ kept as markdown in the catalog repository so the whole team shares them:
 - `memory/projects/<key>.md` applies to threads in that catalog project.
 - `memory/people/<github-login>.md` applies only to that person's own agents. Your login is
   the one the GitHub CLI is signed in with (`gh auth login`).
+- `memory/projects/<key>/people/<github-login>.md` applies only to that person's agents in that
+  project.
 
 Write one memory per list item, in plain words. Every turn gets the team file, then the
-project's, then your own, so a more specific one wins; the user's own message wins over all of
+project's, then your own, then your own for the project, so a more specific one wins; the user's own message wins over all of
 them. The text is limited to about 8 KB in total, roughly 2,000 tokens.
 
 Open **Memory** from the right panel's new surface menu or the command palette, in a
 thread of the project. **Team**, **Project** and **Personal** show each file as it was last
-fetched; **What agents get** shows the exact text agents receive and its size. **Edit** changes
+fetched (**Personal** shows both of yours); **What agents get** shows the exact text agents receive and its size. **Edit** changes
 a file and **Propose change** opens a pull request on the catalog repository, as link changes
 do. The change is pending until it is merged; the repository's review rules decide who approves
 it, including for personal files.
+
+### Memories agents propose
+
+While they work, agents propose memories on their own: a preference you stated, something you
+corrected twice, or a fact about the project that later threads will need. Each proposal appears
+as a card in the chat. Edit the wording if you like, then choose **Accept for me** (your agents in
+this project), **Accept for team** (everyone's agents in this project) or **Reject**. Accepting
+adds the line to that file and merges the pull request at once, so the repository's rules must
+allow merging without a review; if they refuse, the card says so and the pull request stays open.
+The agent keeps working while the card waits, and deciding never starts a turn: an accepted
+memory applies from the next one. Unanswered proposals also wait under **Proposals** in the
+Memory panel. Only the web and desktop apps show the cards.
 
 Agents pick up changes on their next turn once the catalog is fetched again. A turn uses the
 last fetch and fetches in the background when it is more than ten minutes old; the refresh

@@ -24,6 +24,11 @@ export const memoryPropose = createEnvironmentRpcCommand(connectionAtomRuntime, 
   tag: WS_METHODS.memoryPropose,
 });
 
+export const memoryDecide = createEnvironmentRpcCommand(connectionAtomRuntime, {
+  label: "environment-data:memory:decide",
+  tag: WS_METHODS.memoryDecide,
+});
+
 const EMPTY_ATOM = Atom.make(AsyncResult.initial<MemoryView, never>()).pipe(
   Atom.withLabel("web-memory:empty"),
 );
