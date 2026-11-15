@@ -39,6 +39,7 @@ describe("splitReLines", () => {
     { name: "nothing after Re:", text: "**Re:**\nBody", expected: null },
     { name: "an empty quote", text: '**Re:** "  "\nBody', expected: null },
     { name: "an unclosed quote", text: '**Re:** "fix it\nBody', expected: null },
+    { name: "a lone quote", text: '**Re:** "\nBody', expected: null },
     { name: "text after the closing quote", text: '**Re:** "fix" and more\nBody', expected: null },
     { name: "curly quotes", text: "**Re:** “fix”\nBody", expected: null },
     { name: "Re: later in the reply", text: 'Done.\n\n**Re:** "the rest"', expected: null },
