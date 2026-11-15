@@ -25,6 +25,7 @@ A textual conflict costs an agent minutes. A fork change that nobody can explain
 3. **Never add a numbered database migration.** Upstream owns that sequence, and a fork migration that takes the next number stops the server starting once upstream uses it. Fork tables need their own migration lane.
 4. **Test what you add.** Upstream's tests do not know about our features. Without a test, a fork feature breaks silently the day upstream changes something under it.
 5. **Record every divergence below, in the pull request that makes it.** The entry is what lets an agent, months later, resolve a conflict in your code the way you would have.
+6. **Chat text stays plain.** A feature that gives message text a meaning (question cards, Re: lines, proposals) uses a markdown convention that reads normally in the official T3 Code clients and other agent harnesses. Only 1001 Code renders it as controls.
 
 When an agent needs the user to decide something, it asks with a question block that the web and desktop clients render as answer controls. T3 Code teaches every agent the format in its own instructions (see [Question format in the agent instructions](#question-format-in-the-agent-instructions)). A feature that needs agents to behave a certain way goes in those instructions, never in a skill: a skill reaches only agents that choose to load it, in this repository.
 
