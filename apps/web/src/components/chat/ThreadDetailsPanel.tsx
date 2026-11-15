@@ -34,6 +34,7 @@ import {
 import { ThreadDetailsItemsMenuItems } from "./ThreadDetailsItemsMenu";
 import { ThreadDetailsCost } from "./ThreadDetailsCost";
 import { ThreadDetailsSubagents } from "./ThreadDetailsSubagents";
+import { ThreadDetailsTasks } from "./ThreadDetailsTasks";
 import { resolveThreadDetailsVisibility, THREAD_DETAILS_ITEMS } from "./threadDetailsItems";
 import { useClientSettings } from "../../hooks/useSettings";
 import { useProject, useServerConfigs } from "../../state/entities";
@@ -283,6 +284,14 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                   threadId={props.threadId}
                   showLineage={visible.lineage}
                   showSideChats={visible.sideChats}
+                />
+              ) : null}
+
+              {density === "full" && !props.draftId && visible.tasks ? (
+                <ThreadDetailsTasks
+                  environmentId={props.environmentId}
+                  projectId={props.projectId}
+                  threadId={props.threadId}
                 />
               ) : null}
 
