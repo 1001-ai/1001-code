@@ -7,7 +7,7 @@ import {
   commentKind,
   exchangeSkipReason,
   framedComment,
-  linkedThreadId,
+  linkedThreadIds,
   routeComment,
   senderThread,
   threadSkipReason,
@@ -106,7 +106,7 @@ describe("routeComment", () => {
   it("names the sender and tells agents from people", () => {
     expect(routeComment(comment({ body: "  Agent: counter" }), context)).toEqual({
       _tag: "thread",
-      threadId: "thread-mine",
+      threadIds: ["thread-mine"],
       kind: "agent",
       sender: "Lawrence",
     });
@@ -114,7 +114,7 @@ describe("routeComment", () => {
   });
 });
 
-describe("linkedThreadId", () => {
+describe("linkedThreadIds", () => {
   it("takes my newest link to a thread here, never one someone else attached", () => {
     const attachments = [
       link("t3-thread://v2/env-me/thread-old", ME, "2026-11-15T09:00:00.000Z"),
@@ -123,9 +123,16 @@ describe("linkedThreadId", () => {
       link("t3-thread://v2/env-other/thread-away", ME, "2026-11-15T11:15:00.000Z"),
       link("t3-thread://v2/env-me/thread-forged", LAWRENCE, "2026-11-15T11:30:00.000Z"),
     ];
-    expect(linkedThreadId(attachments, ME, ENVIRONMENT)).toBe("thread-new");
-    expect(linkedThreadId(attachments, LAWRENCE, ENVIRONMENT)).toBe("thread-forged");
-    expect(linkedThreadId(attachments.slice(1, 2), ME, ENVIRONMENT)).toBeNull();
+    expect(linkedThreadIds(attachments, ME, ENVIRONMENT)).toEqual(["thread-new"]);
+    expect(linkedThreadIds(attachments, LAWRENCE, ENVIRONMENT)).toEqual(["thread-forged"]);
+    expect(linkedThreadIds(attachments.slice(1, 2), ME, ENVIRONMENT)).toEqual([]);
+  });
+
+  it("offers a percent-encoded id as written, then decoded", () => {
+    expect(linkedThreadIds([link("t3-thread://v2/env-me/mcp%3Aabc")], ME, ENVIRONMENT)).toEqual([
+      "mcp%3Aabc",
+      "mcp:abc",
+    ]);
   });
 });
 

@@ -43,7 +43,7 @@ import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
 import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
 import * as TeamCatalog from "../teamCatalog/TeamCatalog.ts";
-import { linkedThreadId } from "./linearInboxRouting.ts";
+import { linkedThreadIds } from "./linearInboxRouting.ts";
 import {
   COMMENT_CREATE_MUTATION,
   CommentCreateData,
@@ -585,7 +585,21 @@ const make = Effect.gen(function* () {
     ) {
       return yield* notOnBoard;
     }
-    const threadId = linkedThreadId(issue.threadLinks.nodes, credential.viewer.id, environmentId);
+    let threadId: ThreadId | null = null;
+    for (const candidate of linkedThreadIds(
+      issue.threadLinks.nodes,
+      credential.viewer.id,
+      environmentId,
+    )) {
+      // A failed lookup only hides the link; the issue still reads.
+      const thread = yield* threads
+        .getThreadShell(candidate)
+        .pipe(Effect.orElseSucceed(() => null));
+      if (thread !== null) {
+        threadId = candidate;
+        break;
+      }
+    }
     return { generation, issue, threadId };
   });
 

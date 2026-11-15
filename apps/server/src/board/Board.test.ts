@@ -448,7 +448,7 @@ const detailAnswer = (id: string, teamId: string, linked = true): Answer => ({
               "c-1",
             ),
             linearComment("c-1", "2026-11-14T09:00:00.000Z", "Can you take this?", {
-              user: "Yasser",
+              user: "Lawrence",
             }),
           ],
         },
@@ -976,7 +976,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Board", (it) => 
               {
                 id: "c-1",
                 body: "Can you take this?",
-                author: "Yasser",
+                author: "Lawrence",
                 createdAt: "2026-11-14T09:00:00.000Z",
                 agent: false,
                 replies: [
@@ -1016,6 +1016,11 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Board", (it) => 
           : variables.id === "gone"
             ? { body: { data: { issue: null } } }
             : detailAnswer(String(variables.id), variables.id === "9" ? "team-2" : team.id),
+      undefined,
+      {
+        getThreadShell: (threadId) =>
+          Effect.succeed(threadId === "thread-mine" ? ({} as OrchestrationV2ThreadShell) : null),
+      },
     );
   });
 
@@ -1056,7 +1061,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Board", (it) => 
               projectId: "project-thread",
               threadId: "thread-mine",
               commandId: "board-comment:thread-mine:c-new",
-              text: "I replied to Yasser's comment on ENG-1 in Linear:\n\nOn it.",
+              text: "I replied to Lawrence's comment on ENG-1 in Linear:\n\nOn it.",
               mode: "queue",
               createdBy: "user",
             }),
