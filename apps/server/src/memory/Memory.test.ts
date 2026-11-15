@@ -3,6 +3,7 @@ import {
   ProjectId,
   type RepositoryIdentity,
   TeamCatalogError,
+  type TeamCatalogLinear,
   type TeamCatalogProposal,
   type TeamCatalogSnapshot,
   ThreadId,
@@ -230,23 +231,24 @@ it.effect("says why a scope has no file, and sends nothing without a catalog", (
   }).pipe(Effect.scoped),
 );
 
-it.effect("gives a thread on a Linear board its own link, even without memory files", () =>
+it.effect("names a project's Linear board and the thread's link, even without memory files", () =>
   Effect.gen(function* () {
-    const boardCatalog = (fields: Partial<TeamCatalogSnapshot> = {}) => {
+    const boardCatalog = (
+      fields: Partial<TeamCatalogSnapshot> = {},
+      linear: TeamCatalogLinear = { team: "ENG" },
+    ) => {
       const base = catalog(fields);
       const entry = base.projects[0]!;
-      return {
-        ...base,
-        projects: [{ ...entry, project: { ...entry.project, linear: { team: "ENG" } } }],
-      };
+      return { ...base, projects: [{ ...entry, project: { ...entry.project, linear } }] };
     };
-    const threadLink = "<thread_link>\nThis thread's link is t3-thread://v2/env-1/thread-1.";
+    const threadLink =
+      "<board>\nThis project's board is the COD team in Linear. Use it for every issue you read, file or update, unless the user names another board.\nThis thread's link is t3-thread://v2/env-1/thread-1.";
 
     const memory = yield* makeMemory({ catalog: boardCatalog() }).build;
     const view = yield* memory.read(PROJECT_ID);
     const block = yield* memory.instructions(PROJECT_ID, THREAD_ID);
     expect(block).toContain(`${view.block}\n\n${threadLink}`);
-    expect(view.block).not.toContain("<thread_link>");
+    expect(view.block).not.toContain("<board>");
 
     const empty = yield* makeMemory({
       catalog: boardCatalog(),
@@ -257,7 +259,14 @@ it.effect("gives a thread on a Linear board its own link, even without memory fi
     expect(emptyBlock).toContain(`</memory>\n\n${threadLink}`);
 
     const unmatched = yield* makeMemory({ catalog: boardCatalog(), identity: null }).build;
-    expect(yield* unmatched.instructions(PROJECT_ID, THREAD_ID)).not.toContain("<thread_link>");
+    expect(yield* unmatched.instructions(PROJECT_ID, THREAD_ID)).not.toContain("<board>");
+
+    const narrowed = yield* makeMemory({
+      catalog: boardCatalog({}, { team: "PLAT", project: "Platform" }),
+    }).build;
+    expect(yield* narrowed.instructions(PROJECT_ID, THREAD_ID)).toContain(
+      `This project's board is the Linear project "Platform" in the PLAT team.`,
+    );
   }).pipe(Effect.scoped),
 );
 
