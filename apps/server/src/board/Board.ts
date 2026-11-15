@@ -1120,7 +1120,7 @@ const make = Effect.gen(function* () {
     const target = yield* resolveTarget(projectId);
     if (target._tag === "unconfigured") return yield* noBoard(target.snapshot);
     const { team, project } = yield* findTeam(generation, target.linear);
-    return { generation, viewerId: credential.viewer.id, team, project };
+    return { generation, viewerId: credential.viewer.id, linear: target.linear, team, project };
   });
   type TaskBoard = Effect.Success<ReturnType<typeof taskBoard>>;
 
@@ -1195,6 +1195,13 @@ const make = Effect.gen(function* () {
     );
   });
 
+  /** Drops the cached read a later `board_list` would see, then reads open boards again. */
+  const afterWrite = (scope: TaskBoard) =>
+    Effect.suspend(() => {
+      cache.delete(cacheKey(scope.generation, scope.linear));
+      return refreshOpen;
+    });
+
   const notAccepted = new BoardError({
     reason: "invalid-response",
     detail: "Linear did not accept the change to the task.",
@@ -1217,7 +1224,7 @@ const make = Effect.gen(function* () {
     );
     if (!issueCreate.success || issueCreate.issue === null) return yield* notAccepted;
     const threadLinked = yield* linkThread(scope, issueCreate.issue.id, input.thread);
-    yield* refreshOpen;
+    yield* afterWrite(scope);
     return { task: boardTask(issueCreate.issue), threadLinked };
   });
 
@@ -1260,7 +1267,7 @@ const make = Effect.gen(function* () {
         input.thread.id,
       );
       const threadLinked = linked || (yield* linkThread(scope, issue.id, input.thread));
-      if (changes || !linked) yield* refreshOpen;
+      if (changes || !linked) yield* afterWrite(scope);
       return { task, threadLinked };
     },
   );

@@ -1679,6 +1679,52 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Board", (it) => 
       }).pipe(Effect.scoped),
   );
 
+  it.effect("a task list right after a write asks Linear, not the cache", () =>
+    Effect.gen(function* () {
+      let created: Array<ReturnType<typeof linearIssue>> = [];
+      const linear = fakeLinear((operation, variables) => {
+        if (operation === "BoardIssueCreate") {
+          created = [linearIssue("7", "s-progress")];
+          return {
+            body: {
+              data: {
+                issueCreate: {
+                  success: true,
+                  issue: {
+                    id: "issue-new",
+                    identifier: "ENG-7",
+                    title: "Issue 7",
+                    url: "https://linear.app/acme/issue/ENG-7",
+                    state: { name: "In Progress", type: "started" },
+                    assignee: null,
+                    project: { name: "Web" },
+                  },
+                },
+              },
+            },
+          };
+        }
+        if (operation === "BoardThreadLink") {
+          return { body: { data: { attachmentCreate: { success: true } } } };
+        }
+        return boardAnswers([created], [taskTeam])(operation, variables);
+      });
+      const board = yield* makeBoard({
+        client: linear.client,
+        catalog: catalog([catalogEntry({ team: "ENG", project: "Web" })]),
+        secrets: yield* memorySecrets(),
+      });
+      yield* signIn(board, linear);
+      const identifiers = Effect.map(board.listTasks(PROJECT_ID), (list) =>
+        list.tasks.map((task) => task.identifier),
+      );
+
+      expect(yield* identifiers).toEqual([]);
+      yield* board.addTask({ projectId: PROJECT_ID, thread: THREAD, title: "Issue 7" });
+      expect(yield* identifiers).toEqual(["ENG-7"]);
+    }).pipe(Effect.orDie, Effect.scoped),
+  );
+
   it.effect("updates only the given fields and links the thread once", () =>
     connected(
       (board, linear) =>
