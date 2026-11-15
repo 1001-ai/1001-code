@@ -979,26 +979,26 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Board", (it) => 
         Effect.gen(function* () {
           expect(yield* board.issueDetail({ projectId: PROJECT_ID, issueId: "1" })).toEqual({
             description: "Fix the **login** flow.",
-            creator: { id: "u1", name: "dana", avatarUrl: null, isMe: true },
+            creator: { id: "u1", name: "Dana Kim", avatarUrl: null, isMe: true },
             comments: [
               {
                 id: "c-1",
                 body: "Can you take this?",
-                author: "Lawrence",
+                author: "Lawrence Full",
                 createdAt: "2026-11-14T09:00:00.000Z",
                 agent: false,
                 replies: [
                   {
                     id: "c-2",
                     body: "agent: accept — on it.",
-                    author: "dana",
+                    author: "dana Full",
                     createdAt: "2026-11-14T10:00:00.000Z",
                     agent: true,
                   },
                   {
                     id: "c-4",
                     body: "Thanks.",
-                    author: "Lawrence",
+                    author: "Lawrence Full",
                     createdAt: "2026-11-14T10:30:00.000Z",
                     agent: false,
                   },
@@ -1076,7 +1076,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Board", (it) => 
               projectId: "project-thread",
               threadId: "thread-mine",
               commandId: "board-comment:thread-mine:c-new",
-              text: "I replied to Lawrence's comment on ENG-1 in Linear:\n\nOn it.",
+              text: "I replied to Lawrence Full's comment on ENG-1 in Linear:\n\nOn it.",
               mode: "queue",
               createdBy: "user",
             }),

@@ -108,7 +108,7 @@ describe("routeComment", () => {
       _tag: "thread",
       threadIds: ["thread-mine"],
       kind: "agent",
-      sender: "Lawrence",
+      sender: "Lawrence Smith",
     });
     expect(commentKind("Let's keep the poll in Board.ts. agent: no")).toBe("person");
   });
