@@ -250,6 +250,7 @@ import { useTeamProjectPaletteGroups } from "./teamProjects/useTeamProjectPalett
 import { useTeamProjectsDrawerToggle } from "./teamProjects/teamProjectsDrawerState";
 import { boardPaletteAction } from "./board/boardSurface";
 import { memoryPaletteAction } from "./memory/memorySurface";
+import { questionsPaletteAction } from "./questions/questionsEntryPoints";
 import { useCommandPaletteThreadItems } from "./CommandPaletteThreadItems";
 import { useCommandPaletteThemeItems } from "./CommandPaletteThemeItems";
 import {
@@ -1666,6 +1667,7 @@ function OpenCommandPaletteDialog(props: {
       },
     });
   }
+  actionItems.push(questionsPaletteAction(() => navigate({ to: "/questions" })));
 
   actionItems.push({
     kind: "action",
