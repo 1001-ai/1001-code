@@ -56,6 +56,7 @@ function resolveEarlyDesktopSettingsPath(input: {
   const t3Home = Option.fromUndefinedOr(input.env.T3CODE_HOME);
   const baseDir = resolveDesktopBaseDir({
     homeDirectory: input.homeDirectory,
+    isDevelopment: isDevelopmentEnvironment(input.env),
     joinPath: input.joinPath,
     t3Home,
   });

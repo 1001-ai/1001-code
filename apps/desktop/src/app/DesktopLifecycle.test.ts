@@ -5,6 +5,7 @@ import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
 import * as TestClock from "effect/testing/TestClock";
 
+import { FORK_DESKTOP } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 
 import type * as Electron from "electron";
@@ -262,8 +263,8 @@ describe("DesktopLifecycle", () => {
         Effect.provideService(HostProcess.Arguments, [
           "/opt/T3 Code/t3code",
           "--no-sandbox",
-          "T3CODE://pair?token=spent",
-          "t3code://new?prompt=hello",
+          `${FORK_DESKTOP.scheme.toUpperCase()}://pair?token=spent`,
+          `${FORK_DESKTOP.scheme}://new?prompt=hello`,
         ]),
       );
 

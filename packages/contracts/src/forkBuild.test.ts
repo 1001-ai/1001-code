@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 
-import { FORK_UPDATES_MESSAGE } from "./forkBuild.ts";
+import { FORK_UPDATES_MESSAGE, forkBuildEnvDefaults } from "./forkBuild.ts";
 import { managedUpdatesDenial, type ManagedPolicySummary } from "./managedPolicy.ts";
 
 const managed = (mode: "auto" | "off"): ManagedPolicySummary => ({
@@ -24,5 +24,27 @@ describe("managedUpdatesDenial", () => {
     },
   ])("denies updates under $name", ({ summary, denial }) => {
     expect(managedUpdatesDenial(summary)).toBe(denial);
+  });
+});
+
+describe("forkBuildEnvDefaults", () => {
+  const baked = { T3CODE_LINEAR_CLIENT_ID: "baked-client", T3CODE_TEAM_CATALOG: "baked-catalog" };
+
+  it.each([
+    { name: "an empty environment", env: {}, defaults: baked },
+    {
+      name: "a variable set at launch",
+      env: { T3CODE_TEAM_CATALOG: "launch-catalog" },
+      defaults: { T3CODE_LINEAR_CLIENT_ID: "baked-client" },
+    },
+    { name: "a blank variable", env: { T3CODE_TEAM_CATALOG: " " }, defaults: baked },
+  ])("fills only what $name leaves unset", ({ env, defaults }) => {
+    expect(forkBuildEnvDefaults(baked, env)).toEqual(defaults);
+  });
+
+  it("bakes only the listed settings, and only those with a value", () => {
+    expect(
+      forkBuildEnvDefaults({ T3CODE_LINEAR_CLIENT_ID: "", T3CODE_PORT: "1", HOME: "/x" }, {}),
+    ).toEqual({});
   });
 });

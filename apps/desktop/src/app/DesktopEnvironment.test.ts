@@ -1,6 +1,7 @@
 import * as NodePath from "@effect/platform-node/NodePath";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
+import { FORK_DESKTOP } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
@@ -69,7 +70,7 @@ describe("DesktopEnvironment", () => {
       const production = yield* makeEnvironment();
 
       assert.equal(development.stateDir, "/Users/alice/.t3/dev");
-      assert.equal(production.stateDir, "/Users/alice/.t3/userdata");
+      assert.equal(production.stateDir, `/Users/alice/${FORK_DESKTOP.homeDirName}/userdata`);
     }),
   );
 });

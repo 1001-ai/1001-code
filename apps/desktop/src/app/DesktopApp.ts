@@ -5,6 +5,7 @@ import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 
+import { FORK_DESKTOP } from "@t3tools/contracts";
 import * as NetService from "@t3tools/shared/Net";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as ElectronApp from "../electron/ElectronApp.ts";
@@ -23,6 +24,7 @@ import * as DesktopBackendManager from "../backend/DesktopBackendManager.ts";
 import * as DesktopBackendPool from "../backend/DesktopBackendPool.ts";
 import * as DesktopHomeOwner from "../backend/DesktopHomeOwner.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
+import * as DesktopForkBuildDefaults from "./DesktopForkBuildDefaults.ts";
 import * as DesktopLegacyLocalStorage from "./DesktopLegacyLocalStorage.ts";
 import * as DesktopLifecycle from "./DesktopLifecycle.ts";
 import * as DesktopLinuxUrlHandler from "./DesktopLinuxUrlHandler.ts";
@@ -41,8 +43,8 @@ import * as DesktopWslBackend from "../wsl/DesktopWslBackend.ts";
 import * as DesktopRendererHistory from "../telemetry/DesktopRendererHistory.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 
-const DEFAULT_DESKTOP_BACKEND_PORT = 3773;
-const MAX_TCP_PORT = 65_535;
+const DEFAULT_DESKTOP_BACKEND_PORT = FORK_DESKTOP.backendPort;
+const MAX_TCP_PORT = FORK_DESKTOP.backendPort;
 const DESKTOP_BACKEND_PORT_PROBE_HOSTS = ["127.0.0.1", "0.0.0.0", "::"] as const;
 
 const LinuxDesktopSessionConfig = Config.all({
@@ -83,7 +85,7 @@ const { logInfo: logBootstrapInfo, logWarning: logBootstrapWarning } =
 const { logInfo: logStartupInfo, logError: logStartupError } =
   DesktopObservability.makeComponentLogger("desktop-startup");
 
-const resolveDesktopBackendPort = Effect.fn("resolveDesktopBackendPort")(function* (
+export const resolveDesktopBackendPort = Effect.fn("resolveDesktopBackendPort")(function* (
   configuredPort: Option.Option<number>,
 ) {
   if (Option.isSome(configuredPort)) {
@@ -176,6 +178,7 @@ const bootstrap = Effect.gen(function* () {
   const snapShot = yield* DesktopSnapShot.DesktopSnapShot;
   const appActivation = yield* DesktopAppActivation.DesktopAppActivation;
   yield* logBootstrapInfo("bootstrap start");
+  yield* DesktopForkBuildDefaults.applyBuildEnvDefaults();
 
   const settings = yield* desktopSettings.get;
   const electronProtocol = yield* ElectronProtocol.ElectronProtocol;

@@ -12,8 +12,10 @@ import * as Scope from "effect/Scope";
 
 import * as Electron from "electron";
 
+import { FORK_DESKTOP } from "@t3tools/contracts";
+
 export const DESKTOP_HOST = "app";
-const DESKTOP_PRODUCTION_SCHEME = "t3code";
+const DESKTOP_PRODUCTION_SCHEME = FORK_DESKTOP.scheme;
 const DESKTOP_DEVELOPMENT_SCHEME = "t3code-dev";
 
 export function getDesktopScheme(isDevelopment: boolean): string {

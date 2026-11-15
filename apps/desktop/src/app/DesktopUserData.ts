@@ -1,3 +1,4 @@
+import { FORK_DESKTOP } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -41,7 +42,7 @@ export const resolveUserDataPath = Effect.fn("desktop.userData.resolveUserDataPa
     const path = yield* Path.Path;
     const names = input.isDevelopment
       ? { current: "t3code-dev", legacy: "T3 Code (Dev)" }
-      : { current: "t3code-v2", legacy: "T3 Code (Alpha)" };
+      : { current: FORK_DESKTOP.userDataDirName, legacy: "T3 Code (Alpha)" };
     const destinationPath = path.join(input.appDataDirectory, names.current);
     const legacyPath = path.join(input.appDataDirectory, names.legacy);
     const inspect = (resourcePath: string) =>
