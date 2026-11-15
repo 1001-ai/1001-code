@@ -308,7 +308,7 @@ function ReadyBoardView(props: {
       <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2">
         <div className="min-w-0 flex-1 truncate text-sm font-medium">
           {board.team.name}
-          {board.project ? (
+          {board.project && board.project.name !== board.team.name ? (
             <span className="text-muted-foreground"> · {board.project.name}</span>
           ) : null}
         </div>
