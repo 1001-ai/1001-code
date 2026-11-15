@@ -1,43 +1,55 @@
 import {
   buildMemoryBlock,
-  type ProjectId,
-  type TeamCatalogProposal,
-  TeamCatalogError,
-  type TeamCatalogSnapshot,
+  type MemoryDecideInput,
   type MemoryDocument,
+  type MemoryFileTarget,
+  type MemoryProposal,
+  type MemoryProposalDecision,
   type MemoryProposeInput,
   type MemoryScope,
   type MemoryView,
+  memoryFile,
+  type ProjectId,
+  type TeamCatalogProject,
+  type TeamCatalogProposal,
+  TeamCatalogError,
+  type TeamCatalogSnapshot,
+  type TeamCatalogViewer,
   type ThreadId,
   teamCatalogRepositoryMatches,
-  memoryFile,
 } from "@t3tools/contracts";
 import { THREAD_LINK_PROTOCOL } from "@t3tools/shared/threadLinks";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
+import * as SecureRandom from "effect/crypto/SecureRandom";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Scope from "effect/Scope";
+import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
+import * as SubscriptionRef from "effect/SubscriptionRef";
 
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
 import * as TeamCatalog from "../teamCatalog/TeamCatalog.ts";
 import { hostedRepositoryOf } from "../teamCatalog/teamCatalogProposal.ts";
+import * as MemoryProposalStore from "./MemoryProposalStore.ts";
 
 /**
- * Memory: markdown files in the team catalog repository that every agent turn gets as
- * one `<memory>` block. Changes are proposed to the catalog as pull requests.
+ * Memory: markdown files in the team catalog repository that every agent turn gets as one
+ * `<memory>` block. People edit them through pull requests; agents propose single lines, which a
+ * person accepts for themselves or the team.
  */
 export class Memory extends Context.Service<
   Memory,
   {
     readonly read: (projectId: ProjectId) => Effect.Effect<MemoryView>;
-    /** The view now, then again whenever the catalog changes. */
+    /** The view now, then again whenever the catalog or the project's proposals change. */
     readonly changes: (projectId: ProjectId) => Stream.Stream<MemoryView>;
     /**
      * The block for a turn in the project, or undefined when there is none. Never fails and never
@@ -50,10 +62,29 @@ export class Memory extends Context.Service<
     readonly propose: (
       input: MemoryProposeInput,
     ) => Effect.Effect<TeamCatalogProposal, TeamCatalogError>;
+    /** Records an agent's proposal, or returns the pending one the thread already made with it. */
+    readonly proposeFromAgent: (input: {
+      readonly projectId: ProjectId;
+      readonly threadId: ThreadId;
+      readonly threadTitle: string;
+      readonly text: string;
+      readonly reason: string;
+    }) => Effect.Effect<MemoryProposal, TeamCatalogError>;
+    /**
+     * A person's answer, from the client session that clicked. Accepting adds the line to the file
+     * and merges the pull request at once; a failed push leaves the proposal unanswered.
+     */
+    readonly decide: (
+      input: MemoryDecideInput,
+      sessionId: string,
+    ) => Effect.Effect<MemoryProposal, TeamCatalogError>;
   }
 >()("t3/memory/Memory") {}
 
 const SIGNED_OUT = "Sign in to the GitHub CLI with gh auth login to have personal memory.";
+const NOT_IN_CATALOG = "This project is not in the team catalog.";
+/** Per project; the oldest answered ones go first, so the view stays small on the wire. */
+const MAX_PROPOSALS_PER_PROJECT = 200;
 
 /** The board reads a thread from an issue's link attachments, so a comment alone is not enough. */
 const threadLinkInstructions = (link: string): string =>
@@ -74,7 +105,39 @@ const proposalTitle = (scope: MemoryScope, label: string | null): string => {
       return `Update memory for ${label ?? "the project"}`;
     case "personal":
       return `Update personal memory for ${label ?? "me"}`;
+    case "personal-project":
+      return `Update personal memory in one project for ${label ?? "me"}`;
   }
+};
+
+/** Adds the proposal as one list item at the end of the file. */
+const appendMemoryLine = (fileText: string, line: string): string => {
+  const item = line.startsWith("- ") ? line : `- ${line}`;
+  return fileText.trim() === "" ? `${item}\n` : `${fileText.trimEnd()}\n${item}\n`;
+};
+
+const onWire = ({
+  projectId: _projectId,
+  decidedBySession: _decidedBySession,
+  ...proposal
+}: MemoryProposalStore.StoredMemoryProposal): MemoryProposal => proposal;
+
+/** Drops a project's oldest answered proposals past the cap; unanswered ones always stay. */
+const pruned = (
+  proposals: ReadonlyArray<MemoryProposalStore.StoredMemoryProposal>,
+  projectId: ProjectId,
+): ReadonlyArray<MemoryProposalStore.StoredMemoryProposal> => {
+  const answered = proposals.filter(
+    (proposal) => proposal.projectId === projectId && proposal.decision !== null,
+  );
+  const ownCount = proposals.filter((proposal) => proposal.projectId === projectId).length;
+  const excess = new Set(
+    answered
+      .toSorted((left, right) => left.createdAt.localeCompare(right.createdAt))
+      .slice(0, Math.max(0, ownCount - MAX_PROPOSALS_PER_PROJECT))
+      .map((proposal) => proposal.id),
+  );
+  return excess.size === 0 ? proposals : proposals.filter((proposal) => !excess.has(proposal.id));
 };
 
 const make = Effect.gen(function* () {
@@ -82,6 +145,12 @@ const make = Effect.gen(function* () {
   const projects = yield* ProjectStore.ProjectStoreV2;
   const identities = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
   const environmentId = yield* (yield* ServerEnvironment.ServerEnvironment).getEnvironmentId;
+  const proposalStore = yield* MemoryProposalStore.MemoryProposalStore;
+  const proposalsRef = yield* SubscriptionRef.make(yield* proposalStore.load);
+  const decideLock = yield* Semaphore.make(1);
+  // Each change to the proposals and its save happen together, so saves never land out of order.
+  const writeLock = yield* Semaphore.make(1);
+  const random = yield* SecureRandom.SecureRandom;
   const backgroundScope = yield* Scope.make();
   yield* Effect.addFinalizer(() => Scope.close(backgroundScope, Exit.void));
   let lastStaleRefreshMs = 0;
@@ -103,15 +172,41 @@ const make = Effect.gen(function* () {
 
   const document = Effect.fn("Memory.document")(function* (
     scope: MemoryScope,
-    target: { readonly key: string; readonly label: string | null } | string,
+    project: TeamCatalogProject | null,
+    viewer: TeamCatalogViewer,
   ) {
+    const login = viewer.login;
+    const target: { readonly file: MemoryFileTarget; readonly label: string | null } | string =
+      scope === "team"
+        ? { file: { scope }, label: null }
+        : scope === "project"
+          ? project === null
+            ? NOT_IN_CATALOG
+            : { file: { scope, project: project.key }, label: project.name }
+          : login === null
+            ? (viewer.problem ?? SIGNED_OUT)
+            : scope === "personal"
+              ? { file: { scope, login }, label: login }
+              : project === null
+                ? NOT_IN_CATALOG
+                : { file: { scope, project: project.key, login }, label: login };
     if (typeof target === "string") {
       return { scope, file: null, label: null, text: "", unavailable: target };
     }
-    const file = memoryFile(scope, target.key);
+    const file = memoryFile(target.file);
     const text = (yield* teamCatalog.readFile(file)) ?? "";
     return { scope, file, label: target.label, text, unavailable: null };
   });
+
+  const projectProposals = (projectId: ProjectId) =>
+    SubscriptionRef.get(proposalsRef).pipe(
+      Effect.map((proposals) =>
+        proposals
+          .filter((proposal) => proposal.projectId === projectId)
+          .toSorted((left, right) => right.createdAt.localeCompare(left.createdAt))
+          .map(onWire),
+      ),
+    );
 
   const readWithProject = Effect.fn("Memory.read")(function* (projectId: ProjectId) {
     const catalog = yield* teamCatalog.snapshot;
@@ -121,29 +216,23 @@ const make = Effect.gen(function* () {
       refreshing: catalog.refreshing,
       error: catalog.error,
       viewer: catalog.viewer,
+      proposals: yield* projectProposals(projectId),
     };
     if (catalog.source === null) {
       const view: MemoryView = { ...base, documents: [], block: null, truncated: false };
       return { view, project: null };
     }
     const project = yield* catalogProject(catalog, projectId);
-    const login = catalog.viewer.login;
     const documents: ReadonlyArray<MemoryDocument> = [
-      yield* document("team", { key: "team", label: null }),
-      yield* document(
-        "project",
-        project === null
-          ? "This project is not in the team catalog."
-          : { key: project.key, label: project.name },
-      ),
-      yield* document(
-        "personal",
-        login === null ? (catalog.viewer.problem ?? SIGNED_OUT) : { key: login, label: login },
-      ),
+      yield* document("team", project, catalog.viewer),
+      yield* document("project", project, catalog.viewer),
+      yield* document("personal", project, catalog.viewer),
+      yield* document("personal-project", project, catalog.viewer),
     ];
     const block = buildMemoryBlock({
       documents,
       repository: hostedRepositoryOf(catalog.source),
+      proposable: project !== null,
     });
     const view: MemoryView = {
       ...base,
@@ -158,7 +247,7 @@ const make = Effect.gen(function* () {
     readWithProject(projectId).pipe(Effect.map(({ view }) => view));
 
   const changes: Memory["Service"]["changes"] = (projectId) =>
-    teamCatalog.changes.pipe(
+    Stream.merge(teamCatalog.changes, SubscriptionRef.changes(proposalsRef)).pipe(
       Stream.mapEffect(() => read(projectId)),
       Stream.changesWith((a, b) => JSON.stringify(a) === JSON.stringify(b)),
     );
@@ -191,24 +280,23 @@ const make = Effect.gen(function* () {
     ),
   );
 
+  // A personal file is the live login's: after a GitHub CLI account switch the cached one would
+  // edit the previous person's file under the new author.
+  const writableDocument = Effect.fn("Memory.writableDocument")(function* (
+    view: MemoryView,
+    project: TeamCatalogProject | null,
+    scope: MemoryScope,
+  ) {
+    if (view.source === null) return undefined;
+    if (scope !== "personal" && scope !== "personal-project") {
+      return view.documents.find((candidate) => candidate.scope === scope);
+    }
+    return yield* document(scope, project, yield* teamCatalog.liveViewer);
+  });
+
   const propose: Memory["Service"]["propose"] = Effect.fn("Memory.propose")(function* (input) {
-    const view = yield* read(input.projectId);
-    const listed = view.documents.find((candidate) => candidate.scope === input.scope);
-    // The personal file is the live login's: after a GitHub CLI account switch the cached one
-    // would edit the previous person's file under the new author.
-    const target =
-      input.scope === "personal" && view.source !== null
-        ? yield* teamCatalog.liveViewer.pipe(
-            Effect.flatMap((viewer) =>
-              document(
-                "personal",
-                viewer.login === null
-                  ? (viewer.problem ?? SIGNED_OUT)
-                  : { key: viewer.login, label: viewer.login },
-              ),
-            ),
-          )
-        : listed;
+    const { view, project } = yield* readWithProject(input.projectId);
+    const target = yield* writableDocument(view, project, input.scope);
     if (view.source === null || target === undefined) {
       return yield* new TeamCatalogError({ detail: "No team catalog is set." });
     }
@@ -239,7 +327,164 @@ const make = Effect.gen(function* () {
     });
   });
 
-  return Memory.of({ read, changes, instructions, propose });
+  const proposeFromAgent: Memory["Service"]["proposeFromAgent"] = Effect.fn(
+    "Memory.proposeFromAgent",
+  )(function* (input) {
+    const catalog = yield* teamCatalog.snapshot;
+    if (catalog.source === null) {
+      return yield* new TeamCatalogError({
+        detail: "No team catalog is set, so there is nowhere to save memory.",
+      });
+    }
+    if ((yield* catalogProject(catalog, input.projectId)) === null) {
+      return yield* new TeamCatalogError({
+        detail: `${NOT_IN_CATALOG} There is nowhere to save memory for it.`,
+      });
+    }
+    return yield* addProposal(input);
+  });
+
+  const addProposal = Effect.fn("Memory.addProposal")(function* (input: {
+    readonly projectId: ProjectId;
+    readonly threadId: ThreadId;
+    readonly threadTitle: string;
+    readonly text: string;
+    readonly reason: string;
+  }) {
+    const text = input.text.trim();
+    const existing = (yield* SubscriptionRef.get(proposalsRef)).find(
+      (proposal) =>
+        proposal.threadId === input.threadId &&
+        proposal.text === text &&
+        proposal.decision === null,
+    );
+    if (existing !== undefined) return onWire(existing);
+    const proposal: MemoryProposalStore.StoredMemoryProposal = {
+      id: yield* random.uuidV4(),
+      projectId: input.projectId,
+      threadId: input.threadId,
+      threadTitle: input.threadTitle,
+      text,
+      reason: input.reason.trim(),
+      createdAt: DateTime.formatIso(yield* DateTime.now),
+      decision: null,
+      decidedBySession: null,
+    };
+    const next = yield* SubscriptionRef.updateAndGet(proposalsRef, (proposals) =>
+      pruned([...proposals, proposal], input.projectId),
+    );
+    yield* proposalStore.save(next);
+    return onWire(proposal);
+  }, writeLock.withPermits(1));
+
+  const record = Effect.fn("Memory.record")(function* (
+    proposalId: string,
+    decision: MemoryProposalDecision,
+    sessionId: string,
+  ) {
+    const next = yield* SubscriptionRef.updateAndGet(proposalsRef, (proposals) =>
+      proposals.map((proposal) =>
+        proposal.id === proposalId
+          ? { ...proposal, decision, decidedBySession: sessionId }
+          : proposal,
+      ),
+    );
+    yield* proposalStore.save(next);
+    const decided = next.find((proposal) => proposal.id === proposalId);
+    if (decided === undefined) {
+      return yield* new TeamCatalogError({ detail: "This proposal was not found." });
+    }
+    return onWire(decided);
+  }, writeLock.withPermits(1));
+
+  const decide: Memory["Service"]["decide"] = Effect.fn("Memory.decide")(function* (
+    input,
+    sessionId,
+  ) {
+    const proposal = (yield* SubscriptionRef.get(proposalsRef)).find(
+      (candidate) => candidate.id === input.proposalId && candidate.projectId === input.projectId,
+    );
+    if (proposal === undefined) {
+      return yield* new TeamCatalogError({ detail: "This proposal was not found." });
+    }
+    if (proposal.decision !== null) {
+      return yield* new TeamCatalogError({ detail: "This proposal was already answered." });
+    }
+    const decidedAt = DateTime.formatIso(yield* DateTime.now);
+    if (input.choice === "reject") {
+      return yield* record(
+        proposal.id,
+        {
+          choice: "reject",
+          text: null,
+          file: null,
+          decidedAt,
+          pullRequestUrl: null,
+          merged: false,
+          problem: null,
+        },
+        sessionId,
+      );
+    }
+
+    // Start from the newest catalog, so the pull request rarely meets a moved file.
+    yield* teamCatalog.refresh({ force: true });
+    const { view, project } = yield* readWithProject(input.projectId);
+    const scope: MemoryScope = input.choice === "me" ? "personal-project" : "project";
+    const target = yield* writableDocument(view, project, scope);
+    if (view.revision === null || target === undefined) {
+      return yield* new TeamCatalogError({ detail: "No team catalog is set." });
+    }
+    if (target.file === null) {
+      return yield* new TeamCatalogError({
+        detail: target.unavailable ?? "This scope has no memory file here.",
+      });
+    }
+    const line = input.text.trim();
+    const pullRequest = yield* teamCatalog.proposeFiles({
+      baseRevision: view.revision,
+      files: [{ file: target.file, text: appendMemoryLine(target.text, line) }],
+      title:
+        `${input.choice === "me" ? "Remember for me" : "Remember for the team"}: ${line}`.slice(
+          0,
+          200,
+        ),
+      body: [
+        `Adds to \`${target.file}\`:`,
+        `> ${line}`,
+        `Proposed by an agent in the thread "${proposal.threadTitle}".`,
+        ...(proposal.reason === "" ? [] : [`Its reason: ${proposal.reason}`]),
+        "Accepted in 1001 Code, which merges it at once.",
+      ].join("\n\n"),
+      branchStem: `memory/${scope}-${target.file
+        .slice(target.file.lastIndexOf("/") + 1)
+        .replace(/\.md$/, "")}`.slice(0, 80),
+    });
+    const merge =
+      pullRequest.pullRequestUrl === null
+        ? {
+            merged: false,
+            problem: pullRequest.pullRequestProblem ?? "No pull request was opened.",
+          }
+        : yield* teamCatalog.mergeProposal(pullRequest.pullRequestUrl).pipe(
+            Effect.as({ merged: true, problem: null }),
+            Effect.catch((error) => Effect.succeed({ merged: false, problem: error.detail })),
+          );
+    return yield* record(
+      proposal.id,
+      {
+        choice: input.choice,
+        text: line,
+        file: target.file,
+        decidedAt,
+        pullRequestUrl: pullRequest.pullRequestUrl,
+        ...merge,
+      },
+      sessionId,
+    );
+  }, decideLock.withPermits(1));
+
+  return Memory.of({ read, changes, instructions, propose, proposeFromAgent, decide });
 });
 
 export const layer = Layer.effect(Memory, make);

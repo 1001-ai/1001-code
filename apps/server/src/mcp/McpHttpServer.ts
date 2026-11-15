@@ -84,6 +84,8 @@ import {
 } from "./toolkits/device/tools.ts";
 import * as HtmlHandlers from "./toolkits/html/handlers.ts";
 import { HtmlPreviewTool, HtmlPreviewToolkit, HtmlRenderToolkit } from "./toolkits/html/tools.ts";
+import * as MemoryHandlers from "./toolkits/memory/handlers.ts";
+import { MemoryToolkit } from "./toolkits/memory/tools.ts";
 import { requestUrl } from "../requestUrl.ts";
 
 const mcpResourceMetadataUrl = (request: HttpServerRequest.HttpServerRequest) =>
@@ -1367,4 +1369,11 @@ export const layerToolSearch = Layer.mergeAll(
   layerDeferredListing,
 ).pipe(Layer.provide(layerToolExposure));
 
-export const layer = layerMcpTransport(Layer.mergeAll(layerTools, layerToolSearch));
+export const layer = layerMcpTransport(
+  Layer.mergeAll(
+    layerTools,
+    layerToolSearch,
+    // Fork: memory proposals; see fork/README.md.
+    toolkitRegistration(MemoryToolkit, MemoryHandlers.layer),
+  ),
+);
