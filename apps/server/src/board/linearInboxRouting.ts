@@ -3,12 +3,18 @@ import { parseThreadLinkHref } from "@t3tools/shared/threadLinks";
 import * as Schema from "effect/Schema";
 
 /** New comments on a team's issues, with what routing needs. Checked against Linear's public schema. */
-export const INBOX_QUERY = `query LinearInbox($key: String!, $since: DateTimeOrDuration!, $first: Int!) {
+export const INBOX_QUERY = `query LinearInbox(
+  $key: String!
+  $since: DateTimeOrDuration!
+  $first: Int!
+  $after: String
+) {
   teams(filter: { key: { eq: $key } }, first: 1) {
     nodes { members(first: 250) { nodes { id } } }
   }
   comments(
     first: $first
+    after: $after
     orderBy: createdAt
     filter: { createdAt: { gt: $since }, issue: { team: { key: { eq: $key } } } }
   ) {
@@ -25,11 +31,13 @@ export const INBOX_QUERY = `query LinearInbox($key: String!, $since: DateTimeOrD
         attachments(first: 50) { nodes { url createdAt creator { id } } }
       }
     }
-    pageInfo { hasNextPage }
+    pageInfo { hasNextPage endCursor }
   }
 }`;
 
 export const INBOX_PAGE_SIZE = 100;
+/** 1,000 comments; more than that in one poll only follows a long outage. */
+export const MAX_INBOX_PAGES = 10;
 
 const Nodes = <S extends Schema.Top>(item: S) => Schema.Struct({ nodes: Schema.Array(item) });
 
@@ -62,7 +70,10 @@ export const InboxData = Schema.Struct({
   teams: Nodes(Schema.Struct({ members: Nodes(Schema.Struct({ id: Schema.String })) })),
   comments: Schema.Struct({
     nodes: Schema.Array(LinearComment),
-    pageInfo: Schema.Struct({ hasNextPage: Schema.Boolean }),
+    pageInfo: Schema.Struct({
+      hasNextPage: Schema.Boolean,
+      endCursor: Schema.NullOr(Schema.String),
+    }),
   }),
 });
 export type InboxData = typeof InboxData.Type;

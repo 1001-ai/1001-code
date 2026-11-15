@@ -50,38 +50,46 @@ const catalog: TeamCatalogSnapshot = {
   viewer: { login: null, problem: null },
 };
 
-const answer = (createdAt: string): InboxData => ({
-  teams: { nodes: [{ members: { nodes: [{ id: ME }, { id: "user-lawrence" }] } }] },
-  comments: {
-    nodes: [
-      {
-        id: "comment-1",
-        body: "agent: proposal",
-        createdAt,
-        user: { id: "user-lawrence", name: "Lawrence Smith", displayName: "Lawrence" },
-        botActor: null,
-        externalUser: null,
-        issue: {
-          identifier: "COD-2",
-          state: { type: "started" },
-          attachments: {
-            nodes: [
-              {
-                url: "t3-thread://v2/env-me/thread-mine",
-                createdAt: "1970-01-01T00:00:00.000Z",
-                creator: { id: ME },
-              },
-            ],
-          },
+const lawrenceComment = (id: string, createdAt: string) => ({
+  id,
+  body: "agent: proposal",
+  createdAt,
+  user: { id: "user-lawrence", name: "Lawrence Smith", displayName: "Lawrence" },
+  botActor: null,
+  externalUser: null,
+  issue: {
+    identifier: "COD-2",
+    state: { type: "started" },
+    attachments: {
+      nodes: [
+        {
+          url: "t3-thread://v2/env-me/thread-mine",
+          createdAt: "1970-01-01T00:00:00.000Z",
+          creator: { id: ME },
         },
-      },
-    ],
-    pageInfo: { hasNextPage: false },
+      ],
+    },
   },
 });
 
+/** Linear's answer: newest first, a page at a time. */
+const answer = (variables: Record<string, unknown>): InboxData => {
+  const firstPage = variables["after"] === null;
+  const comment = firstPage
+    ? lawrenceComment("comment-2", "2026-11-15T12:00:00.000Z")
+    : lawrenceComment("comment-1", "2026-11-15T11:00:00.000Z");
+  const fresh = comment.createdAt > String(variables["since"]);
+  return {
+    teams: { nodes: [{ members: { nodes: [{ id: ME }, { id: "user-lawrence" }] } }] },
+    comments: {
+      nodes: fresh ? [comment] : [],
+      pageInfo: { hasNextPage: firstPage && fresh, endCursor: firstPage ? "page-2" : null },
+    },
+  };
+};
+
 it.effect(
-  "starts each team now, reads only newer comments, and keeps its place over restarts",
+  "starts each team now, reads every page of newer comments, and keeps its place over restarts",
   () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
@@ -100,7 +108,7 @@ it.effect(
               query: ((_query: string, variables: Record<string, unknown>) =>
                 Effect.sync(() => {
                   calls.push(variables);
-                  return answer("2026-11-15T12:00:00.000Z");
+                  return answer(variables);
                 })) as Board.Board["Service"]["query"],
             }),
             Layer.mock(TeamCatalog.TeamCatalog)({ snapshot: Effect.succeed(catalog) }),
@@ -146,21 +154,22 @@ it.effect(
       });
 
       yield* poll;
-      expect(calls).toEqual([{ key: "COD", since: "1970-01-01T00:00:00.000Z", first: 100 }]);
-      expect(logs).toEqual([
-        [
-          "Linear inbox would deliver a comment.",
-          {
-            comment: "comment-1",
-            issue: "COD-2",
-            threadId: "thread-mine",
-            kind: "agent",
-            sender: "Lawrence",
-          },
-        ],
+      expect(calls).toEqual([
+        { key: "COD", since: "1970-01-01T00:00:00.000Z", first: 100, after: null },
+        { key: "COD", since: "1970-01-01T00:00:00.000Z", first: 100, after: "page-2" },
       ]);
+      const delivery = (comment: string) => [
+        "Linear inbox would deliver a comment.",
+        { comment, issue: "COD-2", threadId: "thread-mine", kind: "agent", sender: "Lawrence" },
+      ];
+      expect(logs).toEqual([delivery("comment-1"), delivery("comment-2")]);
 
       yield* poll;
-      expect(calls.at(-1)).toEqual({ key: "COD", since: "2026-11-15T12:00:00.000Z", first: 100 });
+      expect(calls.at(-1)).toEqual({
+        key: "COD",
+        since: "2026-11-15T12:00:00.000Z",
+        first: 100,
+        after: null,
+      });
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );

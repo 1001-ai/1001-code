@@ -20,6 +20,7 @@ import {
   INBOX_QUERY,
   InboxData,
   type LinearComment,
+  MAX_INBOX_PAGES,
   routeComment,
   threadSkipReason,
 } from "./linearInboxRouting.ts";
@@ -104,16 +105,26 @@ const make = Effect.gen(function* () {
       cursors.set(team, DateTime.formatIso(now));
       return yield* saveCursors;
     }
-    const data = yield* board.query(
-      INBOX_QUERY,
-      { key: team, since, first: INBOX_PAGE_SIZE },
-      InboxData,
-    );
-    if (data.comments.pageInfo.hasNextPage) {
-      yield* Effect.logWarning("Linear inbox read only the first page of new comments.", { team });
+    // Linear lists newest first, so the cursor may move only after every page is read.
+    const pages: Array<InboxData> = [];
+    let after: string | null = null;
+    for (let page = 0; page < MAX_INBOX_PAGES; page += 1) {
+      const data: InboxData = yield* board.query(
+        INBOX_QUERY,
+        { key: team, since, first: INBOX_PAGE_SIZE, after },
+        InboxData,
+      );
+      pages.push(data);
+      after = data.comments.pageInfo.endCursor;
+      if (!data.comments.pageInfo.hasNextPage || after === null) break;
     }
-    const memberIds = new Set(data.teams.nodes[0]?.members.nodes.map((member) => member.id));
-    const comments = data.comments.nodes.toSorted((a, b) => a.createdAt.localeCompare(b.createdAt));
+    if (pages.at(-1)?.comments.pageInfo.hasNextPage) {
+      yield* Effect.logWarning("Linear inbox skipped the oldest new comments.", { team });
+    }
+    const memberIds = new Set(pages[0]?.teams.nodes[0]?.members.nodes.map((member) => member.id));
+    const comments = pages
+      .flatMap((data) => data.comments.nodes)
+      .toSorted((a, b) => a.createdAt.localeCompare(b.createdAt));
     for (const comment of comments) {
       const route = routeComment(comment, { viewerId, environmentId, memberIds });
       yield* logRoute(comment, route, now.epochMilliseconds);
