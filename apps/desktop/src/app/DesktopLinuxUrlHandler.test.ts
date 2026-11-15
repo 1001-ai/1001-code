@@ -1,5 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
+import { FORK_DESKTOP } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
@@ -222,7 +223,10 @@ describe("DesktopLinuxUrlHandler", () => {
           recorded.files[0]?.content,
           "Exec=/home/alice/Applications/T3-Code.AppImage %U",
         );
-        assert.include(recorded.files[0]?.content, "MimeType=x-scheme-handler/t3code;");
+        assert.include(
+          recorded.files[0]?.content,
+          `MimeType=x-scheme-handler/${FORK_DESKTOP.scheme};`,
+        );
         assert.deepEqual(recorded.commands, [
           {
             command: "update-desktop-database",
@@ -230,7 +234,11 @@ describe("DesktopLinuxUrlHandler", () => {
           },
           {
             command: "xdg-mime",
-            args: ["default", "com.t3tools.T3Code.desktop", "x-scheme-handler/t3code"],
+            args: [
+              "default",
+              "com.t3tools.T3Code.desktop",
+              `x-scheme-handler/${FORK_DESKTOP.scheme}`,
+            ],
           },
         ]);
       });
@@ -248,7 +256,7 @@ describe("DesktopLinuxUrlHandler", () => {
         DesktopLinuxUrlHandler.renderUrlHandlerDesktopEntry({
           displayName: "T3 Code (Alpha)",
           execTarget: process.execPath,
-          scheme: "t3code",
+          scheme: FORK_DESKTOP.scheme,
           iconPath: "/home/alice/.local/share/icons/com.t3tools.T3Code.desktop.png",
         }),
       );
@@ -275,7 +283,7 @@ describe("DesktopLinuxUrlHandler", () => {
         existingEntry: DesktopLinuxUrlHandler.renderUrlHandlerDesktopEntry({
           displayName: "T3 Code (Alpha)",
           execTarget: "/home/alice/Applications/T3-Code.AppImage",
-          scheme: "t3code",
+          scheme: FORK_DESKTOP.scheme,
           iconPath: "/home/alice/.local/share/icons/com.t3tools.T3Code.desktop.png",
         }),
       });
@@ -289,7 +297,11 @@ describe("DesktopLinuxUrlHandler", () => {
         },
         {
           command: "xdg-mime",
-          args: ["default", "com.t3tools.T3Code.desktop", "x-scheme-handler/t3code"],
+          args: [
+            "default",
+            "com.t3tools.T3Code.desktop",
+            `x-scheme-handler/${FORK_DESKTOP.scheme}`,
+          ],
         },
       ]);
     });
@@ -304,7 +316,7 @@ describe("DesktopLinuxUrlHandler", () => {
         existingEntry: DesktopLinuxUrlHandler.renderUrlHandlerDesktopEntry({
           displayName: "T3 Code (Alpha)",
           execTarget: "/home/alice/Applications/T3-Code.AppImage",
-          scheme: "t3code",
+          scheme: FORK_DESKTOP.scheme,
           iconPath,
         }),
       });

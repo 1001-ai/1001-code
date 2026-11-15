@@ -7,6 +7,7 @@ import * as Path from "effect/Path";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 
+import { FORK_DESKTOP } from "@t3tools/contracts";
 import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as DesktopAssets from "./DesktopAssets.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
@@ -92,8 +93,9 @@ export const make = Effect.gen(function* () {
   const configure = Effect.gen(function* () {
     const commitHash = yield* resolveAboutCommitHash;
     // Electron strips spaces but keeps parentheses in its User-Agent token, breaking Turnstile in preview sessions.
-    // Upstream's name, not the display name: this is the app's identity (User-Agent, logs folder, Linux window class).
-    yield* electronApp.setName(`T3 Code ${environment.branding.stageLabel}`);
+    // Identity, not display: User-Agent, logs folder, Linux window class and the macOS "<name> Safe Storage" Keychain item.
+    const identityName = environment.isDevelopment ? "T3 Code" : FORK_DESKTOP.productName;
+    yield* electronApp.setName(`${identityName} ${environment.branding.stageLabel}`);
     yield* electronApp.setAboutPanelOptions({
       applicationName: environment.displayName,
       applicationVersion: environment.appVersion,
