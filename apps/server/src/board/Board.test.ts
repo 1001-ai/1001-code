@@ -30,7 +30,7 @@ import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
 import * as TeamCatalog from "../teamCatalog/TeamCatalog.ts";
 import * as Board from "./Board.ts";
-import { LINEAR_API_URL } from "./linearBoard.ts";
+import { LINEAR_API_URL, VIEWER_QUERY, ViewerData } from "./linearBoard.ts";
 import { LINEAR_REVOKE_URL, LINEAR_TOKEN_URL } from "./linearOAuth.ts";
 
 const PROJECT_ID = ProjectId.make("project-web");
@@ -749,6 +749,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Board", (it) => 
         secrets: yield* buildSecrets(),
       });
       yield* signIn(board, linear);
+      const session = yield* board.session;
       const previous = yield* board.read(PROJECT_ID).pipe(Effect.forkChild);
       yield* Deferred.await(reading);
       yield* signIn(board, linear, OTHER);
@@ -761,6 +762,9 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Board", (it) => 
       expect(
         snapshot?.board.columns.flatMap((column) => column.issues.map((issue) => issue.identifier)),
       ).toEqual(["ENG-2"]);
+      // A session never queries as the account that signed in after it was taken.
+      const stale = yield* Effect.flip(session!.query(VIEWER_QUERY, {}, ViewerData));
+      expect(stale.reason).toBe("unauthorized");
     }).pipe(Effect.scoped),
   );
 
