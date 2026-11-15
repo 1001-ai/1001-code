@@ -45,7 +45,7 @@ const boardTeamKeyAtomFamily = Atom.family((key: string) => {
 });
 
 /** The Linear team the thread's Board shows; null while signed out or without a board. */
-function useBoardTeamKey(threadRef: ScopedThreadRef | undefined): string | null {
+export function useBoardTeamKey(threadRef: ScopedThreadRef | undefined): string | null {
   return useAtomValue(
     threadRef === undefined ? NO_TEAM_KEY_ATOM : boardTeamKeyAtomFamily(scopedThreadKey(threadRef)),
   );

@@ -223,6 +223,20 @@ export function previewRecordingIdFromToolItem(item: {
   return result.failed || budget.exceeded ? undefined : boundedId(result.data?.id);
 }
 
+/** A tool result's JSON object; undefined when the call failed or the result is not JSON or too big. */
+export function readToolResultData(
+  output: unknown,
+  maxBytes = MAX_PARSED_BYTES,
+): Record<PropertyKey, unknown> | undefined {
+  const budget: ResultReadBudget = {
+    remainingBytes: maxBytes,
+    remainingNodes: MAX_ENVELOPE_NODES,
+    exceeded: false,
+  };
+  const result = readResult(output, budget);
+  return result.failed || budget.exceeded ? undefined : result.data;
+}
+
 /** Accept app references only when server and tool match the item, so tools cannot impersonate another app source. */
 export function mcpAppFromToolItem(item: {
   readonly toolName: string | null | undefined;

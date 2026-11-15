@@ -12,6 +12,8 @@ import { cn } from "~/lib/utils";
 import { Collapsible, CollapsibleTrigger, CollapsiblePanel } from "../ui/collapsible";
 import { EnvironmentSubagentAvatar, SubagentElapsed, V2LifecycleRow } from "./V2LifecycleRow";
 import { LinkRequestCard } from "./LinkRequestCard";
+import { BoardTaskCard } from "../board/BoardTaskCard";
+import { isBoardTaskItem } from "../board/boardTaskCard.logic";
 import { MemoryProposalCard } from "../memory/MemoryProposalCard";
 import { isMemoryProposalItem } from "../memory/memoryProposal.logic";
 import { SecretRequestCard } from "./SecretRequestCard";
@@ -35,6 +37,9 @@ export function V2EventTimelineRow({ row }: { row: Extract<TimelineRow, { kind: 
   }
   if (isMemoryProposalItem(item)) {
     return <MemoryProposalCard environmentId={ctx.activeThreadEnvironmentId} item={item} />;
+  }
+  if (isBoardTaskItem(item)) {
+    return <BoardTaskCard environmentId={ctx.activeThreadEnvironmentId} item={item} />;
   }
   if (item.type === "link_request") {
     return (
