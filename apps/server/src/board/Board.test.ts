@@ -1243,6 +1243,51 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Board", (it) => 
     }).pipe(Effect.scoped),
   );
 
+  it.effect("an agent's burst of Linear writes reads each open board once, a second later", () =>
+    Effect.gen(function* () {
+      let issues = [linearIssue("1", "s-todo")];
+      const linear = fakeLinear((operation, variables) =>
+        boardAnswers([issues])(operation, variables),
+      );
+      const board = yield* makeBoard({
+        client: linear.client,
+        catalog: catalog([catalogEntry({ team: "ENG" })]),
+        secrets: yield* memorySecrets(),
+      });
+      yield* signIn(board, linear);
+      const teamReads = () => linear.calls.filter((call) => call.operation === "BoardTeam").length;
+      const scope = yield* Scope.make();
+      const updates = yield* Queue.unbounded<BoardSnapshot>();
+      yield* board.changes(PROJECT_ID).pipe(
+        Stream.runForEach((snapshot) => Queue.offer(updates, snapshot)),
+        Effect.forkIn(scope),
+      );
+      ready(yield* Queue.take(updates));
+      expect(teamReads()).toBe(1);
+
+      issues = [linearIssue("1", "s-todo"), linearIssue("2", "s-todo")];
+      yield* board.refreshOpen;
+      yield* board.refreshOpen;
+      yield* TestClock.adjust("500 millis");
+      yield* board.refreshOpen;
+      expect(teamReads()).toBe(1);
+      yield* TestClock.adjust("500 millis");
+      expect(
+        ready(yield* Queue.take(updates))?.board.columns.flatMap((column) =>
+          column.issues.map((issue) => issue.identifier),
+        ),
+      ).toEqual(["ENG-1", "ENG-2"]);
+      expect(teamReads()).toBe(2);
+      yield* TestClock.adjust("2 seconds");
+      expect(teamReads()).toBe(2);
+
+      yield* Scope.close(scope, Exit.void);
+      yield* board.refreshOpen;
+      yield* TestClock.adjust("2 seconds");
+      expect(teamReads()).toBe(2);
+    }).pipe(Effect.scoped),
+  );
+
   it.effect("polling keeps the board through a rate limit and waits as long as Linear asks", () =>
     Effect.gen(function* () {
       let limited = false;
