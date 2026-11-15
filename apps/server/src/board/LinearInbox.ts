@@ -225,9 +225,13 @@ const make = Effect.gen(function* () {
     const thread = yield* threads.getThreadShell(route.threadId);
     const instance =
       thread === null ? undefined : yield* instances.getInstance(thread.providerInstanceId);
+    // Held comments count for a day from when they arrived, like delivered ones.
     const waiting =
       recentDeliveries(state.delivered[route.threadId] ?? [], nowMs).length +
-      state.held.filter((item) => item.threadId === route.threadId).length;
+      recentDeliveries(
+        state.held.filter((item) => item.threadId === route.threadId).map((item) => item.since),
+        nowMs,
+      ).length;
     const reason =
       threadSkipReason(thread, instance?.driverKind, nowMs) ??
       exchangeSkipReason(comment, memberIds) ??

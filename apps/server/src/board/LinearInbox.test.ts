@@ -248,6 +248,43 @@ it.effect("stops at the daily limit for a thread, counting what earlier runs del
   }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
+it.effect("held comments stop counting toward the daily limit a day after they arrived", () =>
+  Effect.gen(function* () {
+    const baseDir = yield* tempBaseDir;
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const config = yield* ServerConfig.ServerConfig.pipe(
+      Effect.provide(ServerConfig.layerTest(process.cwd(), baseDir)),
+    );
+    const statePath = path.join(config.stateDir, "linear-inbox.json");
+    const held = (id: number) => ({
+      threadId: "thread-mine",
+      projectId: "project-web",
+      commentId: `old-${id}`,
+      text: "old",
+      linkedSender: { environmentId: "linear", threadId: `linear-comment-old-${id}`, title: "X" },
+      since: "1969-12-30T00:00:00.000Z",
+      attempts: 0,
+    });
+    yield* fileSystem.writeFileString(
+      statePath,
+      JSON.stringify({
+        cursors: { COD: "1970-01-01T00:00:00.000Z" },
+        delivered: {},
+        held: Array.from({ length: 12 }, (_, id) => held(id)),
+      }),
+    );
+    const inbox = makeInbox(baseDir, [lawrenceComment("comment-1", "2026-11-15T12:00:00.000Z")]);
+    inbox.thread.runtimeMode = "full-access";
+
+    yield* inbox.poll;
+    const state = JSON.parse(yield* fileSystem.readFileString(statePath));
+    expect(state.held.map((item: { commentId: string }) => item.commentId).at(-1)).toBe(
+      "comment-1",
+    );
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);
+
 it.effect(
   "reads a comment again after its thread could not be read, and retries a failed delivery",
   () =>
