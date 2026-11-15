@@ -3,13 +3,20 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { AuthOrchestrationOperateScope, type ScopedThreadRef } from "@t3tools/contracts";
+import {
+  type AssistantCitation,
+  AuthOrchestrationOperateScope,
+  type ScopedThreadRef,
+} from "@t3tools/contracts";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 
 import { useComposerDraftStore } from "~/composerDraftStore";
 import { isElectron } from "~/env";
-import { assistantCitationNavigation } from "~/lib/assistantCitationNavigation";
+import {
+  assistantCitationNavigation,
+  assistantCitationRoute,
+} from "~/lib/assistantCitationNavigation";
 import { newMessageId } from "~/lib/utils";
 import { useEnvironmentScope } from "~/state/session";
 import { environmentThreadDetails, threadEnvironment } from "~/state/threads";
@@ -234,7 +241,25 @@ function OpenThreadLink({
 }) {
   const navigate = useNavigate();
   const card = entry.cards[0];
-  const route = { to: "/$environmentId/$threadId" as const, params: threadRef };
+  const citation: AssistantCitation | null =
+    card === undefined
+      ? null
+      : {
+          version: 1,
+          environmentId: threadRef.environmentId,
+          threadId: threadRef.threadId,
+          messageId: card.messageId,
+          text: card.question.prompt,
+          start: 0,
+          end: card.question.prompt.length,
+          prefix: card.question.id,
+          suffix: "",
+        };
+  // The href carries the citation too, so a new tab or modified click lands on the card.
+  const route =
+    citation === null
+      ? { to: "/$environmentId/$threadId" as const, params: threadRef }
+      : assistantCitationRoute(citation, entry.shell);
   return (
     <Link
       {...route}
@@ -242,7 +267,7 @@ function OpenThreadLink({
       className="shrink-0 text-muted-foreground text-xs underline underline-offset-2 hover:text-foreground"
       onClick={(event) => {
         if (
-          card === undefined ||
+          citation === null ||
           event.button !== 0 ||
           event.metaKey ||
           event.ctrlKey ||
@@ -252,22 +277,7 @@ function OpenThreadLink({
           return;
         }
         event.preventDefault();
-        void navigate(
-          assistantCitationNavigation(
-            {
-              version: 1,
-              environmentId: threadRef.environmentId,
-              threadId: threadRef.threadId,
-              messageId: card.messageId,
-              text: card.question.prompt,
-              start: 0,
-              end: card.question.prompt.length,
-              prefix: card.question.id,
-              suffix: "",
-            },
-            entry.shell,
-          ),
-        );
+        void navigate(assistantCitationNavigation(citation, entry.shell));
       }}
     >
       Open thread

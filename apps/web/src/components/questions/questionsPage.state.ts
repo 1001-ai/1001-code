@@ -7,6 +7,7 @@ import { Atom } from "effect/reactivity";
 
 import { environmentThreadDetails, environmentThreadShells } from "../../state/threads";
 import {
+  askedQuestionCards,
   isWaitingOnUser,
   openQuestionCards,
   sameOpenQuestionCards,
@@ -18,6 +19,8 @@ export interface QuestionsThreadEntry {
   readonly shell: EnvironmentThreadShell;
   /** The thread's projection is here, so an empty card list means none are open. */
   readonly loaded: boolean;
+  /** Cards behind `openQuestionsAt` are in the loaded history, answered or not. */
+  readonly cardsAsked: boolean;
   readonly cards: ReadonlyArray<OpenQuestionCard>;
   readonly requests: PendingThreadRequests;
 }
@@ -33,17 +36,26 @@ const waitingThreadRefsAtom = Atom.make((get) => {
   return previous !== undefined && threadRefsEqual(previous, next) ? previous : next;
 }).pipe(Atom.withLabel("questions-waiting-thread-refs"));
 
+interface ThreadCards {
+  readonly asked: boolean;
+  readonly open: ReadonlyArray<OpenQuestionCard>;
+}
+
+const NO_THREAD_CARDS: ThreadCards = { asked: false, open: NO_CARDS };
+
 const openCardsAtomFamily = Atom.family((key: string) => {
   const ref = parseThreadKey(key);
-  let previous = NO_CARDS;
+  let previous = NO_THREAD_CARDS;
   return Atom.make((get) => {
     const repliedAt =
       get(environmentThreadShells.quietThreadShellAtom(ref))?.latestUserAuthoredMessageAt ?? null;
-    const next = openQuestionCards(
-      get(environmentThreadDetails.timelineVisibleTurnItemsAtom(ref)),
-      repliedAt,
-    );
-    if (!sameOpenQuestionCards(previous, next)) previous = next;
+    const items = get(environmentThreadDetails.timelineVisibleTurnItemsAtom(ref));
+    const asked = askedQuestionCards(items, repliedAt);
+    const open = openQuestionCards(items, asked);
+    const next = { asked: asked.length > 0, open };
+    if (next.asked !== previous.asked || !sameOpenQuestionCards(previous.open, open)) {
+      previous = next;
+    }
     return previous;
   }).pipe(Atom.setIdleTTL(0), Atom.withLabel(`questions-open-cards:${key}`));
 });
@@ -70,13 +82,17 @@ export const questionsThreadEntriesAtom = Atom.make((get) => {
     const shell = get(environmentThreadShells.quietThreadShellAtom(ref));
     if (shell === null) return [];
     if (get(environmentThreadDetails.statusAtom(ref)) === "deleted") return [];
-    const cards = shell.openQuestionsAt ? get(openCardsAtomFamily(threadKey(ref))) : NO_CARDS;
+    const threadCards = shell.openQuestionsAt
+      ? get(openCardsAtomFamily(threadKey(ref)))
+      : NO_THREAD_CARDS;
+    const cards = threadCards.open;
+    const cardsAsked = threadCards.asked;
     const requests =
       shell.hasPendingApprovals || shell.hasPendingUserInput
         ? (get(environmentThreadDetails.pendingRequestsAtom(ref)) ?? NO_REQUESTS)
         : NO_REQUESTS;
     const loaded = get(environmentThreadDetails.quietThreadAtom(ref)) !== null;
-    return [{ ref, shell, loaded, cards, requests }];
+    return [{ ref, shell, loaded, cardsAsked, cards, requests }];
   });
   const sorted = next
     .map((entry) => [waitingSince(entry), entry] as const)
@@ -89,6 +105,7 @@ export const questionsThreadEntriesAtom = Atom.make((get) => {
       return (
         old.shell === entry.shell &&
         old.loaded === entry.loaded &&
+        old.cardsAsked === entry.cardsAsked &&
         old.cards === entry.cards &&
         old.requests === entry.requests
       );

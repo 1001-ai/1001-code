@@ -39,11 +39,10 @@ export interface OpenQuestionCard {
 const cardsByItem = new WeakMap<object, ReadonlyArray<QuestionBlock>>();
 
 /**
- * The cards still waiting on the user: each id's newest card in a finished assistant message
- * that finished after the user's latest own message (the server's `openQuestionsAt` rule), and
- * that no later `<id>: answer` line answers.
+ * Each id's newest card in a finished assistant message that finished after the user's latest
+ * own message (the server's `openQuestionsAt` rule), answered or not.
  */
-export function openQuestionCards(
+export function askedQuestionCards(
   items: ReadonlyArray<TimelineItemLike>,
   latestUserAuthoredMessageAt: string | null,
 ): ReadonlyArray<OpenQuestionCard> {
@@ -74,7 +73,15 @@ export function openQuestionCards(
       newest.set(question.id, { question, askedInItemId: item.id, messageId });
     }
   }
-  return [...newest.values()].filter(
+  return [...newest.values()];
+}
+
+/** The asked cards that no later `<id>: answer` line answers. */
+export function openQuestionCards(
+  items: ReadonlyArray<TimelineItemLike>,
+  asked: ReadonlyArray<OpenQuestionCard>,
+): ReadonlyArray<OpenQuestionCard> {
+  return asked.filter(
     (card) => findQuestionAnswer(items, card.askedInItemId, card.question.id) === null,
   );
 }
@@ -136,6 +143,8 @@ export interface WaitingEntryInput {
     "openQuestionsAt" | "hasPendingApprovals" | "hasPendingUserInput"
   >;
   readonly loaded: boolean;
+  /** The loaded history holds the cards behind `openQuestionsAt`, even if all are answered. */
+  readonly cardsAsked: boolean;
   readonly cards: ReadonlyArray<unknown>;
   readonly requests: {
     readonly approvals: ReadonlyArray<unknown>;
@@ -164,7 +173,8 @@ export function waitingSummary(entry: WaitingEntryInput): WaitingSummary {
   const unshownQuestion =
     entry.loaded &&
     questions === 0 &&
-    (Boolean(entry.shell.openQuestionsAt) || entry.shell.hasPendingUserInput);
+    ((Boolean(entry.shell.openQuestionsAt) && !entry.cardsAsked) ||
+      entry.shell.hasPendingUserInput);
   const unshownApproval = entry.loaded && approvals === 0 && entry.shell.hasPendingApprovals;
   const count = entry.loaded
     ? questions + approvals + Number(unshownQuestion) + Number(unshownApproval)
@@ -172,13 +182,17 @@ export function waitingSummary(entry: WaitingEntryInput): WaitingSummary {
   return { questions, approvals, unshownQuestion, unshownApproval, count };
 }
 
-/** Whether a thread shows under a filter; one still loading shows under all of them. */
+/**
+ * Whether a thread shows under a filter; one still loading shows under all of them, and one
+ * with nothing left waiting (cards answered before the shell caught up) under none.
+ */
 export function matchesFilter(
   summary: WaitingSummary,
   loaded: boolean,
   filter: "all" | "questions" | "approvals",
 ): boolean {
-  if (filter === "all" || !loaded) return true;
+  if (!loaded) return true;
+  if (filter === "all") return summary.count > 0;
   return filter === "questions"
     ? summary.questions > 0 || summary.unshownQuestion
     : summary.approvals > 0 || summary.unshownApproval;

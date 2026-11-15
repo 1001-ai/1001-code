@@ -3,6 +3,7 @@ import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  askedQuestionCards,
   matchesFilter,
   openQuestionCards,
   questionAnswersMessage,
@@ -37,6 +38,9 @@ function user(id: string, text: string, sentAt: string) {
   };
 }
 
+const openCards = (items: Parameters<typeof askedQuestionCards>[0], repliedAt: string | null) =>
+  openQuestionCards(items, askedQuestionCards(items, repliedAt));
+
 const ASK_TWO =
   "Two things.\n\n> **Q1 · Ship it?**\n> - Yes\n> - No\n\n> **Q2 · Name?**\n> _Reply with a name_";
 
@@ -47,6 +51,7 @@ describe("waitingSummary", () => {
     const summary = waitingSummary(entry);
     return {
       count: summary.count,
+      all: matchesFilter(summary, entry.loaded, "all"),
       questions: matchesFilter(summary, entry.loaded, "questions"),
       approvals: matchesFilter(summary, entry.loaded, "approvals"),
     };
@@ -57,35 +62,55 @@ describe("waitingSummary", () => {
       {
         shell: { ...shell, openQuestionsAt: "2026-01-01T00:00:00.000Z", hasPendingApprovals: true },
         loaded: true,
+        cardsAsked: false,
         cards: [1, 2],
         requests: { approvals: [1], userInputs: [{ questions: [1, 2] }] },
       },
-      { count: 5, questions: true, approvals: true },
+      { count: 5, all: true, questions: true, approvals: true },
     ],
     [
       "a thread still loading",
-      { shell: { ...shell, hasPendingApprovals: true }, loaded: false, cards: [], requests: none },
-      { count: 1, questions: true, approvals: true },
+      {
+        shell: { ...shell, hasPendingApprovals: true },
+        loaded: false,
+        cardsAsked: false,
+        cards: [],
+        requests: none,
+      },
+      { count: 1, all: true, questions: true, approvals: true },
     ],
     [
       "cards outside the loaded history",
       {
         shell: { ...shell, openQuestionsAt: "2026-01-01T00:00:00.000Z" },
         loaded: true,
+        cardsAsked: false,
         cards: [],
         requests: none,
       },
-      { count: 1, questions: true, approvals: false },
+      { count: 1, all: true, questions: true, approvals: false },
+    ],
+    [
+      "cards all answered before the shell caught up",
+      {
+        shell: { ...shell, openQuestionsAt: "2026-01-01T00:00:00.000Z" },
+        loaded: true,
+        cardsAsked: true,
+        cards: [],
+        requests: none,
+      },
+      { count: 0, all: false, questions: false, approvals: false },
     ],
     [
       "a request kind the page does not render",
       {
         shell: { ...shell, hasPendingUserInput: true, hasPendingApprovals: true },
         loaded: true,
+        cardsAsked: false,
         cards: [],
         requests: none,
       },
-      { count: 2, questions: true, approvals: true },
+      { count: 2, all: true, questions: true, approvals: true },
     ],
   ])("%s", (_label, entry, expected) => {
     expect(counted(entry)).toEqual(expected);
@@ -102,7 +127,7 @@ describe("openQuestionCards", () => {
       user("u1", "Carry on", "2026-01-01T00:01:00.000Z"),
       assistant("a2", ASK_TWO, "2026-01-01T00:02:00.000Z"),
     ];
-    expect(ids(openQuestionCards(items, "2026-01-01T00:01:00.000Z"))).toEqual([
+    expect(ids(openCards(items, "2026-01-01T00:01:00.000Z"))).toEqual([
       ["a2", "Q1"],
       ["a2", "Q2"],
     ]);
@@ -113,7 +138,7 @@ describe("openQuestionCards", () => {
       assistant("a1", ASK_TWO, "2026-01-01T00:02:00.000Z"),
       user("u1", "Also check the tests", "2026-01-01T00:01:00.000Z"),
     ];
-    expect(ids(openQuestionCards(items, "2026-01-01T00:01:00.000Z"))).toEqual([
+    expect(ids(openCards(items, "2026-01-01T00:01:00.000Z"))).toEqual([
       ["a1", "Q1"],
       ["a1", "Q2"],
     ]);
@@ -124,7 +149,7 @@ describe("openQuestionCards", () => {
       assistant("a1", ASK_TWO, "2026-01-01T00:02:00.000Z"),
       user("u1", "Q1: Yes", "2026-01-01T00:01:00.000Z"),
     ];
-    expect(ids(openQuestionCards(items, "2026-01-01T00:01:00.000Z"))).toEqual([["a1", "Q2"]]);
+    expect(ids(openCards(items, "2026-01-01T00:01:00.000Z"))).toEqual([["a1", "Q2"]]);
   });
 
   it("keeps only the newest card for a re-asked id, and skips streaming messages", () => {
@@ -133,7 +158,7 @@ describe("openQuestionCards", () => {
       assistant("a2", "> **Q1 · Ship it now?**\n> - Yes\n> - No", "2026-01-01T00:03:00.000Z"),
       assistant("a3", "> **Q3 · Later?**\n> - Yes\n> - No", "2026-01-01T00:04:00.000Z", true),
     ];
-    const cards = openQuestionCards(items, null);
+    const cards = openCards(items, null);
     expect(ids(cards)).toEqual([
       ["a1", "Q2"],
       ["a2", "Q1"],
@@ -146,7 +171,7 @@ describe("openQuestionCards", () => {
       assistant("a1", ASK_TWO, "2026-01-01T00:02:00.000Z"),
       user("u1", "Never mind", "2026-01-01T00:03:00.000Z"),
     ];
-    expect(openQuestionCards(items, "2026-01-01T00:03:00.000Z")).toEqual([]);
+    expect(openCards(items, "2026-01-01T00:03:00.000Z")).toEqual([]);
   });
 });
 
