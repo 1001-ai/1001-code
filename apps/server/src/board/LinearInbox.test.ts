@@ -101,15 +101,14 @@ it.effect(
         Layer.provide(
           Layer.mergeAll(
             Layer.mock(Board.Board)({
-              connection: Effect.succeed({
-                status: "connected",
-                viewer: { id: ME, name: "Mohammed", email: "m@example.test", workspace: "Acme" },
+              session: Effect.succeed({
+                viewerId: ME,
+                query: ((_query: string, variables: Record<string, unknown>) =>
+                  Effect.sync(() => {
+                    calls.push(variables);
+                    return answer(variables);
+                  })) as Board.BoardLinearSession["query"],
               }),
-              query: ((_query: string, variables: Record<string, unknown>) =>
-                Effect.sync(() => {
-                  calls.push(variables);
-                  return answer(variables);
-                })) as Board.Board["Service"]["query"],
             }),
             Layer.mock(TeamCatalog.TeamCatalog)({ snapshot: Effect.succeed(catalog) }),
             Layer.mock(Orchestrator.OrchestratorV2)({

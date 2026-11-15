@@ -68,7 +68,7 @@ import {
  * A team project's Linear board, read as the person who signed in to Linear on this environment.
  * The OAuth tokens live in the server secret store and never reach clients. Reads happen when a
  * client opens or refreshes a board and every 30 seconds while one is open. `LinearInbox` reads
- * new comments through `query` while someone is signed in.
+ * new comments through `session` while someone is signed in.
  */
 export class Board extends Context.Service<
   Board,
@@ -98,14 +98,20 @@ export class Board extends Context.Service<
     readonly issueDetail: (
       input: BoardIssueDetailInput,
     ) => Effect.Effect<BoardIssueDetail, BoardError>;
-    /** A Linear query as the signed-in person; fails as unauthorized while nobody is signed in. */
-    readonly query: <S extends Schema.Top & { readonly DecodingServices: never }>(
-      query: string,
-      variables: Record<string, unknown>,
-      schema: S,
-    ) => Effect.Effect<S["Type"], BoardError>;
+    /** Linear as whoever is signed in now, or null while nobody is. */
+    readonly session: Effect.Effect<BoardLinearSession | null>;
   }
 >()("t3/board/Board") {}
+
+/** Queries as one sign-in; they fail as unauthorized once it is replaced or disconnected. */
+export interface BoardLinearSession {
+  readonly viewerId: string;
+  readonly query: <S extends Schema.Top & { readonly DecodingServices: never }>(
+    query: string,
+    variables: Record<string, unknown>,
+    schema: S,
+  ) => Effect.Effect<S["Type"], BoardError>;
+}
 
 /** Why a sign-in could not finish, for the page Linear redirected the browser to. */
 export class BoardSignInError extends Schema.TaggedError<BoardSignInError>()("BoardSignInError", {
@@ -881,11 +887,20 @@ const make = Effect.gen(function* () {
     changes,
     refresh,
     issueDetail,
-    // Untraced: `Board.linear` already spans the request.
-    query: Effect.fnUntraced(function* <
-      S extends Schema.Top & { readonly DecodingServices: never },
-    >(query: string, variables: Record<string, unknown>, schema: S) {
-      return yield* linear(credentialGeneration, query, variables, schema);
+    session: Effect.gen(function* () {
+      // Taken before the read, so a sign-in change in between fails the session's queries.
+      const generation = credentialGeneration;
+      const credential = yield* readCredential;
+      if (credential === null) return null;
+      return {
+        viewerId: credential.viewer.id,
+        // Untraced: `Board.linear` already spans the request.
+        query: Effect.fnUntraced(function* <
+          S extends Schema.Top & { readonly DecodingServices: never },
+        >(query: string, variables: Record<string, unknown>, schema: S) {
+          return yield* linear(generation, query, variables, schema);
+        }),
+      } satisfies BoardLinearSession;
     }),
   });
 });

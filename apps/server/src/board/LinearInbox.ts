@@ -97,7 +97,10 @@ const make = Effect.gen(function* () {
     });
   });
 
-  const pollTeam = Effect.fn("LinearInbox.pollTeam")(function* (team: string, viewerId: string) {
+  const pollTeam = Effect.fn("LinearInbox.pollTeam")(function* (
+    team: string,
+    session: Board.BoardLinearSession,
+  ) {
     const now = yield* DateTime.now;
     const since = cursors.get(team);
     // A team seen for the first time starts now; old comments are not replayed.
@@ -109,7 +112,7 @@ const make = Effect.gen(function* () {
     const pages: Array<InboxData> = [];
     let after: string | null = null;
     for (let page = 0; page < MAX_INBOX_PAGES; page += 1) {
-      const data: InboxData = yield* board.query(
+      const data: InboxData = yield* session.query(
         INBOX_QUERY,
         { key: team, since, first: INBOX_PAGE_SIZE, after },
         InboxData,
@@ -126,7 +129,7 @@ const make = Effect.gen(function* () {
       .flatMap((data) => data.comments.nodes)
       .toSorted((a, b) => a.createdAt.localeCompare(b.createdAt));
     for (const comment of comments) {
-      const route = routeComment(comment, { viewerId, environmentId, memberIds });
+      const route = routeComment(comment, { viewerId: session.viewerId, environmentId, memberIds });
       yield* logRoute(comment, route, now.epochMilliseconds);
     }
     const newest = comments.at(-1)?.createdAt;
@@ -137,13 +140,12 @@ const make = Effect.gen(function* () {
   });
 
   const poll: LinearInbox["Service"]["poll"] = Effect.gen(function* () {
-    const connection = yield* board.connection;
-    if (connection.status !== "connected") return;
+    const session = yield* board.session;
     const catalog = yield* teamCatalog.snapshot;
-    if (catalog.source === null) return;
+    if (session === null || catalog.source === null) return;
     const teams = new Set(catalog.projects.flatMap((entry) => entry.project.linear?.team ?? []));
     for (const team of teams) {
-      yield* pollTeam(team, connection.viewer.id).pipe(
+      yield* pollTeam(team, session).pipe(
         Effect.catch((error) =>
           Effect.logWarning("Linear inbox could not read new comments.", { team, error }),
         ),
