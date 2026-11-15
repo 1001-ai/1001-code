@@ -78,6 +78,18 @@ const createdResult = {
   labels: [],
 };
 
+const boardResult = {
+  task: {
+    identifier: "ENG-115",
+    title: "The Board task card also shows for board_add",
+    url: "https://linear.app/acme/issue/ENG-115/the-board-task-card",
+    status: { name: "Todo", type: "unstarted" },
+    assignee: null,
+    project: "Code",
+  },
+  threadLinked: true,
+};
+
 /** Claude's MCP result: text blocks holding Linear's JSON. */
 const textBlocks = (value: unknown) => [{ type: "text", text: JSON.stringify(value) }];
 
@@ -188,6 +200,79 @@ describe("boardTaskChange", () => {
     [
       "a non-Linear tool",
       toolItem({ command: "ls" }, textBlocks(createdResult), { toolName: "Bash" }),
+    ],
+  ])("leaves %s as a tool row", (_name, item) => {
+    expect(boardTaskChange(item)).toBeUndefined();
+  });
+
+  it.each([
+    "mcp__t3-code__board_add",
+    "mcp__t3_code__board_add",
+    "t3-code.board_add",
+    "t3-code-direct.board_add",
+    "t3-code_board_add",
+    "t3-code-thread_opencode2-adapter_board_add",
+  ])("files a task with T3's %s", (toolName) => {
+    expect(
+      boardTaskChange(toolItem({ title: "A" }, textBlocks(boardResult), { toolName })),
+    ).toEqual({
+      kind: "created",
+      identifier: "ENG-115",
+      title: "The Board task card also shows for board_add",
+      url: "https://linear.app/acme/issue/ENG-115/the-board-task-card",
+      status: "Todo",
+      statusType: "unstarted",
+      project: "Code",
+    });
+  });
+
+  it.each([
+    ["picked_up", { task: "ENG-115", assignee: "me" }],
+    ["picked_up", { task: "ENG-115", assignee: "me", status: "In Progress" }],
+    ["status", { task: "ENG-115", status: "In Review" }],
+    [
+      "status",
+      { server: "t3-code", tool: "board_update", arguments: { task: "ENG-1", status: "Done" } },
+    ],
+    [undefined, { task: "ENG-115", title: "New title" }],
+  ])("classifies a board_update as %s", (kind, input) => {
+    const assigned = { ...boardResult, task: { ...boardResult.task, assignee: "Alex Kim" } };
+    // Codex keeps T3's whole result: `structuredContent` beside the text block.
+    const output = { isError: false, structuredContent: assigned, content: textBlocks(assigned) };
+    expect(
+      boardTaskChange(toolItem(input, output, { toolName: "t3-code.board_update" }))?.kind,
+    ).toBe(kind);
+  });
+
+  it.each([
+    [
+      "board_list",
+      toolItem({}, textBlocks({ tasks: [boardResult.task], truncated: false }), {
+        toolName: "mcp__t3-code__board_list",
+      }),
+    ],
+    [
+      "a failed board_update",
+      toolItem({ task: "ENG-115", status: "Done" }, textBlocks(boardResult), {
+        toolName: "mcp__t3-code__board_update",
+        status: "failed",
+      }),
+    ],
+    [
+      "a board_update error result",
+      toolItem(
+        { task: "ENG-115", status: "Done" },
+        { isError: true, content: [{ type: "text", text: "Unknown status Done" }] },
+        { toolName: "t3-code.board_update" },
+      ),
+    ],
+    [
+      "another server's board_add",
+      toolItem({ title: "A" }, textBlocks(boardResult), { toolName: "mcp__other__board_add" }),
+    ],
+    [
+      "a Linear issue as board_add's result",
+      toolItem({ title: "A" }, textBlocks(createdResult), { toolName: "t3-code.board_add" }),
     ],
   ])("leaves %s as a tool row", (_name, item) => {
     expect(boardTaskChange(item)).toBeUndefined();

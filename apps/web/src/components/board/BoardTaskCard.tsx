@@ -15,7 +15,7 @@ import { boardStatusGlyph, boardTaskChangeOf } from "./boardTaskCard.logic";
 // The thread details card's `dropdown-glass` fill (18% popover over 80% glass) and outline, no blur.
 const SURFACE = "border border-foreground/10 bg-popover/84";
 
-/** The card an agent's Linear `save_issue` call leaves in the chat when it files, takes or moves a task. */
+/** The card an agent's `save_issue`, `board_add` or `board_update` call leaves when it files, takes or moves a task. */
 export function BoardTaskCard(props: {
   readonly environmentId: EnvironmentId;
   readonly item: Extract<OrchestrationV2TurnItem, { type: "dynamic_tool" }>;
