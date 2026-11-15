@@ -9,7 +9,7 @@ import * as PlatformError from "effect/PlatformError";
 import { clearStaleGpuCaches, resolveUserDataPath } from "./DesktopUserData.ts";
 
 it.effect.each(["t3code", "T3 Code (Alpha)"])(
-  "preserves Windows credential keys from %s without copying browser databases",
+  "never adopts upstream's Windows credential keys from %s",
   (sourceName) =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
@@ -17,29 +17,15 @@ it.effect.each(["t3code", "T3 Code (Alpha)"])(
       const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-v2-profile-" });
       const source = path.join(directory, sourceName);
       const destination = path.join(directory, FORK_DESKTOP.userDataDirName);
-      const state = '{"os_crypt":{"encrypted_key":"test-encrypted-key"}}';
-      yield* fs.makeDirectory(path.join(directory, "T3 Code (Alpha)"), { recursive: true });
-      yield* fs.makeDirectory(path.join(source, "IndexedDB"), { recursive: true });
-      yield* fs.writeFileString(path.join(source, "Local State"), state);
-      yield* fs.writeFileString(path.join(source, "IndexedDB", "LOCK"), "V1 owns this database");
-      yield* resolveUserDataPath({
+      yield* fs.makeDirectory(source, { recursive: true });
+      yield* fs.writeFileString(path.join(source, "Local State"), '{"os_crypt":{}}');
+      const resolved = yield* resolveUserDataPath({
         appDataDirectory: directory,
         isDevelopment: false,
         platform: "win32",
       });
-      assert.equal(yield* fs.readFileString(path.join(destination, "Local State")), state);
-      assert.equal(yield* fs.readFileString(path.join(source, "Local State")), state);
-      assert.isFalse(yield* fs.exists(path.join(destination, "IndexedDB")));
-      yield* fs.writeFileString(path.join(destination, "Local State"), "existing V2 state");
-      yield* resolveUserDataPath({
-        appDataDirectory: directory,
-        isDevelopment: false,
-        platform: "win32",
-      });
-      assert.equal(
-        yield* fs.readFileString(path.join(destination, "Local State")),
-        "existing V2 state",
-      );
+      assert.equal(resolved, destination);
+      assert.isFalse(yield* fs.exists(path.join(destination, "Local State")));
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 

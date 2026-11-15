@@ -57,7 +57,10 @@ export const resolveUserDataPath = Effect.fn("desktop.userData.resolveUserDataPa
       return (yield* inspect(legacyPath)) ? legacyPath : destinationPath;
     }
     // Chromium databases require their own profile for each running version.
-    if (input.platform !== "win32") return destinationPath;
+    // Fork: never adopt upstream T3 Code's Windows credential keys; this app starts empty.
+    if (input.platform !== "win32" || names.current === FORK_DESKTOP.userDataDirName) {
+      return destinationPath;
+    }
     const destinationState = path.join(destinationPath, "Local State");
     if (yield* inspect(destinationState)) return destinationPath;
     const legacyState = path.join(legacyPath, "Local State");
