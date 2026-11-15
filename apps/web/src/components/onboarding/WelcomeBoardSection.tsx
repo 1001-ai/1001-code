@@ -12,7 +12,9 @@ export function WelcomeBoardSection({ environmentId }: { readonly environmentId:
   const connected = connection?.status === "connected";
   const offersSignIn = connection?.status !== "unavailable" && !connected;
   const failure =
-    error ?? (connection?.status === "disconnected" ? connection.signInFailure : undefined);
+    connection?.status === "connected" || connection?.status === "unavailable"
+      ? undefined
+      : (error ?? connection?.signInFailure);
 
   let detail: ReactNode = "See your team's tasks next to your threads.";
   if (connection?.status === "unavailable") {
