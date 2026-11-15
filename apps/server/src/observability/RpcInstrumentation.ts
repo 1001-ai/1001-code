@@ -98,6 +98,7 @@ const RPC_AGGREGATES = {
   [WS_METHODS.teamCatalogSetSource]: "orchestration",
   [WS_METHODS.boardSubscribe]: "orchestration",
   [WS_METHODS.boardRefresh]: "orchestration",
+  [WS_METHODS.boardIssueDetail]: "orchestration",
   [WS_METHODS.boardSubscribeConnection]: "orchestration",
   [WS_METHODS.boardConnect]: "orchestration",
   [WS_METHODS.boardDisconnect]: "orchestration",

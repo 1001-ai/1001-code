@@ -1,28 +1,24 @@
 import type {
   BoardColumn,
   BoardIssue,
-  BoardPullRequest,
   BoardSnapshot,
+  BoardWorkflowState,
   EnvironmentId,
   ProjectId,
   ScopedThreadRef,
 } from "@t3tools/contracts";
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { useNavigate } from "@tanstack/react-router";
 import { ExternalLinkIcon, Settings2Icon, SquareKanbanIcon } from "lucide-react";
-import { type MouseEvent, useState } from "react";
+import { type MouseEvent, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 
 import { useOpenLink } from "~/browser/useOpenLink";
-import { resolvePullRequestTabLink } from "~/components/RightPanelTabs";
+import { RelativeTime } from "~/components/RelativeTime";
 import { boardRefresh, useBoard } from "~/state/board";
-import { useServerConfigs, useThreadShells } from "~/state/entities";
+import { useServerConfigs } from "~/state/entities";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { cn } from "~/lib/utils";
-import {
-  PullRequestLabelChip,
-  pullRequestChecksStatePresentation,
-  resolvePullRequestState,
-} from "../pullRequest/pullRequestPresentation";
+import { PullRequestLabelChip } from "../pullRequest/pullRequestPresentation";
 import { Alert, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "../ui/empty";
@@ -33,17 +29,20 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   type BoardFilter,
   type BoardView,
-  boardIssueTarget,
-  boardPullRequestStatus,
+  boardCardThread,
+  boardIssueTime,
   filterBoardColumns,
 } from "./board.logic";
+import { BoardIssueDetail } from "./BoardIssueDetail";
+import { Assignee, BoardThreadChip, PriorityGlyph, PullRequestBadge, StateDot } from "./boardParts";
 
 type ReadyBoard = Extract<BoardSnapshot, { status: "ready" }>;
 
 interface CardContext {
   readonly environmentId: EnvironmentId;
-  readonly threads: ReadonlyArray<EnvironmentThreadShell>;
-  readonly onOpen: (issue: BoardIssue, event: MouseEvent) => void;
+  readonly connectedEnvironmentIds: ReadonlySet<EnvironmentId>;
+  readonly onOpenIssue: (issueId: string) => void;
+  readonly onOpenUrl: (url: string, event: MouseEvent) => void;
 }
 
 /** The project's Linear board in the right panel. Read-only in this version. */
@@ -57,11 +56,12 @@ export default function BoardPanel(props: {
   const [refreshing, setRefreshing] = useState(false);
   const [view, setView] = useState<BoardView>("board");
   const [filter, setFilter] = useState<BoardFilter>("all");
+  const [openIssueId, setOpenIssueId] = useState<string | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const openLink = useOpenLink(props.threadRef);
-  const threads = useThreadShells();
   const configs = useServerConfigs();
-  const connected = new Set(configs.keys());
+  const connectedEnvironmentIds = new Set(configs.keys());
 
   const onRefresh = async () => {
     if (props.projectId === null) return;
@@ -71,20 +71,24 @@ export default function BoardPanel(props: {
   };
   const openSettings = (hash: "board" | "team-catalog") =>
     void navigate({ to: "/settings/threads", hash });
+  const onOpenUrl = (url: string, event: MouseEvent) =>
+    void openLink(url, { event }).catch(() => undefined);
+  const focusIn = (selector: string) =>
+    panelRef.current?.querySelector<HTMLElement>(selector)?.focus();
+  const onOpenIssue = (issueId: string) => {
+    flushSync(() => setOpenIssueId(issueId));
+    focusIn("[data-board-back]");
+  };
+  const onBack = () => {
+    const issueId = openIssueId;
+    flushSync(() => setOpenIssueId(null));
+    if (issueId !== null) focusIn(`[data-board-issue="${CSS.escape(issueId)}"]`);
+  };
   const card: CardContext = {
     environmentId,
-    threads,
-    onOpen: (issue, event) => {
-      const target = boardIssueTarget(issue, connected);
-      if (target.kind === "thread") {
-        void navigate({
-          to: "/$environmentId/$threadId",
-          params: { environmentId: target.ref.environmentId, threadId: target.ref.threadId },
-        });
-        return;
-      }
-      void openLink(target.url, { event }).catch(() => undefined);
-    },
+    connectedEnvironmentIds,
+    onOpenIssue,
+    onOpenUrl,
   };
 
   const refreshButton = (
@@ -146,21 +150,49 @@ export default function BoardPanel(props: {
           ) : null}
         </BoardMessage>
       );
-    case "ready":
+    case "ready": {
+      const open = openIssueId === null ? null : findIssue(snapshot.board.columns, openIssueId);
+      if (openIssueId !== null && open === null) setOpenIssueId(null);
       return (
-        <ReadyBoardView
-          snapshot={snapshot}
-          view={view}
-          filter={filter}
-          onViewChange={setView}
-          onFilterChange={setFilter}
-          refreshing={refreshing}
-          onRefresh={() => void onRefresh()}
-          onOpenLinear={(url, event) => void openLink(url, { event }).catch(() => undefined)}
-          card={card}
-        />
+        <div ref={panelRef} className="flex min-h-0 flex-1 flex-col">
+          {open !== null ? (
+            <BoardIssueDetail
+              issue={open.issue}
+              state={open.state}
+              environmentId={environmentId}
+              projectId={props.projectId}
+              threadRef={props.threadRef}
+              connectedEnvironmentIds={connectedEnvironmentIds}
+              onBack={onBack}
+              onOpenUrl={onOpenUrl}
+            />
+          ) : null}
+          <ReadyBoardView
+            snapshot={snapshot}
+            hidden={open !== null}
+            view={view}
+            filter={filter}
+            onViewChange={setView}
+            onFilterChange={setFilter}
+            refreshing={refreshing}
+            onRefresh={() => void onRefresh()}
+            card={card}
+          />
+        </div>
       );
+    }
   }
+}
+
+function findIssue(
+  columns: ReadonlyArray<BoardColumn>,
+  issueId: string,
+): { readonly issue: BoardIssue; readonly state: BoardWorkflowState } | null {
+  for (const column of columns) {
+    const issue = column.issues.find((entry) => entry.id === issueId);
+    if (issue !== undefined) return { issue, state: column.state };
+  }
+  return null;
 }
 
 function failureTitle(reason: Extract<BoardSnapshot, { status: "failed" }>["failure"]["reason"]) {
@@ -179,6 +211,8 @@ function failureTitle(reason: Extract<BoardSnapshot, { status: "failed" }>["fail
       return "Could not reach Linear";
     case "invalid-response":
       return "Could not read the board";
+    case "issue-not-found":
+      return "Issue not found";
   }
 }
 
@@ -255,13 +289,13 @@ function UnconfiguredBoard(props: {
 
 function ReadyBoardView(props: {
   readonly snapshot: ReadyBoard;
+  readonly hidden: boolean;
   readonly view: BoardView;
   readonly filter: BoardFilter;
   readonly onViewChange: (view: BoardView) => void;
   readonly onFilterChange: (filter: BoardFilter) => void;
   readonly refreshing: boolean;
   readonly onRefresh: () => void;
-  readonly onOpenLinear: (url: string, event: MouseEvent) => void;
   readonly card: CardContext;
 }) {
   const { board, failure } = props.snapshot;
@@ -270,7 +304,7 @@ function ReadyBoardView(props: {
   const loaded = board.columns.reduce((count, column) => count + column.issues.length, 0);
   const linearUrl = board.project?.url ?? null;
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className={cn("flex min-h-0 flex-1 flex-col", props.hidden && "hidden")}>
       <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2">
         <div className="min-w-0 flex-1 truncate text-sm font-medium">
           {board.team.name}
@@ -325,7 +359,7 @@ function ReadyBoardView(props: {
                   size="icon-xs"
                   variant="ghost"
                   aria-label="Open in Linear"
-                  onClick={(event) => props.onOpenLinear(linearUrl, event)}
+                  onClick={(event) => props.card.onOpenUrl(linearUrl, event)}
                 >
                   <ExternalLinkIcon />
                 </Button>
@@ -368,12 +402,6 @@ function ReadyBoardView(props: {
   );
 }
 
-function StateDot({ color }: { readonly color: string }) {
-  return (
-    <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ backgroundColor: color }} />
-  );
-}
-
 function BoardColumns(props: {
   readonly columns: ReadonlyArray<BoardColumn>;
   readonly card: CardContext;
@@ -394,7 +422,7 @@ function BoardColumns(props: {
           <ul className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto px-1.5 pb-1.5">
             {column.issues.map((issue) => (
               <li key={issue.id}>
-                <BoardCard issue={issue} card={props.card} />
+                <BoardCard issue={issue} stateType={column.state.type} card={props.card} />
               </li>
             ))}
           </ul>
@@ -433,142 +461,111 @@ function BoardList(props: {
 }
 
 function issueLabel(issue: BoardIssue) {
-  return `${issue.identifier} ${issue.title}${issue.thread ? ", opens its thread" : ", opens in Linear"}`;
+  return `${issue.identifier} ${issue.title}, opens the issue details`;
 }
 
-function BoardCard(props: { readonly issue: BoardIssue; readonly card: CardContext }) {
-  const { issue } = props;
+function BoardCard(props: {
+  readonly issue: BoardIssue;
+  readonly stateType: string;
+  readonly card: CardContext;
+}) {
+  const { issue, card } = props;
+  const thread = boardCardThread(issue.threads, card.connectedEnvironmentIds);
+  const time = boardIssueTime(issue, props.stateType);
   return (
-    <button
-      type="button"
-      aria-label={issueLabel(issue)}
-      onClick={(event) => props.card.onOpen(issue, event)}
-      className="flex w-full flex-col gap-1.5 rounded-md border bg-background p-2 text-left shadow-xs/5 hover:border-ring/40 focus-visible:outline-2 focus-visible:outline-ring"
-    >
-      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        <span className="font-mono">{issue.identifier}</span>
-        <span className="flex-1" />
-        <Assignee issue={issue} />
-      </div>
-      <div className="line-clamp-2 text-sm">{issue.title}</div>
-      <IssueMeta issue={issue} card={props.card} />
-    </button>
+    <div className="flex flex-col rounded-md border bg-background shadow-xs/5 hover:border-ring/40">
+      <button
+        type="button"
+        aria-label={issueLabel(issue)}
+        data-board-issue={issue.id}
+        onClick={() => card.onOpenIssue(issue.id)}
+        className="flex w-full flex-col gap-1.5 rounded-md p-2 text-left focus-visible:outline-2 focus-visible:outline-ring"
+      >
+        <div className="flex w-full items-center gap-1.5 text-xs text-muted-foreground">
+          <PriorityGlyph priority={issue.priority} />
+          <span className="font-mono">{issue.identifier}</span>
+          <span className="flex-1" />
+          <span className="text-2xs whitespace-nowrap">
+            {time.verb} <RelativeTime timestamp={time.at} />
+          </span>
+          <Assignee assignee={issue.assignee} />
+        </div>
+        <div className="line-clamp-2 text-sm">{issue.title}</div>
+        <IssueMeta issue={issue} environmentId={card.environmentId} />
+      </button>
+      {thread ? (
+        <div className="flex items-center gap-1 border-t px-1.5 py-1">
+          <BoardThreadChip
+            link={thread}
+            more={issue.threads.length - 1}
+            connectedEnvironmentIds={card.connectedEnvironmentIds}
+            onOpenLinear={(event) => card.onOpenUrl(issue.url, event)}
+          />
+        </div>
+      ) : null}
+    </div>
   );
 }
 
 function BoardRow(props: { readonly issue: BoardIssue; readonly card: CardContext }) {
-  const { issue } = props;
+  const { issue, card } = props;
+  const thread = boardCardThread(issue.threads, card.connectedEnvironmentIds);
   return (
-    <button
-      type="button"
-      aria-label={issueLabel(issue)}
-      onClick={(event) => props.card.onOpen(issue, event)}
-      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
-    >
-      <span className="w-16 shrink-0 truncate font-mono text-xs text-muted-foreground">
-        {issue.identifier}
-      </span>
-      <span className="min-w-0 flex-1 truncate">{issue.title}</span>
-      <IssueMeta issue={issue} card={props.card} inline />
-      <Assignee issue={issue} />
-    </button>
+    <div className="relative flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent">
+      <button
+        type="button"
+        aria-label={issueLabel(issue)}
+        data-board-issue={issue.id}
+        onClick={() => card.onOpenIssue(issue.id)}
+        className="flex min-w-0 flex-1 items-center gap-2 text-left outline-none after:absolute after:inset-0 focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-ring"
+      >
+        <PriorityGlyph priority={issue.priority} />
+        <span className="w-14 shrink-0 truncate font-mono text-xs text-muted-foreground">
+          {issue.identifier}
+        </span>
+        <span className="min-w-0 flex-1 truncate">{issue.title}</span>
+      </button>
+      {thread ? (
+        <BoardThreadChip
+          link={thread}
+          more={issue.threads.length - 1}
+          compact
+          connectedEnvironmentIds={card.connectedEnvironmentIds}
+          onOpenLinear={(event) => card.onOpenUrl(issue.url, event)}
+        />
+      ) : null}
+      <IssueMeta issue={issue} environmentId={card.environmentId} inline={thread ? 0 : 2} />
+      <Assignee assignee={issue.assignee} />
+    </div>
   );
 }
 
 function IssueMeta(props: {
   readonly issue: BoardIssue;
-  readonly card: CardContext;
-  readonly inline?: boolean;
+  readonly environmentId: EnvironmentId;
+  /** In a list row: how many labels fit beside the title. */
+  readonly inline?: number;
 }) {
   const { issue } = props;
-  if (issue.labels.length === 0 && issue.pullRequests.length === 0) return null;
+  const labels = props.inline === undefined ? issue.labels : issue.labels.slice(0, props.inline);
+  if (labels.length === 0 && issue.pullRequests.length === 0) return null;
   return (
     <div
       className={cn(
         "flex min-w-0 flex-wrap items-center gap-1",
-        props.inline && "shrink-0 flex-nowrap",
+        props.inline !== undefined && "shrink-0 flex-nowrap",
       )}
     >
       {issue.pullRequests.map((pullRequest) => (
-        <PullRequestBadge key={pullRequest.url} pullRequest={pullRequest} card={props.card} />
+        <PullRequestBadge
+          key={pullRequest.url}
+          pullRequest={pullRequest}
+          environmentId={props.environmentId}
+        />
       ))}
-      {(props.inline ? issue.labels.slice(0, 2) : issue.labels).map((label) => (
+      {labels.map((label) => (
         <PullRequestLabelChip key={label.id} label={{ name: label.name, color: label.color }} />
       ))}
     </div>
-  );
-}
-
-function PullRequestBadge(props: {
-  readonly pullRequest: BoardPullRequest;
-  readonly card: CardContext;
-}) {
-  const { pullRequest } = props;
-  const link = resolvePullRequestTabLink(
-    props.card.threads,
-    props.card.environmentId,
-    pullRequest.host,
-    pullRequest,
-  );
-  const status = boardPullRequestStatus(link?.snapshot, pullRequest.linearStatus);
-  const presentation = status ? resolvePullRequestState(status) : null;
-  const checks =
-    status?.state === "open" && status.checksState
-      ? pullRequestChecksStatePresentation(status.checksState)
-      : null;
-  const label = [`Pull request #${pullRequest.number}`, presentation?.label, checks?.label]
-    .filter(Boolean)
-    .join(", ");
-  const Icon = presentation?.Icon;
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <span
-            aria-label={label}
-            className="inline-flex items-center gap-0.5 rounded-sm bg-muted px-1 text-2xs leading-4 text-muted-foreground"
-          />
-        }
-      >
-        {Icon ? <Icon aria-hidden className={cn("size-3", presentation.toneClassName)} /> : null}
-        {`#${pullRequest.number}`}
-        {checks ? <checks.Icon aria-hidden className={cn("size-3", checks.toneClassName)} /> : null}
-      </TooltipTrigger>
-      <TooltipPopup>{label}</TooltipPopup>
-    </Tooltip>
-  );
-}
-
-function Assignee({ issue }: { readonly issue: BoardIssue }) {
-  const assignee = issue.assignee;
-  if (assignee === null) return null;
-  const initials = assignee.name
-    .split(/\s+/)
-    .map((part) => part[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          assignee.avatarUrl ? (
-            <img
-              src={assignee.avatarUrl}
-              alt={assignee.name}
-              className="size-4 shrink-0 rounded-full"
-            />
-          ) : (
-            <span
-              aria-label={assignee.name}
-              className="flex size-4 shrink-0 items-center justify-center rounded-full bg-muted text-4xs font-medium text-muted-foreground"
-            >
-              {initials}
-            </span>
-          )
-        }
-      />
-      <TooltipPopup>{assignee.name}</TooltipPopup>
-    </Tooltip>
   );
 }

@@ -90,11 +90,15 @@ const linearIssue = (id: string, stateId: string) => ({
   identifier: `ENG-${id}`,
   title: `Issue ${id}`,
   url: `https://linear.app/acme/issue/ENG-${id}`,
+  priority: 0,
+  createdAt: "2026-11-13T10:00:00.000Z",
+  startedAt: null,
   updatedAt: "2026-11-14T10:00:00.000Z",
   sortOrder: Number(id),
   state: { id: stateId },
   assignee: null,
   labels: { nodes: [] },
+  threadLinks: { nodes: [] },
   attachments: { nodes: [] },
 });
 
@@ -875,6 +879,53 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Board", (it) => 
       );
     }),
   );
+
+  it.effect("reads an issue's detail only when the issue is on the project's board", () => {
+    const detail = (id: string, teamId: string) => ({
+      body: {
+        data: {
+          issue: {
+            id,
+            team: { id: teamId },
+            project: null,
+            description: "Fix the **login** flow.",
+            creator: {
+              id: "u1",
+              name: "Dana Kim",
+              displayName: "dana",
+              avatarUrl: null,
+              isMe: true,
+            },
+          },
+        },
+      },
+    });
+    const answer = boardAnswers([[linearIssue("1", "s-todo")]]);
+    return connected(
+      (board, linear) =>
+        Effect.gen(function* () {
+          expect(yield* board.issueDetail({ projectId: PROJECT_ID, issueId: "1" })).toEqual({
+            description: "Fix the **login** flow.",
+            creator: { id: "u1", name: "dana", avatarUrl: null, isMe: true },
+          });
+          expect(
+            linear.calls.find((call) => call.operation === "BoardIssueDetail")?.variables,
+          ).toEqual({ id: "1" });
+          expect(
+            yield* board.issueDetail({ projectId: PROJECT_ID, issueId: "9" }).pipe(Effect.flip),
+          ).toMatchObject({ reason: "issue-not-found" });
+          expect(
+            yield* board.issueDetail({ projectId: PROJECT_ID, issueId: "gone" }).pipe(Effect.flip),
+          ).toMatchObject({ reason: "issue-not-found" });
+        }).pipe(Effect.orDie),
+      (operation, variables) =>
+        operation !== "BoardIssueDetail"
+          ? answer(operation, variables)
+          : variables.id === "gone"
+            ? { body: { data: { issue: null } } }
+            : detail(String(variables.id), variables.id === "9" ? "team-2" : team.id),
+    );
+  });
 
   it.effect("keeps the last board when Linear rate-limits a refresh", () => {
     let limited = false;

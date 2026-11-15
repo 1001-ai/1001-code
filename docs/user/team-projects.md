@@ -112,8 +112,10 @@ ones.
 The board shows open issues and those closed in the last week, as columns or as a list grouped by
 state. **Mine** keeps the issues assigned to you. A card shows its pull request's state, from the
 pull request this app tracks for a thread when it has one, and otherwise from Linear's GitHub
-integration. Selecting a card opens its thread when the issue links to a thread on a machine you
-are connected to, and opens the issue in Linear otherwise. The board is read when you open it,
+integration. A card also shows the newest linked thread on a machine you are connected to, with its
+live status; select it to open the thread. When every linked thread is on a machine you are not
+connected to, the card says so and opens the issue in Linear instead. Selecting the rest of the card opens the issue's details in the panel: every linked thread,
+pull request and the description. The board is read when you open it,
 every 30 seconds while it is open, and when you select refresh, which also picks up catalog edits.
 It does not change issues. When Linear's rate limit is reached, the board keeps its last read with
 a warning and waits as long as Linear asks before reading again.

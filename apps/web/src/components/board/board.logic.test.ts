@@ -1,7 +1,12 @@
 import { type BoardColumn, type BoardIssue, EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { boardIssueTarget, boardPullRequestStatus, filterBoardColumns } from "./board.logic";
+import {
+  boardCardThread,
+  boardPullRequestStatus,
+  boardThreadTarget,
+  filterBoardColumns,
+} from "./board.logic";
 
 const issue = (id: string, isMe: boolean | null): BoardIssue => ({
   id,
@@ -11,9 +16,12 @@ const issue = (id: string, isMe: boolean | null): BoardIssue => ({
   stateId: "todo",
   assignee: isMe === null ? null : { id: "u", name: "Dana", avatarUrl: null, isMe },
   labels: [],
+  priority: 0,
+  createdAt: "2026-11-13T10:00:00.000Z",
+  startedAt: null,
   updatedAt: "2026-11-14T10:00:00.000Z",
   pullRequests: [],
-  thread: null,
+  threads: [],
 });
 
 const column: BoardColumn = {
@@ -30,23 +38,29 @@ describe("filterBoardColumns", () => {
   });
 });
 
-describe("boardIssueTarget", () => {
+describe("boardThreadTarget", () => {
   const environmentId = EnvironmentId.make("env-1");
-  const linked = {
-    ...issue("4", null),
-    thread: { environmentId, threadId: ThreadId.make("thread-1") },
-  };
+  const link = (threadId: string, environment: EnvironmentId) => ({
+    environmentId: environment,
+    threadId: ThreadId.make(threadId),
+    linkedAt: "2026-11-14T09:00:00.000Z",
+    linkedBy: null,
+  });
+  const elsewhere = link("thread-2", EnvironmentId.make("env-2"));
+  const here = link("thread-1", environmentId);
 
-  it("opens a linked thread on a connected environment, else the issue in Linear", () => {
-    expect(boardIssueTarget(linked, new Set([environmentId]))).toEqual({
+  it("opens a linked thread on a connected environment, else marks it unreachable", () => {
+    expect(boardThreadTarget(here, new Set([environmentId]))).toEqual({
       kind: "thread",
       ref: { environmentId, threadId: "thread-1" },
     });
-    expect(boardIssueTarget(linked, new Set())).toEqual({ kind: "linear", url: linked.url });
-    expect(boardIssueTarget(issue("5", null), new Set([environmentId]))).toEqual({
-      kind: "linear",
-      url: "https://linear.app/acme/issue/ENG-5",
-    });
+    expect(boardThreadTarget(here, new Set())).toEqual({ kind: "unreachable" });
+  });
+
+  it("shows the newest reachable thread on a card, else the newest", () => {
+    expect(boardCardThread([elsewhere, here], new Set([environmentId]))).toBe(here);
+    expect(boardCardThread([elsewhere, here], new Set())).toBe(elsewhere);
+    expect(boardCardThread([], new Set([environmentId]))).toBeNull();
   });
 });
 
