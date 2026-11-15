@@ -243,7 +243,7 @@ import * as UsageService from "./usage/UsageService.ts";
 import * as ThreadCost from "./usage/ThreadCost.ts";
 import * as TeamCatalog from "./teamCatalog/TeamCatalog.ts";
 import * as Board from "./board/Board.ts";
-import * as Preferences from "./preferences/Preferences.ts";
+import * as Memory from "./memory/Memory.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as TriageService from "./triage/TriageService.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
@@ -1523,7 +1523,7 @@ export const layerWsRpc = (
       const threadCost = yield* ThreadCost.ThreadCost;
       const teamCatalog = yield* TeamCatalog.TeamCatalog;
       const board = yield* Board.Board;
-      const preferences = yield* Preferences.Preferences;
+      const memory = yield* Memory.Memory;
       const usageLimitSources = yield* UsageLimitSources.UsageLimitSources;
       const worktreeSetupTracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
       const projectCloneTracker = yield* ProjectCloneTracker.ProjectCloneTracker;
@@ -2715,8 +2715,8 @@ export const layerWsRpc = (
         [WS_METHODS.boardConnect]: (input) => board.startSignIn(input.callbackOrigin),
         [WS_METHODS.boardDisconnect]: () => board.disconnect,
         [WS_METHODS.teamCatalogPropose]: (input) => teamCatalog.propose(input),
-        [WS_METHODS.preferencesSubscribe]: (input) => preferences.changes(input.projectId),
-        [WS_METHODS.preferencesPropose]: (input) => preferences.propose(input),
+        [WS_METHODS.memorySubscribe]: (input) => memory.changes(input.projectId),
+        [WS_METHODS.memoryPropose]: (input) => memory.propose(input),
         [WS_METHODS.serverRetryResourceTelemetry]: (_input) => resourceTelemetry.retry,
         [WS_METHODS.serverCheckOtlpEndpoint]: (input) => otlpEndpointCheck.check(input),
         [WS_METHODS.serverListTextGeneratorModels]: (input) => textGenerators.listModels(input),

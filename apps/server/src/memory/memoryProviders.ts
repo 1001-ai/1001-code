@@ -3,24 +3,24 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
 import { CODEX_ADDITIONAL_CONTEXT_VALUE_MAX_BYTES } from "../provider/CodexDeveloperInstructions.ts";
-import type { Preferences } from "./Preferences.ts";
+import type { Memory } from "./Memory.ts";
 
-/** The turn input's `preferences` field, absent where the server runs without the service. */
-export const preferencesTurnInput = (
-  service: Option.Option<Preferences["Service"]>,
+/** The turn input's `memory` field, absent where the server runs without the service. */
+export const memoryTurnInput = (
+  service: Option.Option<Memory["Service"]>,
   projectId: ProjectId,
   threadId: ThreadId,
-): Effect.Effect<{ readonly preferences?: string }> =>
+): Effect.Effect<{ readonly memory?: string }> =>
   Option.isNone(service)
     ? Effect.succeed({})
     : service.value
         .instructions(projectId, threadId)
-        .pipe(Effect.map((block) => (block === undefined ? {} : { preferences: block })));
+        .pipe(Effect.map((block) => (block === undefined ? {} : { memory: block })));
 
 const encoder = new TextEncoder();
 
 /** The block as Codex `additionalContext` entries, split on lines to fit Codex's per-entry cap. */
-export function codexPreferencesContext(
+export function codexMemoryContext(
   block: string | undefined,
 ): Record<string, { readonly kind: "application"; readonly value: string }> {
   if (block === undefined) return {};
@@ -54,21 +54,21 @@ export function codexPreferencesContext(
   if (current !== "") chunks.push(current);
   return Object.fromEntries(
     chunks.map((value, index) => [
-      `t3_preferences_${String(index + 1).padStart(2, "0")}`,
+      `t3_memory_${String(index + 1).padStart(2, "0")}`,
       { kind: "application" as const, value },
     ]),
   );
 }
 
-const PREFERENCES_KEY_SEPARATOR = "\u0000preferences:";
+const MEMORY_KEY_SEPARATOR = "\u0000memory:";
 
 /**
  * Claude reads its system prompt once per process, so the live query's key carries the block: a
  * changed block reopens the process with resume at the next turn. While the process still runs
- * background work the old key is kept, so a merged preference never ends that work or fails the
+ * background work the old key is kept, so a merged memory never ends that work or fails the
  * turn; the change arrives at a later reopen.
  */
-export const claudePreferencesQueryKey = Effect.fnUntraced(function* <
+export const claudeMemoryQueryKey = Effect.fnUntraced(function* <
   Live extends { readonly queryPolicyKey: string },
 >(
   policyKey: string,
@@ -76,11 +76,11 @@ export const claudePreferencesQueryKey = Effect.fnUntraced(function* <
   existing: Live | null,
   runsBackgroundWork: (live: Live) => Effect.Effect<boolean>,
 ) {
-  const key = `${policyKey}${PREFERENCES_KEY_SEPARATOR}${block ?? ""}`;
+  const key = `${policyKey}${MEMORY_KEY_SEPARATOR}${block ?? ""}`;
   if (
     existing !== null &&
     existing.queryPolicyKey !== key &&
-    existing.queryPolicyKey.startsWith(`${policyKey}${PREFERENCES_KEY_SEPARATOR}`) &&
+    existing.queryPolicyKey.startsWith(`${policyKey}${MEMORY_KEY_SEPARATOR}`) &&
     (yield* runsBackgroundWork(existing))
   ) {
     return existing.queryPolicyKey;

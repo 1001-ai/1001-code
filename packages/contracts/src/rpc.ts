@@ -378,11 +378,7 @@ import {
   BoardSignIn,
   BoardSnapshot,
 } from "./board.ts";
-import {
-  PreferencesProjectInput,
-  PreferencesProposeInput,
-  PreferencesView,
-} from "./preferences.ts";
+import { MemoryProjectInput, MemoryProposeInput, MemoryView } from "./memory.ts";
 import {
   StorageCleanupReport,
   DatabaseReclaimError,
@@ -585,8 +581,8 @@ export const WS_METHODS = {
   boardConnect: "board.connect",
   boardDisconnect: "board.disconnect",
   teamCatalogPropose: "teamCatalog.propose",
-  preferencesSubscribe: "preferences.subscribe",
-  preferencesPropose: "preferences.propose",
+  memorySubscribe: "memory.subscribe",
+  memoryPropose: "memory.propose",
 
   scheduledTasksSubscribe: "scheduledTasks.subscribe",
   scheduledTasksUpsert: "scheduledTasks.upsert",
@@ -1119,15 +1115,15 @@ const WsTeamCatalogProposeRpc = Rpc.make(WS_METHODS.teamCatalogPropose, {
   error: Schema.Union([TeamCatalogError, EnvironmentAuthorizationError]),
 });
 
-const WsPreferencesSubscribeRpc = Rpc.make(WS_METHODS.preferencesSubscribe, {
-  payload: PreferencesProjectInput,
-  success: PreferencesView,
+const WsMemorySubscribeRpc = Rpc.make(WS_METHODS.memorySubscribe, {
+  payload: MemoryProjectInput,
+  success: MemoryView,
   error: EnvironmentAuthorizationError,
   stream: true,
 });
 
-const WsPreferencesProposeRpc = Rpc.make(WS_METHODS.preferencesPropose, {
-  payload: PreferencesProposeInput,
+const WsMemoryProposeRpc = Rpc.make(WS_METHODS.memoryPropose, {
+  payload: MemoryProposeInput,
   success: TeamCatalogProposal,
   error: Schema.Union([TeamCatalogError, EnvironmentAuthorizationError]),
 });
@@ -2266,8 +2262,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsBoardConnectRpc,
   WsBoardDisconnectRpc,
   WsTeamCatalogProposeRpc,
-  WsPreferencesSubscribeRpc,
-  WsPreferencesProposeRpc,
+  WsMemorySubscribeRpc,
+  WsMemoryProposeRpc,
   WsServerSignalProcessRpc,
   WsScheduledTasksSubscribeRpc,
   WsScheduledTasksUpsertRpc,

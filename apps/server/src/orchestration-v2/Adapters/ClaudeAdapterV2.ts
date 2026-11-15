@@ -215,7 +215,7 @@ import {
   T3_CODE_ORCHESTRATION_INSTRUCTIONS,
 } from "@t3tools/provider-core/server/orchestrationInstructions";
 import { buildRuntimeInstructions } from "@t3tools/provider-core/server/runtimeInstructions";
-import { claudePreferencesQueryKey } from "../../preferences/preferencesProviders.ts";
+import { claudeMemoryQueryKey } from "../../memory/memoryProviders.ts";
 import {
   mcpToolPresentation,
   normalizeMcpText,
@@ -1968,7 +1968,7 @@ export function makeClaudeQueryOptions(input: {
   readonly supportedDialogKinds?: ClaudeQueryOptions["supportedDialogKinds"];
   readonly allowDangerouslySkipPermissions?: boolean;
   readonly appendSystemPromptFileText?: string;
-  readonly preferences?: string | undefined;
+  readonly memory?: string | undefined;
   // Flag settings, because a user's settings.json env beats the process env in Claude Code.
   readonly toolSearchOverride?: "true";
 }): ClaudeAgentSdkQueryOptions {
@@ -2104,7 +2104,7 @@ export function makeClaudeQueryOptions(input: {
                 ? `\n${T3_CODE_DEVICE_TOOL_INSTRUCTIONS_WITH_TOOL_SEARCH}\n`
                 : "")),
         ...launchAppendSystemPrompt,
-        ...(input.preferences === undefined ? [] : [input.preferences]),
+        ...(input.memory === undefined ? [] : [input.memory]),
       ].join("\n\n"),
     },
     ...(deviceInstructions
@@ -11941,9 +11941,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               ? {}
               : { allowedTools: queryPolicy.allowedTools }),
           });
-          const queryPolicyKey = yield* claudePreferencesQueryKey(
+          const queryPolicyKey = yield* claudeMemoryQueryKey(
             claudeEffectiveQueryPolicyKey(queryPolicy, mcpOverrides),
-            turnInput.preferences,
+            turnInput.memory,
             yield* Ref.get(queryContext),
             liveProcessRunsBackgroundWork,
           );
@@ -12091,7 +12091,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             supportedDialogKinds: ["resume_return"],
             ...(appendSystemPromptFileText === undefined ? {} : { appendSystemPromptFileText }),
             ...(toolSearchOverride === undefined ? {} : { toolSearchOverride }),
-            preferences: turnInput.preferences,
+            memory: turnInput.memory,
           });
           const resolvedTurnCwd = yield* fileSystem
             .realPath(turnInput.runtimePolicy.cwd ?? ".")

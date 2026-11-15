@@ -1,16 +1,16 @@
 import {
-  buildPreferencesBlock,
+  buildMemoryBlock,
   type ProjectId,
   type TeamCatalogProposal,
   TeamCatalogError,
   type TeamCatalogSnapshot,
-  type PreferencesDocument,
-  type PreferencesProposeInput,
-  type PreferencesScope,
-  type PreferencesView,
+  type MemoryDocument,
+  type MemoryProposeInput,
+  type MemoryScope,
+  type MemoryView,
   type ThreadId,
   teamCatalogRepositoryMatches,
-  preferencesFile,
+  memoryFile,
 } from "@t3tools/contracts";
 import { THREAD_LINK_PROTOCOL } from "@t3tools/shared/threadLinks";
 import * as Cause from "effect/Cause";
@@ -30,15 +30,15 @@ import * as TeamCatalog from "../teamCatalog/TeamCatalog.ts";
 import { hostedRepositoryOf } from "../teamCatalog/teamCatalogProposal.ts";
 
 /**
- * Preferences: markdown files in the team catalog repository that every agent turn gets as
- * one `<preferences>` block. Changes are proposed to the catalog as pull requests.
+ * Memory: markdown files in the team catalog repository that every agent turn gets as
+ * one `<memory>` block. Changes are proposed to the catalog as pull requests.
  */
-export class Preferences extends Context.Service<
-  Preferences,
+export class Memory extends Context.Service<
+  Memory,
   {
-    readonly read: (projectId: ProjectId) => Effect.Effect<PreferencesView>;
+    readonly read: (projectId: ProjectId) => Effect.Effect<MemoryView>;
     /** The view now, then again whenever the catalog changes. */
-    readonly changes: (projectId: ProjectId) => Stream.Stream<PreferencesView>;
+    readonly changes: (projectId: ProjectId) => Stream.Stream<MemoryView>;
     /**
      * The block for a turn in the project, or undefined when there is none. Never fails and never
      * waits for git: a stale catalog is refreshed in the background for later turns.
@@ -48,12 +48,12 @@ export class Preferences extends Context.Service<
       threadId: ThreadId,
     ) => Effect.Effect<string | undefined>;
     readonly propose: (
-      input: PreferencesProposeInput,
+      input: MemoryProposeInput,
     ) => Effect.Effect<TeamCatalogProposal, TeamCatalogError>;
   }
->()("t3/preferences/Preferences") {}
+>()("t3/memory/Memory") {}
 
-const SIGNED_OUT = "Sign in to the GitHub CLI with gh auth login to have personal preferences.";
+const SIGNED_OUT = "Sign in to the GitHub CLI with gh auth login to have personal memory.";
 
 /** The board reads a thread from an issue's link attachments, so a comment alone is not enough. */
 const threadLinkInstructions = (link: string): string =>
@@ -66,14 +66,14 @@ const threadLinkInstructions = (link: string): string =>
 /** Turns use the cached catalog; one older than this starts a background fetch. */
 const STALE_AFTER_MS = 10 * 60_000;
 
-const proposalTitle = (scope: PreferencesScope, label: string | null): string => {
+const proposalTitle = (scope: MemoryScope, label: string | null): string => {
   switch (scope) {
     case "team":
-      return "Update team preferences";
+      return "Update team memory";
     case "project":
-      return `Update preferences for ${label ?? "the project"}`;
+      return `Update memory for ${label ?? "the project"}`;
     case "personal":
-      return `Update personal preferences for ${label ?? "me"}`;
+      return `Update personal memory for ${label ?? "me"}`;
   }
 };
 
@@ -86,7 +86,7 @@ const make = Effect.gen(function* () {
   yield* Effect.addFinalizer(() => Scope.close(backgroundScope, Exit.void));
   let lastStaleRefreshMs = 0;
 
-  const catalogProject = Effect.fn("Preferences.catalogProject")(function* (
+  const catalogProject = Effect.fn("Memory.catalogProject")(function* (
     catalog: TeamCatalogSnapshot,
     projectId: ProjectId,
   ) {
@@ -101,19 +101,19 @@ const make = Effect.gen(function* () {
     );
   });
 
-  const document = Effect.fn("Preferences.document")(function* (
-    scope: PreferencesScope,
+  const document = Effect.fn("Memory.document")(function* (
+    scope: MemoryScope,
     target: { readonly key: string; readonly label: string | null } | string,
   ) {
     if (typeof target === "string") {
       return { scope, file: null, label: null, text: "", unavailable: target };
     }
-    const file = preferencesFile(scope, target.key);
+    const file = memoryFile(scope, target.key);
     const text = (yield* teamCatalog.readFile(file)) ?? "";
     return { scope, file, label: target.label, text, unavailable: null };
   });
 
-  const readWithProject = Effect.fn("Preferences.read")(function* (projectId: ProjectId) {
+  const readWithProject = Effect.fn("Memory.read")(function* (projectId: ProjectId) {
     const catalog = yield* teamCatalog.snapshot;
     const base = {
       source: catalog.source,
@@ -123,12 +123,12 @@ const make = Effect.gen(function* () {
       viewer: catalog.viewer,
     };
     if (catalog.source === null) {
-      const view: PreferencesView = { ...base, documents: [], block: null, truncated: false };
+      const view: MemoryView = { ...base, documents: [], block: null, truncated: false };
       return { view, project: null };
     }
     const project = yield* catalogProject(catalog, projectId);
     const login = catalog.viewer.login;
-    const documents: ReadonlyArray<PreferencesDocument> = [
+    const documents: ReadonlyArray<MemoryDocument> = [
       yield* document("team", { key: "team", label: null }),
       yield* document(
         "project",
@@ -141,11 +141,11 @@ const make = Effect.gen(function* () {
         login === null ? (catalog.viewer.problem ?? SIGNED_OUT) : { key: login, label: login },
       ),
     ];
-    const block = buildPreferencesBlock({
+    const block = buildMemoryBlock({
       documents,
       repository: hostedRepositoryOf(catalog.source),
     });
-    const view: PreferencesView = {
+    const view: MemoryView = {
       ...base,
       documents,
       block: block?.text ?? null,
@@ -154,16 +154,16 @@ const make = Effect.gen(function* () {
     return { view, project };
   });
 
-  const read: Preferences["Service"]["read"] = (projectId) =>
+  const read: Memory["Service"]["read"] = (projectId) =>
     readWithProject(projectId).pipe(Effect.map(({ view }) => view));
 
-  const changes: Preferences["Service"]["changes"] = (projectId) =>
+  const changes: Memory["Service"]["changes"] = (projectId) =>
     teamCatalog.changes.pipe(
       Stream.mapEffect(() => read(projectId)),
       Stream.changesWith((a, b) => JSON.stringify(a) === JSON.stringify(b)),
     );
 
-  const refreshWhenStale = Effect.fn("Preferences.refreshWhenStale")(function* (
+  const refreshWhenStale = Effect.fn("Memory.refreshWhenStale")(function* (
     catalog: TeamCatalogSnapshot,
   ) {
     if (catalog.source === null || catalog.refreshing) return;
@@ -174,9 +174,7 @@ const make = Effect.gen(function* () {
     yield* teamCatalog.refresh().pipe(Effect.forkIn(backgroundScope));
   });
 
-  const instructions: Preferences["Service"]["instructions"] = Effect.fn(
-    "Preferences.instructions",
-  )(
+  const instructions: Memory["Service"]["instructions"] = Effect.fn("Memory.instructions")(
     function* (projectId, threadId) {
       yield* refreshWhenStale(yield* teamCatalog.snapshot);
       const { view, project } = yield* readWithProject(projectId);
@@ -185,63 +183,63 @@ const make = Effect.gen(function* () {
       const threadLink = threadLinkInstructions(link);
       return view.block === null ? threadLink : `${view.block}\n\n${threadLink}`;
     },
-    // A cancelled run must stay cancelled; only a failed read degrades to no preferences.
+    // A cancelled run must stay cancelled; only a failed read degrades to no memory.
     Effect.catchCauseIf(
       (cause) => !Cause.hasInterrupts(cause),
       (cause) =>
-        Effect.logWarning("Preferences could not be read.", { cause }).pipe(Effect.as(undefined)),
+        Effect.logWarning("Memory could not be read.", { cause }).pipe(Effect.as(undefined)),
     ),
   );
 
-  const propose: Preferences["Service"]["propose"] = Effect.fn("Preferences.propose")(
-    function* (input) {
-      const view = yield* read(input.projectId);
-      const listed = view.documents.find((candidate) => candidate.scope === input.scope);
-      // The personal file is the live login's: after a GitHub CLI account switch the cached one
-      // would edit the previous person's file under the new author.
-      const target =
-        input.scope === "personal" && view.source !== null
-          ? yield* teamCatalog.liveViewer.pipe(
-              Effect.flatMap((viewer) =>
-                document(
-                  "personal",
-                  viewer.login === null
-                    ? (viewer.problem ?? SIGNED_OUT)
-                    : { key: viewer.login, label: viewer.login },
-                ),
+  const propose: Memory["Service"]["propose"] = Effect.fn("Memory.propose")(function* (input) {
+    const view = yield* read(input.projectId);
+    const listed = view.documents.find((candidate) => candidate.scope === input.scope);
+    // The personal file is the live login's: after a GitHub CLI account switch the cached one
+    // would edit the previous person's file under the new author.
+    const target =
+      input.scope === "personal" && view.source !== null
+        ? yield* teamCatalog.liveViewer.pipe(
+            Effect.flatMap((viewer) =>
+              document(
+                "personal",
+                viewer.login === null
+                  ? (viewer.problem ?? SIGNED_OUT)
+                  : { key: viewer.login, label: viewer.login },
               ),
-            )
-          : listed;
-      if (view.source === null || target === undefined) {
-        return yield* new TeamCatalogError({ detail: "No team catalog is set." });
-      }
-      if (target.file === null) {
-        return yield* new TeamCatalogError({
-          detail: target.unavailable ?? "This scope has no preferences file here.",
-        });
-      }
-      const text = input.text.trim() === "" ? "" : `${input.text.trim()}\n`;
-      if (text === target.text) {
-        return yield* new TeamCatalogError({
-          detail: "Nothing to propose: the file already says this.",
-        });
-      }
-      const name = target.file.slice(target.file.lastIndexOf("/") + 1).replace(/\.md$/, "");
-      return yield* teamCatalog.proposeFiles({
-        baseRevision: input.baseRevision,
-        files: [{ file: target.file, text }],
-        title: proposalTitle(input.scope, target.label).slice(0, 200),
-        body: [
-          `Edits \`${target.file}\`, proposed from the Preferences panel.`,
-          "Agents get the change on their next turn after this is merged.",
-        ].join("\n\n"),
-        branchStem:
-          `preferences/${input.scope === "team" ? "team" : `${input.scope}-${name}`}`.slice(0, 80),
+            ),
+          )
+        : listed;
+    if (view.source === null || target === undefined) {
+      return yield* new TeamCatalogError({ detail: "No team catalog is set." });
+    }
+    if (target.file === null) {
+      return yield* new TeamCatalogError({
+        detail: target.unavailable ?? "This scope has no memory file here.",
       });
-    },
-  );
+    }
+    const text = input.text.trim() === "" ? "" : `${input.text.trim()}\n`;
+    if (text === target.text) {
+      return yield* new TeamCatalogError({
+        detail: "Nothing to propose: the file already says this.",
+      });
+    }
+    const name = target.file.slice(target.file.lastIndexOf("/") + 1).replace(/\.md$/, "");
+    return yield* teamCatalog.proposeFiles({
+      baseRevision: input.baseRevision,
+      files: [{ file: target.file, text }],
+      title: proposalTitle(input.scope, target.label).slice(0, 200),
+      body: [
+        `Edits \`${target.file}\`, proposed from the Memory panel.`,
+        "Agents get the change on their next turn after this is merged.",
+      ].join("\n\n"),
+      branchStem: `memory/${input.scope === "team" ? "team" : `${input.scope}-${name}`}`.slice(
+        0,
+        80,
+      ),
+    });
+  });
 
-  return Preferences.of({ read, changes, instructions, propose });
+  return Memory.of({ read, changes, instructions, propose });
 });
 
-export const layer = Layer.effect(Preferences, make);
+export const layer = Layer.effect(Memory, make);

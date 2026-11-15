@@ -5,7 +5,7 @@ import { useRightPanelStore } from "~/rightPanelStore";
 import { boardSurfaceActions } from "../board/boardSurface";
 import { type CommandPaletteActionItem, ITEM_ICON_CLASS } from "../CommandPalette.logic";
 
-export type TeamSurfaceKind = "board" | "preferences";
+export type TeamSurfaceKind = "board" | "memory";
 
 /** The team surfaces in the right panel's new-surface menus; absent where no project is open. */
 export function teamSurfaceActions(onAdd: ((kind: TeamSurfaceKind) => void) | undefined) {
@@ -13,32 +13,32 @@ export function teamSurfaceActions(onAdd: ((kind: TeamSurfaceKind) => void) | un
     ? [
         ...boardSurfaceActions(() => onAdd("board")),
         {
-          label: "Preferences",
+          label: "Memory",
           description: "What agents are told about how the team works.",
           icon: ScrollTextIcon,
           shortcut: "E",
           available: true,
           disabledReason: "Available when a project is open.",
-          onClick: () => onAdd("preferences"),
+          onClick: () => onAdd("memory"),
         },
       ]
     : [];
 }
 
-export function PreferencesSurfaceIcon() {
+export function MemorySurfaceIcon() {
   return <ScrollTextIcon className="size-3 shrink-0" />;
 }
 
-/** The command palette's way to the preferences of the open thread's project. */
-export function preferencesPaletteAction(threadRef: ScopedThreadRef): CommandPaletteActionItem {
+/** The command palette's way to the memory of the open thread's project. */
+export function memoryPaletteAction(threadRef: ScopedThreadRef): CommandPaletteActionItem {
   return {
     kind: "action",
-    value: "action:open-preferences",
-    searchTerms: ["preferences", "instructions", "rules", "agents"],
-    title: "Open preferences",
+    value: "action:open-memory",
+    searchTerms: ["memory", "instructions", "rules", "agents"],
+    title: "Open memory",
     icon: <ScrollTextIcon className={ITEM_ICON_CLASS} />,
     run: async () => {
-      useRightPanelStore.getState().open(threadRef, "preferences");
+      useRightPanelStore.getState().open(threadRef, "memory");
     },
   };
 }
