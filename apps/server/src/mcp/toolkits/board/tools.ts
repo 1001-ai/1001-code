@@ -74,7 +74,7 @@ const BoardUpdateTool = Tool.make(BOARD_UPDATE_TOOL_NAME, {
 const BoardListTool = Tool.make(BOARD_LIST_TOOL_NAME, {
   description:
     "List the open tasks on this thread's project board, with each task's identifier, title, status, assignee and link.",
-  parameters: Schema.Struct({}),
+  // No `parameters`: an empty Schema.Struct({}) is not a valid MCP input schema.
   success: BoardTaskList,
   failure: OrchestratorMcpFailure,
   failureMode: "return",
