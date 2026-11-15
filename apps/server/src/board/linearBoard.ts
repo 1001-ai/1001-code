@@ -382,7 +382,7 @@ const boardUser = (user: LinearUser | null): BoardUser | null =>
     ? null
     : {
         id: user.id,
-        name: user.displayName || user.name,
+        name: user.name || user.displayName,
         avatarUrl: user.avatarUrl,
         isMe: user.isMe,
       };
@@ -445,7 +445,7 @@ function boardIssue(issue: LinearIssue): BoardIssue {
 export const commentAuthor = (comment: LinearIssueComment): string =>
   (comment.user === null
     ? (comment.botActor?.name ?? comment.externalUser?.name)
-    : comment.user.displayName || comment.user.name) || "Someone";
+    : comment.user.name || comment.user.displayName) || "Someone";
 
 const boardComment = (comment: LinearIssueComment): BoardComment => ({
   id: comment.id,
