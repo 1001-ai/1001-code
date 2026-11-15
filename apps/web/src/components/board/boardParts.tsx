@@ -21,10 +21,69 @@ import {
 } from "../pullRequest/pullRequestPresentation";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { BOARD_PRIORITY_LABELS, boardPullRequestStatus, boardThreadTarget } from "./board.logic";
+import type { BoardStatusGlyph } from "./boardTaskCard.logic";
 
 export function StateDot({ color }: { readonly color: string }) {
   return (
     <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ backgroundColor: color }} />
+  );
+}
+
+/** Linear's status icon for a workflow state. */
+export function StatusIcon(props: { readonly glyph: BoardStatusGlyph }) {
+  const ring = (className: string, dashed = false) => (
+    <circle
+      cx="8"
+      cy="8"
+      r="6.25"
+      fill="none"
+      strokeWidth="1.5"
+      strokeDasharray={dashed ? "2.1 2" : undefined}
+      className={className}
+    />
+  );
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden className="size-3.5 shrink-0">
+      {props.glyph === "backlog" ? ring("stroke-muted-foreground", true) : null}
+      {props.glyph === "unstarted" ? ring("stroke-muted-foreground") : null}
+      {props.glyph === "started" ? (
+        <>
+          {ring("stroke-warning")}
+          <path d="M8 8V4.25A3.75 3.75 0 0 1 8 11.75Z" className="fill-warning" />
+        </>
+      ) : null}
+      {props.glyph === "review" ? (
+        <>
+          {ring("stroke-success")}
+          <path d="M8 8V4.25A3.75 3.75 0 1 1 4.25 8Z" className="fill-success" />
+        </>
+      ) : null}
+      {props.glyph === "completed" ? (
+        <>
+          <circle cx="8" cy="8" r="7" className="fill-info" />
+          <path
+            d="M5 8.2l2 2 4-4.2"
+            fill="none"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="stroke-background"
+          />
+        </>
+      ) : null}
+      {props.glyph === "canceled" ? (
+        <>
+          <circle cx="8" cy="8" r="7" className="fill-muted-foreground" />
+          <path
+            d="M5.75 5.75l4.5 4.5M10.25 5.75l-4.5 4.5"
+            fill="none"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            className="stroke-background"
+          />
+        </>
+      ) : null}
+    </svg>
   );
 }
 
@@ -50,7 +109,7 @@ export function UserAvatar(props: { readonly user: BoardUser; readonly large?: b
       aria-label={props.user.name}
       className={cn(
         size,
-        "flex shrink-0 items-center justify-center rounded-full bg-muted text-4xs font-medium text-muted-foreground",
+        "flex shrink-0 items-center justify-center rounded-full bg-foreground/15 text-4xs font-semibold text-foreground",
       )}
     >
       {initials}

@@ -22,6 +22,8 @@ import {
   toolOutputIndicatesFailure,
 } from "@t3tools/shared/toolOutput";
 
+import { withBoardTaskChange } from "../board/linearToolCalls.ts";
+
 // A checkpoint over vendored or generated trees can list 15k+ files; the card needs a prefix.
 const MAX_WIRE_CHECKPOINT_FILES = 200;
 const MAX_DETAIL_STRING_BYTES = 32_768;
@@ -193,7 +195,7 @@ export function projectTurnItemForWire(item: OrchestrationV2TurnItem): Orchestra
       };
     case "dynamic_tool": {
       const { output: rawOutput, ...projected } = item;
-      const output = compactDynamicToolOutput(rawOutput);
+      const output = withBoardTaskChange(item, compactDynamicToolOutput(rawOutput));
       return {
         ...projected,
         input: summarizeDynamicValue(item.input),

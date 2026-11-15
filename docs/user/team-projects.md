@@ -138,6 +138,11 @@ Links to other teams' issues, links you select while holding a modifier key, and
 you are signed out of Linear open Linear as before. Ids in code are left as they are. The mobile app
 has no board.
 
+On web and desktop, when an agent files a task in Linear, takes one or moves it to another status,
+the chat shows the task instead of the tool call: a card with its status and assignee and buttons
+that open it on the board or in Linear when it files or takes the task, and a short line with the
+new status when it moves one.
+
 ### Set up Linear sign-in
 
 Sign-in needs a Linear OAuth application, created once for the team by a Linear workspace

@@ -263,3 +263,23 @@ export const BoardSignIn = Schema.Struct({ authorizeUrl: TrimmedNonEmptyString }
 export type BoardSignIn = typeof BoardSignIn.Type;
 
 export const BoardDisconnectInput = Schema.Struct({});
+
+/**
+ * What an agent's Linear `save_issue` call did to a task: filed it, picked it up (set its
+ * assignee) or moved it (set its state). The server reads it from the call's input and Linear's
+ * result and sends it as `output.boardTask` on the wire tool item, so the chat shows a card.
+ */
+export const BoardTaskChange = Schema.Struct({
+  kind: Schema.Literals(["created", "picked_up", "status"]),
+  /** Linear's issue identifier, such as `ENG-106`. */
+  identifier: TrimmedNonEmptyString,
+  title: Schema.String,
+  url: Schema.String,
+  status: Schema.String,
+  /** One of BOARD_STATE_TYPES when Linear sends it. */
+  statusType: Schema.optionalKey(Schema.String),
+  assignee: Schema.optionalKey(Schema.String),
+  assigneeId: Schema.optionalKey(Schema.String),
+  project: Schema.optionalKey(Schema.String),
+});
+export type BoardTaskChange = typeof BoardTaskChange.Type;
