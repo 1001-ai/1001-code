@@ -100,7 +100,7 @@ export function QuestionsPage() {
           </ToggleGroup>
         </WorkspacePageHeader>
         <div className="min-h-0 flex-1 overflow-y-auto">
-          {entries.length === 0 ? (
+          {waiting === 0 ? (
             <Empty className="h-full">
               <EmptyHeader>
                 <EmptyTitle>Nothing is waiting on you</EmptyTitle>
