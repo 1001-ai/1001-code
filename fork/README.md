@@ -145,7 +145,7 @@ One entry for each place this fork changes a file upstream owns, or replaces som
   - `apps/mobile/src/features/settings/OutdatedServerUpdateSection.tsx`: `updatesDenial` from `managedUpdatesDenial(undefined)` replaces **Check for updates** with the message, as the environment detail screen already does.
   - `apps/server/src/cli/update.ts`: `t3 update` without a managed policy mirror and without an exact version refuses before it reads any release list.
   - `apps/server/src/cloud/pinnedRuntime.ts`: `publishedArchive` refuses to download without a named release source (`T3CODE_RELEASE_BASE_URL` or a policy mirror). This stops `t3 service install`, server self-update and `t3 update <version>`. The download tests in `pinnedRuntime.test.ts` pass `releaseBaseUrl`, and `selfUpdate.test.ts`'s harness provides `T3CODE_RELEASE_BASE_URL`.
-  - `packages/ssh/src/tunnel.ts`: the remote runner prints `FORK_RELEASE_DOWNLOAD_MESSAGE` instead of downloading when no release source is named. `tunnel.test.ts` names one in "only downloads a release archive…" and has a row without one.
+  - `packages/ssh/src/tunnel.ts`: the remote runner prints `FORK_RELEASE_DOWNLOAD_MESSAGE` instead of downloading when no release source is named. `tunnel.test.ts` names one in "only downloads a release archive…" and "names gzip when a host…", and has a row without one.
   - `apps/desktop/src/updates/DesktopUpdatePolicy.ts`: `resolveUpdatePolicy` turns the updater off with the message unless a managed policy turns updates off itself or names a mirror (`feedUrl`).
   - `apps/mobile/app.config.ts`: `updates.enabled` is opt-in (`T3CODE_MOBILE_UPDATES_ENABLED=1`), because `updates.url` is upstream's EAS project.
   - `docs/user/updating.md`: the note under the title.
