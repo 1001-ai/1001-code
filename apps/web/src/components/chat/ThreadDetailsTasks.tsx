@@ -2,6 +2,7 @@ import type { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 
 import { useOpenLink } from "~/browser/useOpenLink";
 import { useBoard, useBoardConnection } from "~/state/board";
+import { useOpenBoardIssueLink } from "../board/boardIssueLinks";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ThreadDetailsControl } from "./ThreadDetailsControl";
 import { ThreadDetailsSection } from "./ThreadDetailsSection";
@@ -21,6 +22,7 @@ export function ThreadDetailsTasks(props: {
     connection?.status === "connected" ? props.projectId : null,
   );
   const openLink = useOpenLink(threadRef);
+  const openBoardIssueLink = useOpenBoardIssueLink(threadRef);
   const tasks = threadBoardTasks(snapshot, threadRef);
   if (tasks.length === 0) return null;
 
@@ -37,7 +39,10 @@ export function ThreadDetailsTasks(props: {
                     size="sm"
                     variant="ghost"
                     part="row"
-                    onClick={(event) => void openLink(issue.url, { event }).catch(() => undefined)}
+                    onClick={(event) => {
+                      if (openBoardIssueLink(event, issue.url)) return;
+                      void openLink(issue.url, { event }).catch(() => undefined);
+                    }}
                   />
                 }
               >
@@ -60,7 +65,7 @@ export function ThreadDetailsTasks(props: {
                 <p className="font-medium">
                   {issue.identifier} {issue.title}
                 </p>
-                <p className="text-muted-foreground">Open in Linear</p>
+                <p className="text-muted-foreground">Open in the Board</p>
               </TooltipPopup>
             </Tooltip>
           </li>
