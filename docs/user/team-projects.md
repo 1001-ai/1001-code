@@ -17,7 +17,10 @@ add projects on.
 
 An administrator can set a default catalog for everyone with the `T3CODE_TEAM_CATALOG`
 environment variable on the server. Each environment uses it until someone sets or clears the
-catalog there, and **Use default** goes back to it.
+catalog there, and **Use default** goes back to it. A desktop app opened from the Finder or the Dock
+gets no variables from your shell, so a team's build of it can carry `T3CODE_TEAM_CATALOG` and
+`T3CODE_LINEAR_CLIENT_ID` as defaults, set when it is built; a variable set when the app starts
+still wins.
 
 ## Add a team project
 
@@ -132,9 +135,10 @@ administrator:
    (`https://linear.app/settings/api/applications/new`).
 2. Add a callback URL `<origin>/oauth/linear/callback` for every address people's browsers reach
    an environment at; Linear only redirects to callback URLs registered there. For the desktop
-   app that is usually `http://127.0.0.1:3773/oauth/linear/callback`. The port is the one the
-   desktop app's server listens on, and it moves up when 3773 is taken. Add the Tailscale or tunnel
-   address too when people open an environment through one.
+   app that is `http://127.0.0.1:14774/oauth/linear/callback`: its server always listens on 14774,
+   and the app does not start while something else holds that port. A server started another way
+   uses its own port. Add the Tailscale or tunnel address too when people open an environment
+   through one.
 3. Set the application's client ID as `T3CODE_LINEAR_CLIENT_ID` in the environment of each server
    that shows boards. No client secret is needed; sign-in uses PKCE.
 

@@ -8,10 +8,11 @@ import * as FileSystem from "effect/FileSystem";
 import * as DesktopPreReadyFileSystem from "./DesktopPreReadyFileSystem.ts";
 import * as DesktopUserData from "./DesktopUserData.ts";
 
+// Fork: production never reads another profile, so the development lookup exercises the layer.
 const resolveWindowsUserData = (appDataDirectory: string) =>
   DesktopUserData.resolveUserDataPath({
     appDataDirectory,
-    isDevelopment: false,
+    isDevelopment: true,
     platform: "win32",
   }).pipe(Effect.provide(DesktopPreReadyFileSystem.layer));
 

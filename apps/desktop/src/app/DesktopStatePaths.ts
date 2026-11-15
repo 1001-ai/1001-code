@@ -1,3 +1,4 @@
+import { FORK_DESKTOP } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 
 export type JoinPath = (first: string, ...segments: string[]) => string;
@@ -12,11 +13,12 @@ function normalizeConfiguredBaseDir(t3Home: Option.Option<string>): Option.Optio
 
 export function resolveDesktopBaseDir(input: {
   readonly homeDirectory: string;
+  readonly isDevelopment: boolean;
   readonly joinPath: JoinPath;
   readonly t3Home: Option.Option<string>;
 }): string {
   return Option.getOrElse(normalizeConfiguredBaseDir(input.t3Home), () =>
-    input.joinPath(input.homeDirectory, ".t3"),
+    input.joinPath(input.homeDirectory, input.isDevelopment ? ".t3" : FORK_DESKTOP.homeDirName),
   );
 }
 
