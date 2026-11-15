@@ -54,25 +54,21 @@ export interface ThreadCostBilling {
   readonly refreshing: boolean;
 }
 
-/**
- * Cursor stamps a turn's records with the turn's start, about a second after T3 marks it, and
- * splits long turns into several. This allows for clocks that disagree by a little more.
- */
-const BILLED_START_SLACK_MS = 2_000;
-
 // Cursor finalizes records within the hour; an older turn without one is left to its estimate.
 const BILLING_SETTLE_MS = 60 * 60_000;
 
-/** Each record goes to the newest of the provider thread's turns that had started by its stamp. */
+/**
+ * Each record goes to the newest of the provider thread's turns that had started by its stamp.
+ * Cursor stamps a turn's first record half a second to two seconds after T3 marks the turn
+ * started, never before, and a long turn's later records further on.
+ */
 function billedTurns(
   turns: ReadonlyArray<ThreadCostTurn>,
   records: ReadonlyArray<BilledRecord>,
 ): ReadonlySet<ThreadCostTurn> {
   const starts = turns
     .flatMap((turn) =>
-      turn.startedAt === null
-        ? []
-        : [{ turn, fromMs: DateTime.toEpochMillis(turn.startedAt) - BILLED_START_SLACK_MS }],
+      turn.startedAt === null ? [] : [{ turn, fromMs: DateTime.toEpochMillis(turn.startedAt) }],
     )
     .toSorted((a, b) => a.fromMs - b.fromMs);
   const covered = new Set<ThreadCostTurn>();

@@ -333,9 +333,9 @@ describe("estimateThreadCost", () => {
           cursorTurn(at(0)),
           // A long turn the dashboard logs in two records.
           cursorTurn(at(10)),
-          cursorTurn(at(60), usage()),
-          // A follow-up seconds after the last record, whose own record has not landed.
-          cursorTurn(at(60) + 4_000, usage()),
+          cursorTurn(at(60)),
+          // A follow-up 1.5s after the last record, whose own record has not landed.
+          cursorTurn(at(60) + 2_500, usage()),
         ],
         subagents: [],
         fallbackModel: "main-model",
@@ -373,7 +373,7 @@ describe("estimateThreadCost", () => {
     expect(
       estimateThreadCost(withCursorBilling(family, { ...history, available: false }), pricing())
         .costUsd,
-    ).toBeCloseTo(24, 6);
+    ).toBeCloseTo(12, 6);
   });
 
   it("never reports $0 for work it could not price", () => {
