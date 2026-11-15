@@ -108,7 +108,7 @@ ones.
 1. Open **Settings → Threads → Board** and select **Sign in with Linear**. Linear opens in your
    browser; approve access there and it sends you back to the environment, which says you can
    close the tab. Settings then shows who you are signed in as. **Disconnect** signs out and
-   revokes the access at Linear.
+   revokes the access at Linear. A new installation also offers **Sign in** on the Welcome page.
 2. In a thread of the project, open **Board** from the right panel's new surface menu or the
    command palette.
 
