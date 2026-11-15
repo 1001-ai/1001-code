@@ -85,7 +85,7 @@ export default function MemoryPanel(props: {
     return (
       <MemoryMessage
         title="No team catalog"
-        description="Memory live in the team catalog repository, under memory/. Set the catalog in Settings."
+        description="Memory lives in the team catalog repository, under memory/. Set the catalog in Settings."
       >
         <Button
           size="sm"
