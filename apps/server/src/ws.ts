@@ -2717,6 +2717,7 @@ export const layerWsRpc = (
         [WS_METHODS.teamCatalogPropose]: (input) => teamCatalog.propose(input),
         [WS_METHODS.memorySubscribe]: (input) => memory.changes(input.projectId),
         [WS_METHODS.memoryPropose]: (input) => memory.propose(input),
+        [WS_METHODS.memoryDecide]: (input) => memory.decide(input, currentSessionId),
         [WS_METHODS.serverRetryResourceTelemetry]: (_input) => resourceTelemetry.retry,
         [WS_METHODS.serverCheckOtlpEndpoint]: (input) => otlpEndpointCheck.check(input),
         [WS_METHODS.serverListTextGeneratorModels]: (input) => textGenerators.listModels(input),

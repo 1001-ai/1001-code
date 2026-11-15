@@ -9,7 +9,7 @@ import { unsetInheritedRepositoryEnv } from "../vcs/VcsProcess.ts";
 
 /**
  * What this environment's own credentials allow: the GitHub CLI's signed-in login, whether git
- * can reach a repository, and opening a pull request. Separate from `TeamCatalog` so tests never
+ * can reach a repository, and opening and merging a pull request. Separate from `TeamCatalog` so tests never
  * reach the network.
  */
 export class TeamCatalogAccess extends Context.Service<
@@ -29,6 +29,8 @@ export class TeamCatalogAccess extends Context.Service<
       readonly title: string;
       readonly body: string;
     }) => Effect.Effect<string, TeamCatalogError>;
+    /** Squash-merges the pull request now, as the repository's rules allow. */
+    readonly mergePullRequest: (url: string) => Effect.Effect<void, TeamCatalogError>;
   }
 >()("t3/teamCatalog/TeamCatalogAccess") {}
 
@@ -126,7 +128,22 @@ const make = Effect.gen(function* () {
     });
   });
 
-  return TeamCatalogAccess.of({ viewer, author, canReach, openPullRequest });
+  const mergePullRequest = Effect.fn("TeamCatalogAccess.mergePullRequest")(function* (url: string) {
+    const output = yield* processRunner
+      .run({
+        command: "gh",
+        args: ["pr", "merge", url, "--squash", "--delete-branch"],
+        env,
+        timeout: "60 seconds",
+      })
+      .pipe(Effect.mapError((cause) => new TeamCatalogError({ detail: cause.message })));
+    if (output.code === 0) return;
+    return yield* new TeamCatalogError({
+      detail: (output.stderr.trim() || "gh pr merge failed.").slice(0, MAX_ERROR_LENGTH),
+    });
+  });
+
+  return TeamCatalogAccess.of({ viewer, author, canReach, openPullRequest, mergePullRequest });
 });
 
 export const layer = Layer.effect(TeamCatalogAccess, make);

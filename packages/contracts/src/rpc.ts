@@ -378,7 +378,13 @@ import {
   BoardSignIn,
   BoardSnapshot,
 } from "./board.ts";
-import { MemoryProjectInput, MemoryProposeInput, MemoryView } from "./memory.ts";
+import {
+  MemoryDecideInput,
+  MemoryProjectInput,
+  MemoryProposal,
+  MemoryProposeInput,
+  MemoryView,
+} from "./memory.ts";
 import {
   StorageCleanupReport,
   DatabaseReclaimError,
@@ -583,6 +589,7 @@ export const WS_METHODS = {
   teamCatalogPropose: "teamCatalog.propose",
   memorySubscribe: "memory.subscribe",
   memoryPropose: "memory.propose",
+  memoryDecide: "memory.decide",
 
   scheduledTasksSubscribe: "scheduledTasks.subscribe",
   scheduledTasksUpsert: "scheduledTasks.upsert",
@@ -1125,6 +1132,12 @@ const WsMemorySubscribeRpc = Rpc.make(WS_METHODS.memorySubscribe, {
 const WsMemoryProposeRpc = Rpc.make(WS_METHODS.memoryPropose, {
   payload: MemoryProposeInput,
   success: TeamCatalogProposal,
+  error: Schema.Union([TeamCatalogError, EnvironmentAuthorizationError]),
+});
+
+const WsMemoryDecideRpc = Rpc.make(WS_METHODS.memoryDecide, {
+  payload: MemoryDecideInput,
+  success: MemoryProposal,
   error: Schema.Union([TeamCatalogError, EnvironmentAuthorizationError]),
 });
 
@@ -2264,6 +2277,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsTeamCatalogProposeRpc,
   WsMemorySubscribeRpc,
   WsMemoryProposeRpc,
+  WsMemoryDecideRpc,
   WsServerSignalProcessRpc,
   WsScheduledTasksSubscribeRpc,
   WsScheduledTasksUpsertRpc,

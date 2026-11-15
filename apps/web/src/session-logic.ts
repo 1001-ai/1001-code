@@ -26,6 +26,7 @@ import type { HtmlRenderReference } from "@t3tools/shared/htmlRender";
 import { turnItemDetailRevision } from "@t3tools/client-runtime/work-log/item-detail";
 import type { McpAppReference } from "@t3tools/shared/mcpApp";
 import { htmlRenderFromToolItem, mcpAppFromToolItem } from "@t3tools/shared/toolOutput";
+import { isMemoryProposalItem } from "./components/memory/memoryProposal.logic";
 import {
   contextCompactionLabel,
   workEntryIndicatesToolFailure,
@@ -249,7 +250,9 @@ const PERSISTENT_RESOURCE_V2_ITEM_TYPES = new Set<OrchestrationV2TurnItem["type"
 
 export function timelineEntryIsPersistentResourceCard(entry: TimelineEntry): boolean {
   return (
-    entry.kind === "event" && PERSISTENT_RESOURCE_V2_ITEM_TYPES.has(entry.projectedItem.item.type)
+    entry.kind === "event" &&
+    (PERSISTENT_RESOURCE_V2_ITEM_TYPES.has(entry.projectedItem.item.type) ||
+      isMemoryProposalItem(entry.projectedItem.item))
   );
 }
 
@@ -668,7 +671,7 @@ export function deriveTimelineEntriesFromVisibleTurnItems(
       continue;
     }
 
-    if (STANDALONE_V2_ITEM_TYPES.has(item.type)) {
+    if (STANDALONE_V2_ITEM_TYPES.has(item.type) || isMemoryProposalItem(item)) {
       entries.push({
         id: item.id,
         kind: "event",

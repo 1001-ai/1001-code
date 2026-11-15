@@ -2,15 +2,18 @@ import {
   EnvironmentId,
   ProjectId,
   type RepositoryIdentity,
+  TeamCatalogError,
   type TeamCatalogProposal,
   type TeamCatalogSnapshot,
   ThreadId,
 } from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
 import * as Context from "effect/Context";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Deferred from "effect/Deferred";
 import * as Cause from "effect/Cause";
 import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as TestClock from "effect/testing/TestClock";
@@ -20,6 +23,7 @@ import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
 import * as TeamCatalog from "../teamCatalog/TeamCatalog.ts";
 import * as Memory from "./Memory.ts";
+import * as MemoryProposalStore from "./MemoryProposalStore.ts";
 
 const PROJECT_ID = ProjectId.make("project-web");
 const THREAD_ID = ThreadId.make("thread-1");
@@ -64,11 +68,35 @@ const makeMemory = (input: {
   readonly refreshed?: Deferred.Deferred<void>;
   /** The GitHub CLI's login now, when it differs from the one the snapshot cached. */
   readonly liveLogin?: string | null;
+  /** What the proposal store holds when the service starts, as after a restart. */
+  readonly stored?: ReadonlyArray<MemoryProposalStore.StoredMemoryProposal>;
+  readonly pushFails?: string;
+  /** Holds the first save until `release`, as a slow disk would. */
+  readonly slowFirstSave?: {
+    readonly started: Deferred.Deferred<void>;
+    readonly release: Deferred.Deferred<void>;
+  };
+  readonly mergeFails?: string;
 }) => {
   const proposals: Array<TeamCatalog.TeamCatalogFilesProposal> = [];
+  const merged: Array<string> = [];
+  const store = { saved: input.stored ?? [], saves: 0 };
   const build = Memory.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
+        SecureRandom.layerWebCrypto,
+        Layer.mock(MemoryProposalStore.MemoryProposalStore)({
+          load: Effect.sync(() => store.saved),
+          save: (next) =>
+            Effect.gen(function* () {
+              store.saves += 1;
+              if (store.saves === 1 && input.slowFirstSave !== undefined) {
+                yield* Deferred.succeed(input.slowFirstSave.started, undefined);
+                yield* Deferred.await(input.slowFirstSave.release);
+              }
+              store.saved = next;
+            }),
+        }),
         Layer.mock(TeamCatalog.TeamCatalog)({
           snapshot: Effect.succeed(input.catalog),
           liveViewer: Effect.succeed(
@@ -88,18 +116,26 @@ const makeMemory = (input: {
               ? Effect.void
               : Deferred.succeed(input.refreshed, undefined)
             ).pipe(Effect.as(input.catalog)),
+          mergeProposal: (url) =>
+            input.mergeFails === undefined
+              ? Effect.sync(() => {
+                  merged.push(url);
+                })
+              : Effect.fail(new TeamCatalogError({ detail: input.mergeFails })),
           proposeFiles: (proposal) =>
-            Effect.sync(() => {
-              proposals.push(proposal);
-              return {
-                branch: `${proposal.branchStem}-abc1234`,
-                commit: "abc1234",
-                remote: "git@github.com:acme/home.git",
-                files: proposal.files.map((edit) => edit.file),
-                pullRequestUrl: "https://github.com/acme/home/pull/1",
-                pullRequestProblem: null,
-              } satisfies TeamCatalogProposal;
-            }),
+            input.pushFails !== undefined
+              ? Effect.fail(new TeamCatalogError({ detail: input.pushFails }))
+              : Effect.sync(() => {
+                  proposals.push(proposal);
+                  return {
+                    branch: `${proposal.branchStem}-abc1234`,
+                    commit: "abc1234",
+                    remote: "git@github.com:acme/home.git",
+                    files: proposal.files.map((edit) => edit.file),
+                    pullRequestUrl: "https://github.com/acme/home/pull/1",
+                    pullRequestProblem: null,
+                  } satisfies TeamCatalogProposal;
+                }),
         }),
         Layer.mock(ProjectStore.ProjectStoreV2)({
           get: () =>
@@ -120,7 +156,7 @@ const makeMemory = (input: {
     Layer.build,
     Effect.map((context) => Context.get(context, Memory.Memory)),
   );
-  return { build, proposals };
+  return { build, proposals, merged, store };
 };
 
 it.effect(
@@ -151,10 +187,17 @@ it.effect(
           text: FILES["memory/people/alice.md"],
           unavailable: null,
         },
+        {
+          scope: "personal-project",
+          file: "memory/projects/web/people/alice.md",
+          label: "Alice",
+          text: "",
+          unavailable: null,
+        },
       ]);
       const block = yield* memory.instructions(PROJECT_ID, THREAD_ID);
       expect(block).toBe(view.block);
-      expect(block).toContain("in github.com/acme/home");
+      expect(block).toContain("call memory_propose");
       const team = block!.indexOf("Prefer small pull requests");
       const project = block!.indexOf("Run the web tests");
       const personal = block!.indexOf("Keep replies short");
@@ -175,6 +218,7 @@ it.effect("says why a scope has no file, and sends nothing without a catalog", (
     expect(view.documents.map((document) => [document.file, document.unavailable])).toEqual([
       ["memory/team.md", null],
       [null, "This project is not in the team catalog."],
+      [null, "The GitHub CLI is not signed in."],
       [null, "The GitHub CLI is not signed in."],
     ]);
     expect(view.block).toContain("Prefer small pull requests");
@@ -208,7 +252,9 @@ it.effect("gives a thread on a Linear board its own link, even without memory fi
       catalog: boardCatalog(),
       readFile: () => Effect.succeed(null),
     }).build;
-    expect((yield* empty.instructions(PROJECT_ID, THREAD_ID))?.startsWith(threadLink)).toBe(true);
+    const emptyBlock = yield* empty.instructions(PROJECT_ID, THREAD_ID);
+    expect(emptyBlock).toContain("Nothing is saved yet.");
+    expect(emptyBlock).toContain(`</memory>\n\n${threadLink}`);
 
     const unmatched = yield* makeMemory({ catalog: boardCatalog(), identity: null }).build;
     expect(yield* unmatched.instructions(PROJECT_ID, THREAD_ID)).not.toContain("<thread_link>");
@@ -292,5 +338,137 @@ it.effect("refreshes a stale catalog in the background, and a failed read sends 
     }).build;
     const exit = yield* Effect.exit(cancelled.instructions(PROJECT_ID, THREAD_ID));
     expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(true);
+  }).pipe(Effect.scoped),
+);
+
+const agentProposal = (text: string, threadId = THREAD_ID) => ({
+  projectId: PROJECT_ID,
+  threadId,
+  threadTitle: "Fix the build",
+  text,
+  reason: "The user said it twice.",
+});
+
+it.effect(
+  "records an agent's proposal once per thread and text, and keeps it after a restart",
+  () =>
+    Effect.gen(function* () {
+      const fixture = makeMemory({ catalog: catalog() });
+      const memory = yield* fixture.build;
+      const first = yield* memory.proposeFromAgent(agentProposal("  Use tabs.  "));
+      expect(first).toMatchObject({
+        text: "Use tabs.",
+        threadTitle: "Fix the build",
+        decision: null,
+      });
+      expect((yield* memory.proposeFromAgent(agentProposal("Use tabs."))).id).toBe(first.id);
+      expect((yield* memory.read(PROJECT_ID)).proposals).toEqual([first]);
+      expect(fixture.store.saved).toEqual([
+        { ...first, projectId: PROJECT_ID, decidedBySession: null },
+      ]);
+
+      const restarted = yield* makeMemory({ catalog: catalog(), stored: fixture.store.saved })
+        .build;
+      expect((yield* restarted.read(PROJECT_ID)).proposals).toEqual([first]);
+
+      const outside = yield* makeMemory({ catalog: catalog(), identity: null }).build;
+      expect(
+        (yield* Effect.flip(outside.proposeFromAgent(agentProposal("Use tabs.")))).detail,
+      ).toBe("This project is not in the team catalog. There is nowhere to save memory for it.");
+    }).pipe(Effect.scoped),
+);
+
+it.effect("accepting adds the edited line to the chosen file and merges at once", () =>
+  Effect.gen(function* () {
+    const fixture = makeMemory({ catalog: catalog() });
+    const memory = yield* fixture.build;
+    const mine = yield* memory.proposeFromAgent(agentProposal("Use tabs."));
+    const accepted = yield* memory.decide(
+      { projectId: PROJECT_ID, proposalId: mine.id, choice: "me", text: "Use tabs in this repo." },
+      "session-1",
+    );
+    expect(accepted.decision).toMatchObject({
+      choice: "me",
+      text: "Use tabs in this repo.",
+      file: "memory/projects/web/people/alice.md",
+      pullRequestUrl: "https://github.com/acme/home/pull/1",
+      merged: true,
+      problem: null,
+    });
+    expect(fixture.store.saved[0]?.decidedBySession).toBe("session-1");
+    expect(
+      (yield* Effect.flip(
+        memory.decide(
+          { projectId: PROJECT_ID, proposalId: mine.id, choice: "team", text: "Use tabs." },
+          "session-1",
+        ),
+      )).detail,
+    ).toBe("This proposal was already answered.");
+
+    const team = yield* memory.proposeFromAgent(agentProposal("Tests need Node 24."));
+    yield* memory.decide(
+      { projectId: PROJECT_ID, proposalId: team.id, choice: "team", text: "Tests need Node 24." },
+      "session-1",
+    );
+    const rejected = yield* memory.proposeFromAgent(agentProposal("Always use drafts."));
+    const decision = yield* memory.decide(
+      { projectId: PROJECT_ID, proposalId: rejected.id, choice: "reject", text: "Ignored." },
+      "session-2",
+    );
+    expect(decision.decision).toMatchObject({ choice: "reject", text: null, file: null });
+
+    expect(fixture.proposals.map((proposal) => proposal.files)).toEqual([
+      [{ file: "memory/projects/web/people/alice.md", text: "- Use tabs in this repo.\n" }],
+      [
+        {
+          file: "memory/projects/web.md",
+          text: "- Run the web tests before pushing.\n- Tests need Node 24.\n",
+        },
+      ],
+    ]);
+    expect(fixture.merged).toHaveLength(2);
+  }).pipe(Effect.scoped),
+);
+
+it.effect("a refused merge says why, and a failed push leaves the proposal unanswered", () =>
+  Effect.gen(function* () {
+    const blocked = yield* makeMemory({ catalog: catalog(), mergeFails: "Review required." }).build;
+    const proposal = yield* blocked.proposeFromAgent(agentProposal("Use tabs."));
+    const decided = yield* blocked.decide(
+      { projectId: PROJECT_ID, proposalId: proposal.id, choice: "team", text: "Use tabs." },
+      "session-1",
+    );
+    expect(decided.decision).toMatchObject({ merged: false, problem: "Review required." });
+
+    const offline = yield* makeMemory({ catalog: catalog(), pushFails: "Could not push." }).build;
+    const pending = yield* offline.proposeFromAgent(agentProposal("Use tabs."));
+    const failure = yield* Effect.flip(
+      offline.decide(
+        { projectId: PROJECT_ID, proposalId: pending.id, choice: "me", text: "Use tabs." },
+        "session-1",
+      ),
+    );
+    expect(failure.detail).toBe("Could not push.");
+    expect((yield* offline.read(PROJECT_ID)).proposals[0]?.decision).toBeNull();
+  }).pipe(Effect.scoped),
+);
+
+it.effect("a proposal made during a slow save is not lost when that save lands", () =>
+  Effect.gen(function* () {
+    const slowFirstSave = {
+      started: yield* Deferred.make<void>(),
+      release: yield* Deferred.make<void>(),
+    };
+    const fixture = makeMemory({ catalog: catalog(), slowFirstSave });
+    const memory = yield* fixture.build;
+    const first = yield* Effect.forkChild(memory.proposeFromAgent(agentProposal("Use tabs.")));
+    yield* Deferred.await(slowFirstSave.started);
+    const second = yield* Effect.forkChild(memory.proposeFromAgent(agentProposal("Prefer pnpm.")));
+    // Lets the second call run as far as it can before the first save lands.
+    yield* Effect.yieldNow;
+    yield* Deferred.succeed(slowFirstSave.release, undefined);
+    yield* Fiber.join(first);
+    yield* Fiber.join(second);
+    expect(fixture.store.saved.map((saved) => saved.text)).toEqual(["Use tabs.", "Prefer pnpm."]);
   }).pipe(Effect.scoped),
 );

@@ -1,31 +1,83 @@
 import * as Schema from "effect/Schema";
 
-import { ProjectId, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { ProjectId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { TeamCatalogViewer } from "./teamCatalog.ts";
 
 /**
  * Memory is what agents are told to follow and remember, kept as markdown in the team catalog
- * repository: one file for the whole team, one per catalog project, and one per person.
+ * repository: one file for the whole team, one per catalog project, one per person, and one per
+ * person in a project. Agents propose additions with `memory_propose`; a person accepts each one.
  */
 export const MEMORY_DIRECTORY = "memory";
 export const MEMORY_TAG = "memory";
 /** The block agents get, wrapper included; about 2,000 tokens. */
 export const MEMORY_MAX_BYTES = 8_192;
 
-export const MemoryScope = Schema.Literals(["team", "project", "personal"]);
+export const MemoryScope = Schema.Literals(["team", "project", "personal", "personal-project"]);
 export type MemoryScope = typeof MemoryScope.Type;
 
-/** `key` is the catalog project key for `project` and the GitHub login for `personal`. */
-export function memoryFile(scope: MemoryScope, key: string): string {
-  switch (scope) {
+/** `project` is the catalog project key and `login` the GitHub login. */
+export type MemoryFileTarget =
+  | { readonly scope: "team" }
+  | { readonly scope: "project"; readonly project: string }
+  | { readonly scope: "personal"; readonly login: string }
+  | { readonly scope: "personal-project"; readonly project: string; readonly login: string };
+
+export function memoryFile(target: MemoryFileTarget): string {
+  switch (target.scope) {
     case "team":
       return `${MEMORY_DIRECTORY}/team.md`;
     case "project":
-      return `${MEMORY_DIRECTORY}/projects/${key}.md`;
+      return `${MEMORY_DIRECTORY}/projects/${target.project}.md`;
     case "personal":
-      return `${MEMORY_DIRECTORY}/people/${key.toLowerCase()}.md`;
+      return `${MEMORY_DIRECTORY}/people/${target.login.toLowerCase()}.md`;
+    case "personal-project":
+      return `${MEMORY_DIRECTORY}/projects/${target.project}/people/${target.login.toLowerCase()}.md`;
   }
 }
+
+export const MEMORY_PROPOSE_TOOL_NAME = "memory_propose";
+export const MEMORY_PROPOSAL_MAX_LENGTH = 500;
+export const MEMORY_PROPOSAL_REASON_MAX_LENGTH = 300;
+
+/** Providers prefix T3's tools differently (`mcp__t3-code__`, `t3-code.`, `t3-code_`). */
+export function isMemoryProposeToolName(toolName: string | null | undefined): boolean {
+  return toolName != null && /(?:^|[_.:/\s-])memory_propose$/.test(toolName.trim().toLowerCase());
+}
+
+export const MemoryProposalText = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(MEMORY_PROPOSAL_MAX_LENGTH),
+);
+
+/** Accept for me (this person in this project), accept for the team (this project), or reject. */
+export const MemoryChoice = Schema.Literals(["me", "team", "reject"]);
+export type MemoryChoice = typeof MemoryChoice.Type;
+
+export const MemoryProposalDecision = Schema.Struct({
+  choice: MemoryChoice,
+  /** What was saved, as the person left it; null for a rejection. */
+  text: Schema.NullOr(Schema.String),
+  /** The file it was added to; null for a rejection. */
+  file: Schema.NullOr(TrimmedNonEmptyString),
+  decidedAt: Schema.String,
+  pullRequestUrl: Schema.NullOr(TrimmedNonEmptyString),
+  merged: Schema.Boolean,
+  /** Why an accepted memory is not merged yet. */
+  problem: Schema.NullOr(Schema.String),
+});
+export type MemoryProposalDecision = typeof MemoryProposalDecision.Type;
+
+export const MemoryProposal = Schema.Struct({
+  id: TrimmedNonEmptyString,
+  threadId: ThreadId,
+  threadTitle: Schema.String,
+  text: MemoryProposalText,
+  /** Why the agent proposed it; shown, never saved. */
+  reason: Schema.String,
+  createdAt: Schema.String,
+  decision: Schema.NullOr(MemoryProposalDecision),
+});
+export type MemoryProposal = typeof MemoryProposal.Type;
 
 export const MemoryDocument = Schema.Struct({
   scope: MemoryScope,
@@ -48,8 +100,10 @@ export const MemoryView = Schema.Struct({
   /** The last catalog fetch's failure; the documents stay those of the last good fetch. */
   error: Schema.NullOr(Schema.String),
   viewer: TeamCatalogViewer,
-  /** Team, then project, then personal. */
+  /** Team, project, personal, then personal in this project. */
   documents: Schema.Array(MemoryDocument),
+  /** What agents in this project's threads proposed, newest first. */
+  proposals: Schema.Array(MemoryProposal),
   /** Exactly what agents in this project's threads get; null when every document is empty. */
   block: Schema.NullOr(Schema.String),
   /** The documents were over the size limit, so the block leaves the end out. */
@@ -69,6 +123,15 @@ export const MemoryProposeInput = Schema.Struct({
 });
 export type MemoryProposeInput = typeof MemoryProposeInput.Type;
 
+export const MemoryDecideInput = Schema.Struct({
+  projectId: ProjectId,
+  proposalId: TrimmedNonEmptyString,
+  choice: MemoryChoice,
+  /** The proposal as the person edited it; ignored for a rejection. */
+  text: MemoryProposalText,
+});
+export type MemoryDecideInput = typeof MemoryDecideInput.Type;
+
 const byteLength = (text: string) => new TextEncoder().encode(text).length;
 
 function cutToBytes(text: string, budget: number): string {
@@ -87,17 +150,22 @@ function scopeHeading(document: Pick<MemoryDocument, "scope" | "label">): string
       return `for the project ${document.label ?? ""}`.trimEnd();
     case "personal":
       return `for ${document.label ?? "you"} only`;
+    case "personal-project":
+      return `for ${document.label ?? "you"} only, in this project`;
   }
 }
 
 /**
- * The `<memory>` block agents get: each non-empty document, team first and personal
- * last, so the more specific one comes later and wins. Null when there is nothing to send.
+ * The `<memory>` block agents get: each non-empty document, team first and personal last, so the
+ * more specific one comes later and wins. Where agents can propose memory it says when to, even
+ * with nothing saved yet; otherwise null when there is nothing to send.
  */
 export function buildMemoryBlock(input: {
   readonly documents: ReadonlyArray<Pick<MemoryDocument, "scope" | "file" | "label" | "text">>;
   /** Where a change is proposed, such as `github.com/team/home`. */
   readonly repository: string | null;
+  /** The thread's project is in the catalog, so `memory_propose` can save to it. */
+  readonly proposable: boolean;
 }): { readonly text: string; readonly truncated: boolean } | null {
   const closing = `</${MEMORY_TAG}>`;
   const sections = input.documents.flatMap((document) => {
@@ -107,16 +175,18 @@ export function buildMemoryBlock(input: {
       ? []
       : [`From ${document.file} (${scopeHeading(document)}):\n${text}`];
   });
-  if (sections.length === 0) return null;
+  if (sections.length === 0 && !input.proposable) return null;
   const header = [
     `<${MEMORY_TAG}>`,
     "Memory from the team repository: standing instructions and facts. Follow it unless the user says otherwise; a later section is more specific and wins over an earlier one.",
   ].join("\n");
   const footer = [
-    `To add or change a memory, open a pull request that edits these files under ${MEMORY_DIRECTORY}/${input.repository === null ? " in the team repository" : ` in ${input.repository}`}, or ask the user to change it in the Memory panel.`,
+    input.proposable
+      ? `When the user states a preference, corrects you on the same thing twice, or you learn a fact about this project that later threads will need, call ${MEMORY_PROPOSE_TOOL_NAME} with one short line in plain words and why. The user accepts it for themselves or the team from a card in the chat. Keep working; do not wait for or ask about the answer. To change what is saved, ask the user to edit it in the Memory panel.`
+      : `To add or change a memory, open a pull request that edits these files under ${MEMORY_DIRECTORY}/${input.repository === null ? " in the team repository" : ` in ${input.repository}`}, or ask the user to change it in the Memory panel.`,
     closing,
   ].join("\n");
-  const body = sections.join("\n\n");
+  const body = sections.length === 0 ? "Nothing is saved yet." : sections.join("\n\n");
   const whole = `${header}\n\n${body}\n\n${footer}`;
   if (byteLength(whole) <= MEMORY_MAX_BYTES) return { text: whole, truncated: false };
   const notice = "(The rest was left out: this memory is over the size limit.)";
