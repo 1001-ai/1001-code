@@ -291,12 +291,14 @@ After the change, the first reference to a file is an absolute link. The remaini
 
 ## Board cases
 
-`cases/board.ndjson` checks when an agent files an issue on the project's Linear board. Asked for a two-line fix, a real agent branched and edited files first and filed the issue only after the user complained. `setup.board` names the board, as the team catalog does: the thread's system text gets T3's `<board>` block (`boardInstructions` in `apps/server/src/memory/Memory.ts`), and ToolSearch can load a stand-in for Linear's MCP server (`board.ts`), whose results come from the case's `mocks`. The cases run on Claude only.
+`cases/board.ndjson` checks when and how an agent files and moves tasks on the project's Linear board (Linear ENG-108, ENG-34). Asked for a two-line fix, a real agent branched and edited files first and filed the issue only after the user complained. Agents now use T3's own board tools (`board_list`, `board_add`, `board_update`), which act as the signed-in person and attach the thread's link, and keep Linear's connector for what those do not cover, such as comments. `setup.board` names the board, as the team catalog does: the thread's system text gets T3's `<board>` block (`boardInstructions` in `apps/server/src/memory/Memory.ts`), and ToolSearch can load T3's board tools from source and a stand-in for Linear's MCP server (`board.ts`), all answered by the case's `mocks`. The cases run on Claude only.
 
-| Case                         | Kind    | What it checks                                                           |
-| ---------------------------- | ------- | ------------------------------------------------------------------------ |
-| board-small-fix-files-issue  | bad     | No issue covers the fix, so the agent files one before its first `Edit`. |
-| board-question-files-nothing | control | A question about the code files no issue and edits nothing.              |
+| Case                                  | Kind    | What it checks                                                                           |
+| ------------------------------------- | ------- | ---------------------------------------------------------------------------------------- |
+| board-small-fix-files-issue           | bad     | No task covers the fix, so the agent files one with `board_add` before its first `Edit`. |
+| board-question-files-nothing          | control | A question about the code files no task and edits nothing.                               |
+| board-existing-task-moves-with-update | bad     | A task covers the fix, so the agent takes it over with `board_update` before editing.    |
+| board-move-status-with-update         | bad     | Asked to move a task to Done, the agent calls `board_update`, not Linear's `save_issue`. |
 
 ```sh
 pnpm mcp-tool-use --cases mcp-tool-use/cases/board.ndjson --model claude-haiku-5-5 --samples 3 --out runs/board

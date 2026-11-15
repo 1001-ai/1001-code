@@ -7,6 +7,7 @@ import {
   ProjectId,
   type RepositoryIdentity,
   type TeamCatalogSnapshot,
+  ThreadId,
 } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { expect, it } from "@effect/vitest";
@@ -100,7 +101,13 @@ const linearIssue = (id: string, stateId: string) => ({
   updatedAt: "2026-11-14T10:00:00.000Z",
   sortOrder: Number(id),
   state: { id: stateId },
-  assignee: null,
+  assignee: null as {
+    id: string;
+    name: string;
+    displayName: string;
+    avatarUrl: string | null;
+    isMe: boolean;
+  } | null,
   labels: { nodes: [] },
   threadLinks: { nodes: [] },
   attachments: { nodes: [] },
@@ -464,6 +471,102 @@ const detailAnswer = (id: string, teamId: string, linked = true): Answer => ({
     },
   },
 });
+
+const THREAD = { id: ThreadId.make("thread-mine"), title: "Fix login" };
+
+/** The team with a started state and the catalog's project, as agents' task tools read it. */
+const taskTeam = {
+  ...team,
+  states: {
+    nodes: [
+      ...team.states.nodes,
+      { id: "s-progress", name: "In Progress", type: "started", color: "#f2c94c", position: 0 },
+    ],
+  },
+  projects: {
+    nodes: [{ id: "project-1", slugId: "abc123", name: "Web", url: "https://linear.app/p/web" }],
+  },
+};
+
+const calls = (linear: FakeLinear, operation: string) =>
+  linear.calls.filter((call) => call.operation === operation);
+
+const members = [
+  { id: "user-1", name: "Dana Kim", displayName: "dana", email: "dana@example.com" },
+  { id: "user-2", name: "Sam Lee", displayName: "Sam", email: "sam@acme.test" },
+  { id: "user-3", name: "Sam Lee", displayName: "sam", email: "sam.lee@acme.test" },
+  { id: "user-4", name: "Sam Park", displayName: "sam", email: "sam.park@acme.test" },
+];
+
+const STATES: Record<string, { name: string; type: string }> = {
+  "s-todo": { name: "Todo", type: "unstarted" },
+  "s-done": { name: "Done", type: "completed" },
+  "s-progress": { name: "In Progress", type: "started" },
+};
+
+/**
+ * Linear for the task tools: ENG-1 carries the viewer's link to this thread, ENG-2 only someone
+ * else's, OPS-3 is on another team. Updates echo the issue with the given fields applied.
+ */
+const taskAnswers = (operation: string, variables: Record<string, unknown>): Answer => {
+  const task = (identifier: string) => ({
+    id: `id-${identifier}`,
+    identifier,
+    title: "Fix login",
+    url: `https://linear.app/acme/issue/${identifier}`,
+    state: STATES["s-todo"]!,
+    assignee: null,
+    project: null,
+  });
+  if (operation === "BoardTask") {
+    const identifier = String(variables.id);
+    return {
+      body: {
+        data: {
+          issue: {
+            ...task(identifier),
+            team: { id: identifier.startsWith("OPS") ? "team-ops" : team.id },
+            threadLinks: {
+              nodes: [
+                {
+                  url: "t3-thread://v2/env-me/thread-mine",
+                  creator: { id: identifier === "ENG-1" ? "user-1" : "user-2" },
+                },
+              ],
+            },
+          },
+        },
+      },
+    };
+  }
+  if (operation === "BoardIssueUpdate") {
+    const input = variables.input as { title?: string; stateId?: string; assigneeId?: string };
+    const member = members.find((candidate) => candidate.id === input.assigneeId);
+    const identifier = String(variables.id).slice("id-".length);
+    return {
+      body: {
+        data: {
+          issueUpdate: {
+            success: true,
+            issue: {
+              ...task(identifier),
+              ...(input.title === undefined ? {} : { title: input.title }),
+              ...(input.stateId === undefined ? {} : { state: STATES[input.stateId]! }),
+              ...(member === undefined ? {} : { assignee: member }),
+            },
+          },
+        },
+      },
+    };
+  }
+  if (operation === "BoardThreadLink") {
+    return { body: { data: { attachmentCreate: { success: true } } } };
+  }
+  if (operation === "BoardTeamMembers") {
+    return { body: { data: { team: { members: { nodes: members } } } } };
+  }
+  return boardAnswers([[]], [taskTeam])(operation, variables);
+};
 
 const ready = (snapshot: BoardSnapshot) => {
   expect(snapshot.status).toBe("ready");
@@ -1466,5 +1569,363 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Board", (it) => 
       expect(teamReads()).toBe(4);
       expect(yield* Queue.size(after.updates)).toBe(0);
     }).pipe(Effect.scoped),
+  );
+
+  it.effect(
+    "files a task as the signed-in person, linked to the thread, then reads open boards",
+    () =>
+      Effect.gen(function* () {
+        let created: Array<ReturnType<typeof linearIssue>> = [];
+        const linear = fakeLinear((operation, variables) => {
+          if (operation === "BoardIssueCreate") {
+            created = [linearIssue("7", "s-progress")];
+            const input = variables.input as { title: string };
+            return {
+              body: {
+                data: {
+                  issueCreate: {
+                    success: true,
+                    issue: {
+                      id: "issue-new",
+                      identifier: "ENG-7",
+                      title: input.title,
+                      url: "https://linear.app/acme/issue/ENG-7",
+                      state: { name: "In Progress", type: "started" },
+                      assignee: { name: "Dana Kim", displayName: "dana" },
+                      project: { name: "Web" },
+                    },
+                  },
+                },
+              },
+            };
+          }
+          if (operation === "BoardThreadLink") {
+            return { body: { data: { attachmentCreate: { success: true } } } };
+          }
+          return boardAnswers([created], [taskTeam])(operation, variables);
+        });
+        const board = yield* makeBoard({
+          client: linear.client,
+          catalog: catalog([catalogEntry({ team: "ENG", project: "Web" })]),
+          secrets: yield* memorySecrets(),
+        });
+        yield* signIn(board, linear);
+        const scope = yield* Scope.make();
+        const updates = yield* Queue.unbounded<BoardSnapshot>();
+        yield* board.changes(PROJECT_ID).pipe(
+          Stream.runForEach((snapshot) => Queue.offer(updates, snapshot)),
+          Effect.forkIn(scope),
+        );
+        ready(yield* Queue.take(updates));
+        const issueReads = () => calls(linear, "BoardIssues").length;
+        expect(issueReads()).toBe(1);
+
+        expect(
+          yield* board.addTask({
+            projectId: PROJECT_ID,
+            thread: THREAD,
+            title: "Fix the login flow",
+            description: "It loops.",
+            status: " in progress ",
+            assignee: "Me",
+          }),
+        ).toEqual({
+          task: {
+            identifier: "ENG-7",
+            title: "Fix the login flow",
+            url: "https://linear.app/acme/issue/ENG-7",
+            status: { name: "In Progress", type: "started" },
+            assignee: "Dana Kim",
+            project: "Web",
+          },
+          threadLinked: true,
+        });
+        expect(calls(linear, "BoardIssueCreate")).toEqual([
+          {
+            operation: "BoardIssueCreate",
+            account: GOOD,
+            variables: {
+              input: {
+                teamId: "team-1",
+                projectId: "project-1",
+                title: "Fix the login flow",
+                description: "It loops.",
+                stateId: "s-progress",
+                assigneeId: "user-1",
+              },
+            },
+          },
+        ]);
+        expect(calls(linear, "BoardThreadLink").map((call) => call.variables)).toEqual([
+          {
+            input: {
+              issueId: "issue-new",
+              url: "t3-thread://v2/env-me/thread-mine",
+              title: "Fix login",
+            },
+          },
+        ]);
+        // "me" needs no member lookup.
+        expect(calls(linear, "BoardTeamMembers")).toEqual([]);
+
+        yield* TestClock.adjust("1 second");
+        expect(
+          ready(yield* Queue.take(updates))?.board.columns.flatMap((column) =>
+            column.issues.map((issue) => issue.identifier),
+          ),
+        ).toEqual(["ENG-7"]);
+        expect(issueReads()).toBe(2);
+        yield* Scope.close(scope, Exit.void);
+      }).pipe(Effect.scoped),
+  );
+
+  it.effect("a task list after a write asks Linear, even when a read was in flight", () =>
+    Effect.gen(function* () {
+      let created: Array<ReturnType<typeof linearIssue>> = [];
+      const readStarted = yield* Deferred.make<void>();
+      const releaseRead = yield* Deferred.make<void>();
+      let held = false;
+      const linear = fakeLinear((operation, variables) => {
+        if (operation === "BoardIssues" && held) {
+          held = false;
+          const before = boardAnswers([created], [taskTeam])(operation, variables);
+          return Deferred.succeed(readStarted, undefined).pipe(
+            Effect.andThen(Deferred.await(releaseRead)),
+            Effect.as(before),
+          );
+        }
+        if (operation === "BoardIssueCreate") {
+          const number = String(created.length + 7);
+          created = [...created, linearIssue(number, "s-progress")];
+          return {
+            body: {
+              data: {
+                issueCreate: {
+                  success: true,
+                  issue: {
+                    id: `issue-${number}`,
+                    identifier: `ENG-${number}`,
+                    title: `Issue ${number}`,
+                    url: `https://linear.app/acme/issue/ENG-${number}`,
+                    state: { name: "In Progress", type: "started" },
+                    assignee: null,
+                    project: { name: "Web" },
+                  },
+                },
+              },
+            },
+          };
+        }
+        if (operation === "BoardThreadLink") {
+          return { body: { data: { attachmentCreate: { success: true } } } };
+        }
+        return boardAnswers([created], [taskTeam])(operation, variables);
+      });
+      const board = yield* makeBoard({
+        client: linear.client,
+        catalog: catalog([catalogEntry({ team: "ENG", project: "Web" })]),
+        secrets: yield* memorySecrets(),
+      });
+      yield* signIn(board, linear);
+      const identifiers = Effect.map(board.listTasks(PROJECT_ID), (list) =>
+        list.tasks.map((task) => task.identifier),
+      );
+
+      expect(yield* identifiers).toEqual([]);
+      yield* board.addTask({ projectId: PROJECT_ID, thread: THREAD, title: "Issue 7" });
+      expect(yield* identifiers).toEqual(["ENG-7"]);
+
+      // A read that fetched before the next write must not cache over it.
+      held = true;
+      const staleRead = yield* board.read(PROJECT_ID, { refresh: true }).pipe(Effect.forkScoped);
+      yield* Deferred.await(readStarted);
+      yield* board.addTask({ projectId: PROJECT_ID, thread: THREAD, title: "Issue 8" });
+      yield* Deferred.succeed(releaseRead, undefined);
+      yield* Fiber.join(staleRead);
+      expect(yield* identifiers).toEqual(["ENG-7", "ENG-8"]);
+    }).pipe(Effect.orDie, Effect.scoped),
+  );
+
+  it.effect("updates only the given fields and links the thread once", () =>
+    connected(
+      (board, linear) =>
+        Effect.gen(function* () {
+          const update = (identifier: string, fields: Partial<Board.BoardUpdateTaskInput> = {}) =>
+            board.updateTask({ projectId: PROJECT_ID, thread: THREAD, identifier, ...fields });
+
+          // Linked here already: one update, no second link.
+          const moved = yield* update("ENG-1", { status: "done", assignee: "sam@acme.test" });
+          expect(moved).toEqual({
+            task: expect.objectContaining({
+              identifier: "ENG-1",
+              status: { name: "Done", type: "completed" },
+              assignee: "Sam Lee",
+            }),
+            threadLinked: true,
+          });
+          expect(calls(linear, "BoardIssueUpdate").map((call) => call.variables)).toEqual([
+            { id: "id-ENG-1", input: { stateId: "s-done", assigneeId: "user-2" } },
+          ]);
+          expect(calls(linear, "BoardThreadLink")).toEqual([]);
+
+          // Nothing to change on a linked task: no write at all.
+          expect((yield* update("ENG-1")).task.status).toEqual({ name: "Todo", type: "unstarted" });
+          expect(calls(linear, "BoardIssueUpdate")).toHaveLength(1);
+
+          // Only someone else's link to this thread: the viewer's own is added.
+          expect(yield* update("ENG-2", { title: "Renamed" })).toMatchObject({
+            task: { identifier: "ENG-2", title: "Renamed" },
+            threadLinked: true,
+          });
+          expect(calls(linear, "BoardIssueUpdate")[1]?.variables).toEqual({
+            id: "id-ENG-2",
+            input: { title: "Renamed" },
+          });
+          expect(calls(linear, "BoardThreadLink").map((call) => call.variables)).toEqual([
+            {
+              input: {
+                issueId: "id-ENG-2",
+                url: "t3-thread://v2/env-me/thread-mine",
+                title: "Fix login",
+              },
+            },
+          ]);
+        }).pipe(Effect.orDie),
+      taskAnswers,
+      catalog([catalogEntry({ team: "ENG" })]),
+    ),
+  );
+
+  it.effect("refuses an unknown status or assignee and a task off the board", () =>
+    connected(
+      (board, linear) =>
+        Effect.gen(function* () {
+          const add = (fields: Partial<Board.BoardAddTaskInput>) =>
+            board
+              .addTask({ projectId: PROJECT_ID, thread: THREAD, title: "Task", ...fields })
+              .pipe(Effect.flip);
+          expect(yield* add({ status: "Shipped" })).toMatchObject({
+            _tag: "BoardInputError",
+            detail:
+              'The ENG board has no status named "Shipped". Its statuses are Done, Todo, In Progress.',
+          });
+          expect(yield* add({ assignee: "Robin" })).toMatchObject({
+            _tag: "BoardInputError",
+            detail:
+              'No member of the ENG team is named "Robin". Use "me", or a member\'s name or email.',
+          });
+          expect(yield* add({ assignee: "sam" })).toMatchObject({
+            _tag: "BoardInputError",
+            detail: 'More than one member of the ENG team is named "sam". Name them by email.',
+          });
+          expect(calls(linear, "BoardIssueCreate")).toEqual([]);
+
+          expect(
+            yield* board
+              .updateTask({ projectId: PROJECT_ID, thread: THREAD, identifier: "OPS-3" })
+              .pipe(Effect.flip),
+          ).toMatchObject({
+            reason: "issue-not-found",
+            detail: "OPS-3 is not on this project's board.",
+          });
+          expect(calls(linear, "BoardIssueUpdate")).toEqual([]);
+        }).pipe(Effect.orDie),
+      taskAnswers,
+    ),
+  );
+
+  it.effect("task tools need a sign-in and a board", () =>
+    Effect.gen(function* () {
+      const linear = fakeLinear(taskAnswers);
+      const board = yield* makeBoard({
+        client: linear.client,
+        catalog: catalog([catalogEntry({ team: "ENG" })]),
+        secrets: yield* buildSecrets(),
+      });
+      const signedOut = {
+        reason: "unauthorized",
+        detail:
+          "Nobody is signed in to Linear here. Ask the user to sign in in Settings → Board, then add the task.",
+      };
+      expect(
+        yield* board
+          .addTask({ projectId: PROJECT_ID, thread: THREAD, title: "Task" })
+          .pipe(Effect.flip),
+      ).toMatchObject(signedOut);
+      expect(yield* board.listTasks(PROJECT_ID).pipe(Effect.flip)).toMatchObject({
+        reason: "unauthorized",
+      });
+      expect(linear.calls).toEqual([]);
+
+      yield* connected(
+        (unconfigured) =>
+          Effect.gen(function* () {
+            const noBoard = {
+              _tag: "BoardInputError",
+              detail:
+                "This project's catalog entry (projects/web.json) names no Linear team, so it has no board.",
+            };
+            expect(
+              yield* unconfigured
+                .updateTask({ projectId: PROJECT_ID, thread: THREAD, identifier: "ENG-1" })
+                .pipe(Effect.flip),
+            ).toMatchObject(noBoard);
+            expect(yield* unconfigured.listTasks(PROJECT_ID).pipe(Effect.flip)).toMatchObject(
+              noBoard,
+            );
+          }).pipe(Effect.orDie),
+        taskAnswers,
+        catalog([catalogEntry(undefined)]),
+      );
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("lists the board's open tasks", () =>
+    connected(
+      (board) =>
+        Effect.gen(function* () {
+          expect(yield* board.listTasks(PROJECT_ID)).toEqual({
+            tasks: [
+              {
+                identifier: "ENG-1",
+                title: "Issue 1",
+                url: "https://linear.app/acme/issue/ENG-1",
+                status: { name: "Todo", type: "unstarted" },
+                assignee: "Dana Kim",
+                project: "Web",
+              },
+              {
+                identifier: "ENG-3",
+                title: "Issue 3",
+                url: "https://linear.app/acme/issue/ENG-3",
+                status: { name: "In Progress", type: "started" },
+                assignee: null,
+                project: "Web",
+              },
+            ],
+            truncated: false,
+          });
+        }).pipe(Effect.orDie),
+      boardAnswers(
+        [
+          [
+            {
+              ...linearIssue("1", "s-todo"),
+              assignee: {
+                id: "user-1",
+                name: "Dana Kim",
+                displayName: "dana",
+                avatarUrl: null,
+                isMe: true,
+              },
+            },
+            linearIssue("2", "s-done"),
+            linearIssue("3", "s-progress"),
+          ],
+        ],
+        [taskTeam],
+      ),
+      catalog([catalogEntry({ team: "ENG", project: "Web" })]),
+    ),
   );
 });
