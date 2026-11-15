@@ -5,3 +5,11 @@ import { createContext } from "react";
  * thread's composer; without it a question renders as an ordinary quote or code block.
  */
 export const QuestionAskedInItemContext = createContext<string | null>(null);
+
+/**
+ * Sends an answer as the thread's next message, with anything else in its draft, and says whether
+ * the composer took it. Null where an answer can only go into the draft.
+ */
+export const QuestionAnswerSendContext = createContext<
+  ((questionId: string, answer: string) => boolean) | null
+>(null);
