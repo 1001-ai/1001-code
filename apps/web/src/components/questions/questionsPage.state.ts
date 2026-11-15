@@ -36,6 +36,11 @@ const waitingThreadRefsAtom = Atom.make((get) => {
   return previous !== undefined && threadRefsEqual(previous, next) ? previous : next;
 }).pipe(Atom.withLabel("questions-waiting-thread-refs"));
 
+/** Reads only shells, so the sidebar's dot never subscribes to a thread's history. */
+export const hasWaitingQuestionsAtom = Atom.make(
+  (get) => get(waitingThreadRefsAtom).length > 0,
+).pipe(Atom.withLabel("questions-has-waiting"));
+
 interface ThreadCards {
   readonly asked: boolean;
   readonly open: ReadonlyArray<OpenQuestionCard>;
