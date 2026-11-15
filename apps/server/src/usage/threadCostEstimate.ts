@@ -1,13 +1,22 @@
 import type {
   OrchestrationV2ProviderTurn,
   OrchestrationV2Subagent,
+  ProviderThreadId,
   ThreadCostEstimate,
   TurnTokenUsage,
 } from "@t3tools/contracts";
 import { EMPTY_TOTALS } from "@t3tools/provider-core/server/usage";
+import { cursorRateModel } from "@t3tools/provider-cursor/server/accountUsage";
+import * as DateTime from "effect/DateTime";
 
 import { withRateModel } from "../provider/Drivers/antigravityUsageReader.ts";
-import { lookupRate, type RateTable, type TokenRates } from "./usagePricing.ts";
+import {
+  lookupRate,
+  type PricedRecord,
+  priceUsage,
+  type RateTable,
+  type TokenRates,
+} from "./usagePricing.ts";
 
 export interface ThreadCostPricing {
   readonly rates: RateTable;
@@ -17,11 +26,13 @@ export interface ThreadCostPricing {
 
 export type ThreadCostTurn = Pick<
   OrchestrationV2ProviderTurn,
-  "status" | "model" | "turnTokenUsage" | "nodeId" | "providerThreadId" | "tokenUsage"
+  "status" | "model" | "turnTokenUsage" | "nodeId" | "providerThreadId" | "tokenUsage" | "startedAt"
 > & {
   /** The driver of the provider thread that ran the turn, which decides how its model is priced. */
   readonly driver: string | null;
 };
+
+export type BilledRecord = PricedRecord & { readonly timestampMs: number };
 
 export interface ThreadCostSource {
   readonly providerTurns: ReadonlyArray<ThreadCostTurn>;
@@ -30,6 +41,53 @@ export interface ThreadCostSource {
   >;
   /** The thread's selected model, for turns that did not report one. */
   readonly fallbackModel: string | null;
+  /**
+   * The provider's own billing history for a provider thread, such as Cursor's usage dashboard.
+   * Present whenever that history could be read, even before it holds the thread's records.
+   */
+  readonly billed?: ReadonlyMap<ProviderThreadId, ReadonlyArray<BilledRecord>>;
+}
+
+export interface ThreadCostBilling {
+  readonly nowMs: number;
+  /** The billing history is being fetched, so what the estimate saw may be stale. */
+  readonly refreshing: boolean;
+}
+
+// Cursor finalizes records within the hour; an older turn without one is left to its estimate.
+const BILLING_SETTLE_MS = 60 * 60_000;
+
+/**
+ * Each record goes to the newest of the provider thread's turns that had started by its stamp.
+ * Cursor stamps a turn's first record half a second to two seconds after T3 marks the turn
+ * started, never before, and a long turn's later records further on.
+ */
+function billedTurns(
+  turns: ReadonlyArray<ThreadCostTurn>,
+  records: ReadonlyArray<BilledRecord>,
+): ReadonlySet<ThreadCostTurn> {
+  const starts = turns
+    .flatMap((turn) =>
+      turn.startedAt === null ? [] : [{ turn, fromMs: DateTime.toEpochMillis(turn.startedAt) }],
+    )
+    .toSorted((a, b) => a.fromMs - b.fromMs);
+  const covered = new Set<ThreadCostTurn>();
+  for (const { timestampMs } of records) {
+    const owner = starts.findLast((start) => start.fromMs <= timestampMs);
+    if (owner !== undefined) covered.add(owner.turn);
+  }
+  return covered;
+}
+
+// The Usage page's order: an alias replaces the model and its rate model, then priceUsage.
+function billedCost(pricing: ThreadCostPricing, record: BilledRecord) {
+  const alias = pricing.aliases.get(record.model);
+  const { rateModel: _rateModel, ...rest } = record;
+  return priceUsage(
+    pricing.rates,
+    alias === undefined ? record : { ...rest, model: alias },
+    pricing.overrides,
+  );
 }
 
 // Failed and cancelled turns may have done no model work, so only these count as missing a report.
@@ -43,7 +101,8 @@ const OPENCODE_LITELLM_PREFIXES = new Map([["opencode-go", "opencode_go"]]);
 
 /**
  * The names the Usage page prices a turn's model under. OpenCode turns report `provider/model`
- * where its history has the bare model, and Antigravity variants share a base model's price.
+ * where its history has the bare model, and Antigravity and Cursor variants share a base model's
+ * price.
  */
 function priceNames(
   driver: string | null,
@@ -72,6 +131,7 @@ function priceNames(
     });
     return { model: reported, rateModel };
   }
+  if (driver === "cursor") return { model: reported, rateModel: cursorRateModel(reported) };
   return { model: reported, rateModel: undefined };
 }
 
@@ -188,15 +248,44 @@ export function estimateThreadCost(
   threads: ReadonlyArray<ThreadCostSource>,
   pricing: ThreadCostPricing,
   truncated = false,
+  billing: ThreadCostBilling | null = null,
 ): ThreadCostEstimate {
   let costUsd = 0;
   let pricedTurns = 0;
+  let pricedRecords = 0;
   let unpricedTurns = 0;
   let unreportedTurns = 0;
+  let billingPending = billing?.refreshing === true;
   for (const thread of threads) {
     const recorded = new Map<string, LedgerUsage>();
     const cacheTtlMs = new Map<string, number>();
+    const covered = new Set<ThreadCostTurn>();
+    for (const [providerThreadId, records] of thread.billed ?? []) {
+      for (const record of records) {
+        const priced = billedCost(pricing, record);
+        if (priced.costSource === "unpriced") unpricedTurns += 1;
+        else pricedRecords += 1;
+        costUsd += priced.costUsd;
+      }
+      const turns = thread.providerTurns.filter(
+        (turn) => turn.providerThreadId === providerThreadId,
+      );
+      for (const turn of billedTurns(turns, records)) covered.add(turn);
+    }
     for (const turn of thread.providerTurns) {
+      if (covered.has(turn)) {
+        pricedTurns += 1;
+        continue;
+      }
+      if (
+        billing !== null &&
+        thread.billed?.has(turn.providerThreadId) === true &&
+        REPORTING_TURN_STATUSES.has(turn.status) &&
+        turn.startedAt !== null &&
+        DateTime.toEpochMillis(turn.startedAt) >= billing.nowMs - BILLING_SETTLE_MS
+      ) {
+        billingPending = true;
+      }
       const usage = turn.turnTokenUsage;
       if (!hasCounts(usage)) {
         if (
@@ -244,11 +333,12 @@ export function estimateThreadCost(
     }
   }
   return {
-    costUsd: pricedTurns > 0 ? costUsd : null,
+    costUsd: pricedTurns > 0 || pricedRecords > 0 ? costUsd : null,
     pricedTurns,
     unpricedTurns,
     unreportedTurns,
     subagentThreads: Math.max(0, threads.length - 1),
     truncated,
+    ...(billingPending ? { billingPending } : {}),
   };
 }

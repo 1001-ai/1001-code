@@ -48,6 +48,7 @@ import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderS
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 import { CursorTransportFailure } from "./transportFailure.ts";
 import { cursorContextWindowTokens, cursorSdkModelSelection } from "./sdkModel.ts";
+import { type CursorTurnUsage, cursorTurnTokenUsage } from "./turnTokenUsage.ts";
 import {
   appendCursorInvokedSkills,
   cursorSlashSkillNames,
@@ -961,6 +962,7 @@ interface ActiveCursorTurn {
   finalized: boolean;
   /** The agent's latest turn ended and no new work has started since. */
   turnEnded: boolean;
+  readonly usages: CursorTurnUsage[];
 }
 
 interface CursorLiveAgent {
@@ -2016,6 +2018,7 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
           }
           if (update.type === "turn-ended") {
             context.turnEnded = true;
+            if (update.usage !== undefined) context.usages.push(update.usage);
           } else if (
             update.type === "step-started" ||
             update.type === "user-message-appended" ||
@@ -2160,11 +2163,18 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
           yield* emitProviderEvent({
             type: "provider_turn.updated",
             driver: CursorAgentSdk.CURSOR_PROVIDER,
-            providerTurn: providerTurnPayload({
-              context: input.context,
-              status: input.status,
-              completedAt,
-            }),
+            providerTurn: {
+              ...providerTurnPayload({
+                context: input.context,
+                status: input.status,
+                completedAt,
+              }),
+              turnTokenUsage: cursorTurnTokenUsage(
+                input.context.usages,
+                input.context.subagents.size > 0,
+                input.status,
+              ),
+            },
           });
           yield* emitProviderEvent({
             type: "provider_thread.updated",
@@ -2512,6 +2522,7 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
               interrupted: false,
               finalized: false,
               turnEnded: false,
+              usages: [],
             };
             yield* Ref.set(activeTurn, context);
             yield* emitProviderEvent({

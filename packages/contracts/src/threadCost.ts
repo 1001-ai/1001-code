@@ -23,6 +23,8 @@ export const ThreadCostEstimate = Schema.Struct({
   subagentThreads: NonNegativeInt,
   /** The family was larger than the server walks, so some subagent threads are missing. */
   truncated: Schema.Boolean,
+  /** A provider's billing history may still replace recent estimated turns, so ask again later. */
+  billingPending: Schema.optional(Schema.Boolean),
 });
 export type ThreadCostEstimate = typeof ThreadCostEstimate.Type;
 
