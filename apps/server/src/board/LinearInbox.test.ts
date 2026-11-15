@@ -186,14 +186,14 @@ it.effect(
         linkedSender: {
           environmentId: "linear",
           threadId: "linear-comment-comment-1",
-          title: "Sam's agent",
+          title: "Sam Lee's agent",
         },
         mode: "queue",
         createdBy: "agent",
         creationSource: "mcp",
       });
       expect(inbox.sent[0]!.text).toMatch(
-        /^\[Linear comment ([0-9a-f]{8}) on ENG-2 from Sam's agent\]\nagent: proposal\n\[End of Linear comment \1\. /,
+        /^\[Linear comment ([0-9a-f]{8}) on ENG-2 from Sam Lee's agent\]\nagent: proposal\n\[End of Linear comment \1\. /,
       );
     }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
@@ -244,7 +244,7 @@ it.effect("stops at the daily limit for a thread, counting what earlier runs del
     expect(inbox.sent.map((input) => input.commandId)).toEqual([
       "linear-inbox:thread-mine:comment-1",
     ]);
-    expect(inbox.sent[0]!.linkedSender?.title).toBe("Sam");
+    expect(inbox.sent[0]!.linkedSender?.title).toBe("Sam Lee");
   }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
