@@ -52,19 +52,26 @@ export function useMemoryDecision(environmentId: EnvironmentId, projectId: Proje
 export function MemoryDecisionButtons(props: {
   readonly busy: MemoryChoice | null;
   readonly canDecide: boolean;
-  readonly disabled?: boolean;
+  /** Accepting needs a line to save; rejecting never does. */
+  readonly acceptDisabled?: boolean;
   readonly onChoose: (choice: MemoryChoice) => void;
 }) {
-  const disabled = props.busy !== null || !props.canDecide || props.disabled === true;
+  const disabled = props.busy !== null || !props.canDecide;
+  const acceptDisabled = disabled || props.acceptDisabled === true;
   return (
     <>
-      <Button size="xs" variant="outline" disabled={disabled} onClick={() => props.onChoose("me")}>
+      <Button
+        size="xs"
+        variant="outline"
+        disabled={acceptDisabled}
+        onClick={() => props.onChoose("me")}
+      >
         {props.busy === "me" ? "Saving…" : "Accept for me"}
       </Button>
       <Button
         size="xs"
         variant="outline"
-        disabled={disabled}
+        disabled={acceptDisabled}
         onClick={() => props.onChoose("team")}
       >
         {props.busy === "team" ? "Saving…" : "Accept for team"}
@@ -191,7 +198,7 @@ export function MemoryProposalCard(props: {
             <MemoryDecisionButtons
               busy={decision.busy}
               canDecide={decision.canDecide}
-              disabled={(draft ?? proposal.text).trim() === ""}
+              acceptDisabled={(draft ?? proposal.text).trim() === ""}
               onChoose={(choice) => void decision.submit(proposal, choice, draft ?? proposal.text)}
             />
             <span className="min-w-0 flex-1" />

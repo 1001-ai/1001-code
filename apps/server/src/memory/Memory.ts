@@ -148,6 +148,8 @@ const make = Effect.gen(function* () {
   const proposalStore = yield* MemoryProposalStore.MemoryProposalStore;
   const proposalsRef = yield* SubscriptionRef.make(yield* proposalStore.load);
   const decideLock = yield* Semaphore.make(1);
+  // Each change to the proposals and its save happen together, so saves never land out of order.
+  const writeLock = yield* Semaphore.make(1);
   const random = yield* SecureRandom.SecureRandom;
   const backgroundScope = yield* Scope.make();
   yield* Effect.addFinalizer(() => Scope.close(backgroundScope, Exit.void));
@@ -339,6 +341,16 @@ const make = Effect.gen(function* () {
         detail: `${NOT_IN_CATALOG} There is nowhere to save memory for it.`,
       });
     }
+    return yield* addProposal(input);
+  });
+
+  const addProposal = Effect.fn("Memory.addProposal")(function* (input: {
+    readonly projectId: ProjectId;
+    readonly threadId: ThreadId;
+    readonly threadTitle: string;
+    readonly text: string;
+    readonly reason: string;
+  }) {
     const text = input.text.trim();
     const existing = (yield* SubscriptionRef.get(proposalsRef)).find(
       (proposal) =>
@@ -363,7 +375,7 @@ const make = Effect.gen(function* () {
     );
     yield* proposalStore.save(next);
     return onWire(proposal);
-  });
+  }, writeLock.withPermits(1));
 
   const record = Effect.fn("Memory.record")(function* (
     proposalId: string,
@@ -383,7 +395,7 @@ const make = Effect.gen(function* () {
       return yield* new TeamCatalogError({ detail: "This proposal was not found." });
     }
     return onWire(decided);
-  });
+  }, writeLock.withPermits(1));
 
   const decide: Memory["Service"]["decide"] = Effect.fn("Memory.decide")(function* (
     input,

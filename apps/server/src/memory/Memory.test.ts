@@ -13,6 +13,7 @@ import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Deferred from "effect/Deferred";
 import * as Cause from "effect/Cause";
 import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as TestClock from "effect/testing/TestClock";
@@ -70,11 +71,16 @@ const makeMemory = (input: {
   /** What the proposal store holds when the service starts, as after a restart. */
   readonly stored?: ReadonlyArray<MemoryProposalStore.StoredMemoryProposal>;
   readonly pushFails?: string;
+  /** Holds the first save until `release`, as a slow disk would. */
+  readonly slowFirstSave?: {
+    readonly started: Deferred.Deferred<void>;
+    readonly release: Deferred.Deferred<void>;
+  };
   readonly mergeFails?: string;
 }) => {
   const proposals: Array<TeamCatalog.TeamCatalogFilesProposal> = [];
   const merged: Array<string> = [];
-  const store = { saved: input.stored ?? [] };
+  const store = { saved: input.stored ?? [], saves: 0 };
   const build = Memory.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
@@ -82,7 +88,12 @@ const makeMemory = (input: {
         Layer.mock(MemoryProposalStore.MemoryProposalStore)({
           load: Effect.sync(() => store.saved),
           save: (next) =>
-            Effect.sync(() => {
+            Effect.gen(function* () {
+              store.saves += 1;
+              if (store.saves === 1 && input.slowFirstSave !== undefined) {
+                yield* Deferred.succeed(input.slowFirstSave.started, undefined);
+                yield* Deferred.await(input.slowFirstSave.release);
+              }
               store.saved = next;
             }),
         }),
@@ -439,5 +450,25 @@ it.effect("a refused merge says why, and a failed push leaves the proposal unans
     );
     expect(failure.detail).toBe("Could not push.");
     expect((yield* offline.read(PROJECT_ID)).proposals[0]?.decision).toBeNull();
+  }).pipe(Effect.scoped),
+);
+
+it.effect("a proposal made during a slow save is not lost when that save lands", () =>
+  Effect.gen(function* () {
+    const slowFirstSave = {
+      started: yield* Deferred.make<void>(),
+      release: yield* Deferred.make<void>(),
+    };
+    const fixture = makeMemory({ catalog: catalog(), slowFirstSave });
+    const memory = yield* fixture.build;
+    const first = yield* Effect.forkChild(memory.proposeFromAgent(agentProposal("Use tabs.")));
+    yield* Deferred.await(slowFirstSave.started);
+    const second = yield* Effect.forkChild(memory.proposeFromAgent(agentProposal("Prefer pnpm.")));
+    // Lets the second call run as far as it can before the first save lands.
+    yield* Effect.yieldNow;
+    yield* Deferred.succeed(slowFirstSave.release, undefined);
+    yield* Fiber.join(first);
+    yield* Fiber.join(second);
+    expect(fixture.store.saved.map((saved) => saved.text)).toEqual(["Use tabs.", "Prefer pnpm."]);
   }).pipe(Effect.scoped),
 );
