@@ -26,7 +26,8 @@ import {
   writeAnswerLine,
   type QuestionAnswer,
 } from "./questionBlock.logic";
-import { QuestionAskedInItemContext } from "./questionBlockScope";
+import { QuestionAnswerSendContext, QuestionAskedInItemContext } from "./questionBlockScope";
+import { Button } from "../ui/button";
 
 const questionAnswerAtomFamily = Atom.family((key: string) => {
   const [thread = "", askedInItemId = "", questionId = ""] = key.split("\u0000");
@@ -40,6 +41,8 @@ const questionAnswerAtomFamily = Atom.family((key: string) => {
             get(environmentThreadDetails.timelineVisibleTurnItemsAtom(threadRef)),
             askedInItemId,
             questionId,
+            // A queued answer is not a turn item until its run dispatches.
+            get(environmentThreadDetails.queueWorkflowAtom(threadRef))?.queuedRuns,
           );
     if (next?.messageId !== previous?.messageId || next?.answer !== previous?.answer) {
       previous = next;
@@ -48,7 +51,7 @@ const questionAnswerAtomFamily = Atom.family((key: string) => {
   }).pipe(Atom.setIdleTTL(0));
 });
 
-// Kept alive so typing and an open "Change answer" survive the card remounting when streaming ends.
+// Kept alive so typing, an open "Change answer" and a send in flight survive the card remounting when streaming ends.
 const questionFreeTextAtomFamily = Atom.family((key: string) =>
   Atom.make("").pipe(Atom.keepAlive, Atom.withLabel(`question-free-text:${key}`)),
 );
@@ -58,11 +61,20 @@ const questionChangingFromAtomFamily = Atom.family((key: string) =>
     Atom.withLabel(`question-changing-from:${key}`),
   ),
 );
+// What the card sent, shown until a failed send puts it back in the draft or an answer newer
+// than `after` arrives.
+const questionSentAtomFamily = Atom.family((key: string) =>
+  Atom.make<{ answer: string; after: string | null } | null>(null).pipe(
+    Atom.keepAlive,
+    Atom.withLabel(`question-sent:${key}`),
+  ),
+);
 
 /**
  * A blockquote in an assistant message, shown as a question card when its source is one. Answering
- * writes `<id>: answer` into the thread's draft and never sends; the card reads as answered once a
- * later user message carries that line. While the message streams, the quote shows as written.
+ * sends `<id>: answer` with the rest of the thread's draft, or only writes it into the draft where
+ * the card cannot send. The card reads as answered once a later user message carries that line.
+ * While the message streams, the quote shows as written.
  */
 export function MarkdownQuestionQuote({
   source,
@@ -105,19 +117,29 @@ export function QuestionCard({
   const freeText = useAtomValue(questionFreeTextAtomFamily(cardKey));
   const setFreeText = useAtomSet(questionFreeTextAtomFamily(cardKey));
   const answer = useAtomValue(questionAnswerAtomFamily(cardKey));
+  const sendAnswer = use(QuestionAnswerSendContext);
+  const sent = useAtomValue(questionSentAtomFamily(cardKey));
+  const setSent = useAtomSet(questionSentAtomFamily(cardKey));
   const draftAnswer = useComposerDraftStore((store) => {
     const prompt = store.getComposerDraft(threadRef)?.prompt;
     return prompt ? readAnswerLine(prompt, question.id) : null;
   });
   const writeDraftAnswer = (next: string | null) => {
+    setSent(null);
     const store = useComposerDraftStore.getState();
     const prompt = store.getComposerDraft(threadRef)?.prompt ?? "";
     store.setPrompt(threadRef, writeAnswerLine(prompt, question.id, next));
   };
+  const send = (next: string) => {
+    if (sendAnswer?.(question.id, next)) {
+      setSent({ answer: next.trim(), after: answer?.messageId ?? null });
+    }
+  };
   const submitFreeText = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (freeText.trim().length === 0) return;
-    writeDraftAnswer(freeText);
+    if (sendAnswer === null) writeDraftAnswer(freeText);
+    else send(freeText);
     setFreeText("");
   };
 
@@ -127,8 +149,13 @@ export function QuestionCard({
   const selectedMulti = multi ? selectedMultiOptions(options, draftAnswer) : new Set<string>();
   const isSelected = (option: string) =>
     multi ? selectedMulti.has(option) : draftAnswer === option;
-  const choose = (option: string) =>
-    writeDraftAnswer(multi ? toggleMultiOption(options, draftAnswer, option) : option);
+  // A single choice that sends on click is a group of actions, not a radio group.
+  const radio = !multi && sendAnswer === null;
+  const choose = (option: string) => {
+    if (multi) writeDraftAnswer(toggleMultiOption(options, draftAnswer, option));
+    else if (sendAnswer === null) writeDraftAnswer(option);
+    else send(option);
+  };
   // A radio group is one tab stop, on the checked option or else the first.
   const radioTabStop = Math.max(options.indexOf(draftAnswer ?? ""), 0);
   const moveFocus = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
@@ -150,9 +177,13 @@ export function QuestionCard({
     if (next === null) return;
     event.preventDefault();
     optionRefs.current[next]?.focus();
-    if (!multi) writeDraftAnswer(options[next] ?? null);
+    if (radio) writeDraftAnswer(options[next] ?? null);
   };
   const showControls = answer === null || changing;
+  const sendingAnswer =
+    sent !== null && draftAnswer === null && sent.after === (answer?.messageId ?? null)
+      ? sent.answer
+      : null;
 
   return (
     <section
@@ -175,28 +206,49 @@ export function QuestionCard({
           <span className="min-w-0 [overflow-wrap:anywhere]">
             Answered: <span className="text-foreground">{answer.answer}</span>
           </span>
-          {changing ? null : (
-            <>
-              <span aria-hidden>·</span>
-              <QuietAction
-                aria-label={`Change your answer to ${question.id}`}
-                onClick={() => {
-                  setChangingFrom(answer.messageId);
-                  // The draft is the controls' only source, so changing starts from the current answer.
-                  if (draftAnswer === null) writeDraftAnswer(answer.answer);
-                }}
-              >
-                Change
-              </QuietAction>
-            </>
-          )}
+          {/* Change and Cancel wait for an in-flight send; neither could stop it. */}
+          {sendingAnswer !== null ? null : <span aria-hidden>·</span>}
+          {sendingAnswer === null && changing ? (
+            <QuietAction
+              aria-label={`Keep your answer to ${question.id}`}
+              onClick={() => {
+                setChangingFrom(null);
+                writeDraftAnswer(null);
+              }}
+            >
+              Cancel
+            </QuietAction>
+          ) : sendingAnswer === null ? (
+            <QuietAction
+              aria-label={`Change your answer to ${question.id}`}
+              onClick={() => {
+                setChangingFrom(answer.messageId);
+                setSent(null);
+                // Selections live in the draft, so they start from the current answer.
+                if ((multi || sendAnswer === null) && draftAnswer === null) {
+                  writeDraftAnswer(answer.answer);
+                }
+              }}
+            >
+              Change
+            </QuietAction>
+          ) : null}
         </div>
       ) : null}
-      {showControls ? (
+      {sendingAnswer !== null ? (
+        // A send that never lands (a discarded queued message) must not lock the card.
+        <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-muted-foreground text-sm">
+          <span className="min-w-0 [overflow-wrap:anywhere]">Sending: {sendingAnswer}</span>
+          <span aria-hidden>·</span>
+          <QuietAction aria-label={`Answer ${question.id} again`} onClick={() => setSent(null)}>
+            Answer again
+          </QuietAction>
+        </div>
+      ) : showControls ? (
         <>
           {options.length > 0 ? (
             <div
-              role={multi ? "group" : "radiogroup"}
+              role={radio ? "radiogroup" : "group"}
               aria-labelledby={promptId}
               className="flex min-w-0 flex-col"
             >
@@ -209,9 +261,9 @@ export function QuestionCard({
                       optionRefs.current[index] = element;
                     }}
                     type="button"
-                    role={multi ? "checkbox" : "radio"}
-                    aria-checked={selected}
-                    tabIndex={multi || index === radioTabStop ? 0 : -1}
+                    role={multi ? "checkbox" : radio ? "radio" : undefined}
+                    aria-checked={multi || radio ? selected : undefined}
+                    tabIndex={!radio || index === radioTabStop ? 0 : -1}
                     onClick={() => choose(option)}
                     onKeyDown={(event) => moveFocus(event, index)}
                     className={cn(
@@ -233,6 +285,17 @@ export function QuestionCard({
               })}
             </div>
           ) : null}
+          {multi && sendAnswer !== null && draftAnswer !== null && selectedMulti.size > 0 ? (
+            <div className="flex py-1">
+              <Button
+                size="xs"
+                aria-label={`Send your answer to ${question.id}`}
+                onClick={() => send(draftAnswer)}
+              >
+                Send
+              </Button>
+            </div>
+          ) : null}
           <form
             className="-mx-2 flex min-w-0 items-center gap-2.5 rounded-md px-2 py-1 hover:bg-accent/60 has-focus-visible:bg-accent/60"
             onSubmit={submitFreeText}
@@ -243,7 +306,7 @@ export function QuestionCard({
             <input
               value={freeText}
               maxLength={500}
-              enterKeyHint="done"
+              enterKeyHint={sendAnswer === null ? "done" : "send"}
               onChange={(event) => setFreeText(event.target.value)}
               placeholder={question.kind === "text" ? "Type an answer…" : "Or type an answer…"}
               aria-label={`Answer ${question.id} in your own words`}
@@ -251,11 +314,13 @@ export function QuestionCard({
               className="min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground/70 sm:text-sm"
             />
             <span id={freeTextHintId} className="sr-only">
-              Press Enter to add it to your draft.
+              {sendAnswer === null
+                ? "Press Enter to add it to your draft."
+                : "Press Enter to send it."}
             </span>
             {freeText.trim() === "" ? null : (
               <span aria-hidden className="shrink-0 text-muted-foreground text-xs">
-                Enter to add
+                {sendAnswer === null ? "Enter to add" : "Enter to send"}
               </span>
             )}
           </form>

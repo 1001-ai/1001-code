@@ -4,7 +4,7 @@ import ChatMarkdown from "../ChatMarkdown";
 import { QuestionAskedInItemContext } from "./questionBlockScope";
 import { QuestionRefScope, useQuestionRefs } from "./QuestionRefLink";
 
-/** An assistant message's markdown, whose questions can be answered in the composer. */
+/** An assistant message's markdown, whose questions render as cards the user answers in place. */
 export function AssistantQuestionMarkdown({
   askedInItemId,
   ...props

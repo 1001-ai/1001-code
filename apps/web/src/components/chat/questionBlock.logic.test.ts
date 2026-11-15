@@ -95,6 +95,27 @@ describe("findQuestionAnswer", () => {
     expect(findQuestionAnswer(items, "a1", "Q1")).toBeNull();
     expect(findQuestionAnswer(items, "missing", "Q2")).toBeNull();
   });
+
+  it("reads an answer still queued, newest first, over the timeline's", () => {
+    const queued = (id: string, text: string) => ({ text, messageId: `m-${id}` });
+    const items = [assistant("a1"), user("u1", "Q1: Yes")];
+    expect(findQuestionAnswer([assistant("a1")], "a1", "Q1", [queued("q1", "Q1: Yes")])).toEqual({
+      answer: "Yes",
+      messageId: "m-q1",
+    });
+    expect(
+      findQuestionAnswer(items, "a1", "Q1", [
+        queued("q1", "Q1: No"),
+        queued("q2", "Q1: Maybe"),
+        queued("q3", "Queued message"),
+      ]),
+    ).toEqual({ answer: "Maybe", messageId: "m-q2" });
+    expect(findQuestionAnswer(items, "a1", "Q1", [queued("q1", "Thanks")])).toEqual({
+      answer: "Yes",
+      messageId: "m-u1",
+    });
+    expect(findQuestionAnswer(items, "missing", "Q1", [queued("q1", "Q1: No")])).toBeNull();
+  });
 });
 
 describe("findQuestionRefs", () => {

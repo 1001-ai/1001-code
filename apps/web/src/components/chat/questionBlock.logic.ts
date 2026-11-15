@@ -86,17 +86,29 @@ export interface QuestionAnswer {
   readonly messageId: string;
 }
 
+interface QueuedMessageLike {
+  readonly text: string;
+  readonly messageId: string;
+}
+
 /**
- * The most recent answer to `questionId` in a user message after the item that asked it.
- * Answers are never stored; a later `<id>: answer` line is the answer.
+ * The most recent answer to `questionId` in a user message after the item that asked it,
+ * counting messages still queued, which come after every turn item. Answers are never stored;
+ * a later `<id>: answer` line is the answer.
  */
 export function findQuestionAnswer(
   items: ReadonlyArray<TurnItemLike>,
   askedInItemId: string,
   questionId: string,
+  queued: ReadonlyArray<QueuedMessageLike> = [],
 ): QuestionAnswer | null {
   const askedAt = items.findIndex((entry) => entry.item.id === askedInItemId);
   if (askedAt < 0) return null;
+  for (let index = queued.length - 1; index >= 0; index -= 1) {
+    const { text, messageId } = queued[index]!;
+    const answer = readAnswerLine(text, questionId);
+    if (answer !== null) return { answer, messageId };
+  }
   for (let index = items.length - 1; index > askedAt; index -= 1) {
     const { type, text, messageId } = items[index]!.item;
     if (type !== "user_message" || typeof text !== "string" || messageId === undefined) continue;

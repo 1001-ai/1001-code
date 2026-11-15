@@ -123,7 +123,7 @@ import { resolveTerminalSessionLabel } from "@t3tools/shared/terminalLabels";
 import { useAtomValue } from "@effect/atom-react";
 import { type SetStateAction, use, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { BackgroundThreadContext } from "./chat/backgroundThread";
-import { WorkspaceMutationIdContext } from "./chat/ChatMarkdownMedia";
+import { QuestionAnswerSendScope } from "./chat/QuestionAnswerSendScope";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
   assistantCitationFromLocation,
@@ -3407,7 +3407,17 @@ export default function ChatView(props: ChatViewProps) {
               {...conversationArea}
               className="relative flex min-h-0 flex-1 flex-col bg-background"
             >
-              <WorkspaceMutationIdContext value={workspaceMutationId}>
+              <QuestionAnswerSendScope
+                workspaceMutationId={workspaceMutationId}
+                draftTarget={composerDraftTarget}
+                promptRef={promptRef}
+                composerRef={composerRef}
+                canSend={
+                  canOperateThread &&
+                  !activePendingProgress &&
+                  !pendingApprovals.some(({ requestId }) => !heldApprovalRequestIds.has(requestId))
+                }
+              >
                 <ThreadTimeline
                   pendingApprovals={pendingApprovals}
                   heldApprovalRequestIds={heldApprovalRequestIds}
@@ -3508,7 +3518,7 @@ export default function ChatView(props: ChatViewProps) {
                     ? {}
                     : { historyControls: threadHistoryControls })}
                 />
-              </WorkspaceMutationIdContext>
+              </QuestionAnswerSendScope>
 
               {showScrollToBottom && !isThreadFindActive && (
                 <ScrollToEndButton
