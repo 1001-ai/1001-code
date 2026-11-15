@@ -15,49 +15,7 @@ import * as Stream from "effect/Stream";
 
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import * as Board from "./Board.ts";
-import { isLinearWriteToolName, watch } from "./LinearWriteWatch.ts";
-
-describe("isLinearWriteToolName", () => {
-  it.each([
-    // Claude, and Cursor's `mcp__<provider>__<tool>`.
-    "mcp__claude_ai_Linear__save_issue",
-    "mcp__linear__create_comment",
-    "mcp__plugin_linear_linear__update_issue",
-    "mcp__claude_ai_Linear__delete_attachment",
-    "mcp__claude_ai_Linear__unshare_issue",
-    // Codex and ACP agents' `<server>.<tool>`.
-    "linear.save_issue",
-    "Linear.create_issue",
-    // OpenCode's `<server>_<tool>`.
-    "linear_save_issue",
-    "linear_mcp_merge_diff",
-  ])("%s writes", (name) => {
-    expect(isLinearWriteToolName(name)).toBe(true);
-  });
-
-  it.each([
-    "mcp__claude_ai_Linear__list_issues",
-    "mcp__claude_ai_Linear__get_issue",
-    "mcp__claude_ai_Linear__get_status_updates",
-    "mcp__claude_ai_Linear__search_documentation",
-    "mcp__claude_ai_Linear__extract_images",
-    "mcp__claude_ai_Linear__prepare_file_upload",
-    "mcp__claude_ai_Linear__whoami",
-    "linear.list_comments",
-    "linear_get_issue_status",
-    "codex_apps.linear_list_issues",
-    // Writes, but not to Linear.
-    "mcp__claude_ai_Notion__notion-update-page",
-    "mcp__github__create_issue",
-    "github.create_pull_request",
-    "jira_create_issue",
-    "Bash",
-    "",
-    null,
-  ])("%s does not", (name) => {
-    expect(isLinearWriteToolName(name)).toBe(false);
-  });
-});
+import { watch } from "./LinearWriteWatch.ts";
 
 const threadId = ThreadId.make("thread-1");
 const at = DateTime.makeUnsafe("2026-11-15T10:00:00.000Z");

@@ -181,7 +181,7 @@ export function routeComment(
     _tag: "thread",
     threadIds: [first, ...rest],
     kind: commentKind(comment.body),
-    sender: comment.user.displayName || comment.user.name,
+    sender: comment.user.name || comment.user.displayName,
   };
 }
 

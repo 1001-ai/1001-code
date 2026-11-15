@@ -26,6 +26,7 @@ import type { HtmlRenderReference } from "@t3tools/shared/htmlRender";
 import { turnItemDetailRevision } from "@t3tools/client-runtime/work-log/item-detail";
 import type { McpAppReference } from "@t3tools/shared/mcpApp";
 import { htmlRenderFromToolItem, mcpAppFromToolItem } from "@t3tools/shared/toolOutput";
+import { isBoardTaskItem } from "./components/board/boardTaskCard.logic";
 import { isMemoryProposalItem } from "./components/memory/memoryProposal.logic";
 import {
   contextCompactionLabel,
@@ -252,7 +253,8 @@ export function timelineEntryIsPersistentResourceCard(entry: TimelineEntry): boo
   return (
     entry.kind === "event" &&
     (PERSISTENT_RESOURCE_V2_ITEM_TYPES.has(entry.projectedItem.item.type) ||
-      isMemoryProposalItem(entry.projectedItem.item))
+      isMemoryProposalItem(entry.projectedItem.item) ||
+      isBoardTaskItem(entry.projectedItem.item))
   );
 }
 
@@ -671,7 +673,11 @@ export function deriveTimelineEntriesFromVisibleTurnItems(
       continue;
     }
 
-    if (STANDALONE_V2_ITEM_TYPES.has(item.type) || isMemoryProposalItem(item)) {
+    if (
+      STANDALONE_V2_ITEM_TYPES.has(item.type) ||
+      isMemoryProposalItem(item) ||
+      isBoardTaskItem(item)
+    ) {
       entries.push({
         id: item.id,
         kind: "event",
