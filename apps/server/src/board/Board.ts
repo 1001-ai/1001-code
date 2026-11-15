@@ -11,6 +11,8 @@ import {
   type BoardIssueDetailInput,
   type BoardSignIn,
   type BoardSnapshot,
+  type BoardTaskList,
+  type BoardTaskWriteResult,
   type ProjectId,
   type TeamCatalogLinear,
   type ThreadId,
@@ -47,25 +49,41 @@ import { linkedThreadIds } from "./linearInboxRouting.ts";
 import {
   COMMENT_CREATE_MUTATION,
   CommentCreateData,
+  ISSUE_CREATE_MUTATION,
   ISSUE_DETAIL_QUERY,
   ISSUE_PAGE_SIZE,
+  ISSUE_UPDATE_MUTATION,
   ISSUES_QUERY,
+  IssueCreateData,
   IssueDetailData,
+  IssueUpdateData,
   IssuesData,
   LINEAR_API_URL,
   type LinearIssue,
   MAX_ISSUE_PAGES,
+  TASK_QUERY,
+  TEAM_MEMBERS_QUERY,
   TEAM_QUERY,
+  THREAD_LINK_MUTATION,
+  TaskData,
   TeamData,
+  TeamMembersData,
+  ThreadLinkData,
   VIEWER_QUERY,
   ViewerData,
   boardColumns,
   boardIssueDetail,
+  boardTask,
   commentAuthor,
+  hasThreadLink,
   issuesFilter,
   linearFailure,
   linearProject,
+  openBoardTasks,
   postedCommentText,
+  teamMemberNamed,
+  threadLinkUrl,
+  workflowStateNamed,
 } from "./linearBoard.ts";
 import {
   LINEAR_OAUTH_ENDPOINTS,
@@ -122,8 +140,81 @@ export class Board extends Context.Service<
     readonly comment: (input: BoardCommentInput) => Effect.Effect<BoardCommentResult, BoardError>;
     /** Linear as whoever is signed in now, or null while nobody is. */
     readonly session: Effect.Effect<BoardLinearSession | null>;
+    /**
+     * Files a task on the project's board as the signed-in person, with a link to the agent's
+     * thread, then refreshes open boards.
+     */
+    readonly addTask: (
+      input: BoardAddTaskInput,
+    ) => Effect.Effect<BoardTaskWriteResult, BoardError | BoardInputError>;
+    /**
+     * Changes the given fields of a task on the project's board, links the agent's thread if it
+     * is not yet, then refreshes open boards.
+     */
+    readonly updateTask: (
+      input: BoardUpdateTaskInput,
+    ) => Effect.Effect<BoardTaskWriteResult, BoardError | BoardInputError>;
+    /** The project board's open tasks, from a read in the last few seconds. */
+    readonly listTasks: (
+      projectId: ProjectId,
+    ) => Effect.Effect<BoardTaskList, BoardError | BoardInputError>;
   }
 >()("t3/board/Board") {}
+
+/** What an agent sets on a task; only the given fields change. */
+interface BoardTaskFields {
+  readonly title?: string | undefined;
+  readonly description?: string | undefined;
+  /** A workflow state of the board's team, by name. */
+  readonly status?: string | undefined;
+  /** "me" for the signed-in person, or a team member's name or email. */
+  readonly assignee?: string | undefined;
+}
+
+interface BoardTaskThread {
+  readonly id: ThreadId;
+  /** The link's title in Linear. */
+  readonly title: string;
+}
+
+export interface BoardAddTaskInput extends BoardTaskFields {
+  readonly projectId: ProjectId;
+  /** The agent's thread, which the task links to. */
+  readonly thread: BoardTaskThread;
+  readonly title: string;
+}
+
+export interface BoardUpdateTaskInput extends BoardTaskFields {
+  readonly projectId: ProjectId;
+  readonly thread: BoardTaskThread;
+  /** The task's identifier, such as COD-12. */
+  readonly identifier: string;
+}
+
+/** An agent asked for something the board cannot do, such as a status its team does not have. */
+export class BoardInputError extends Schema.TaggedError<BoardInputError>()("BoardInputError", {
+  detail: Schema.String,
+}) {
+  override get message(): string {
+    return this.detail;
+  }
+}
+
+const noBoard = (snapshot: Extract<BoardSnapshot, { status: "unconfigured" }>) =>
+  new BoardInputError({
+    detail:
+      snapshot.reason === "no-catalog"
+        ? "This environment has no team catalog, so this project has no board."
+        : snapshot.reason === "not-in-catalog"
+          ? "This project is not in the team catalog, so it has no board."
+          : `This project's catalog entry (${snapshot.catalogFile}) names no Linear team, so it has no board.`,
+  });
+
+const signInFirst = (action: string) =>
+  new BoardError({
+    reason: "unauthorized",
+    detail: `Nobody is signed in to Linear here. Ask the user to sign in in Settings → Board, then ${action}.`,
+  });
 
 /** Queries as one sign-in; they fail as unauthorized once it is replaced or disconnected. */
 export interface BoardLinearSession {
@@ -175,7 +266,10 @@ const decodeTokenResponse = Schema.decodeUnknownEffect(TokenResponse);
 
 type Target =
   | { readonly _tag: "linear"; readonly linear: TeamCatalogLinear }
-  | { readonly _tag: "unconfigured"; readonly snapshot: BoardSnapshot };
+  | {
+      readonly _tag: "unconfigured";
+      readonly snapshot: Extract<BoardSnapshot, { status: "unconfigured" }>;
+    };
 
 const unconfigured = (
   reason: Extract<BoardSnapshot, { status: "unconfigured" }>["reason"],
@@ -1018,6 +1112,175 @@ const make = Effect.gen(function* () {
     return connection;
   }).pipe(Effect.withSpan("Board.disconnect"));
 
+  /** The sign-in and board a task write runs against. */
+  const taskBoard = Effect.fn("Board.taskBoard")(function* (projectId: ProjectId, action: string) {
+    const generation = credentialGeneration;
+    const credential = yield* readCredential;
+    if (credential === null) return yield* signInFirst(action);
+    const target = yield* resolveTarget(projectId);
+    if (target._tag === "unconfigured") return yield* noBoard(target.snapshot);
+    const { team, project } = yield* findTeam(generation, target.linear);
+    return { generation, viewerId: credential.viewer.id, team, project };
+  });
+  type TaskBoard = Effect.Success<ReturnType<typeof taskBoard>>;
+
+  const assigneeId = Effect.fn("Board.assigneeId")(function* (scope: TaskBoard, name: string) {
+    if (name.trim().toLowerCase() === "me") return scope.viewerId;
+    const { team } = yield* linear(
+      scope.generation,
+      TEAM_MEMBERS_QUERY,
+      { id: scope.team.id },
+      TeamMembersData,
+    );
+    const member = teamMemberNamed(team.members.nodes, name);
+    if (member === "ambiguous") {
+      return yield* new BoardInputError({
+        detail: `More than one member of the ${scope.team.key} team is named "${name}". Name them by email.`,
+      });
+    }
+    if (member === null) {
+      return yield* new BoardInputError({
+        detail: `No member of the ${scope.team.key} team is named "${name}". Use "me", or a member's name or email.`,
+      });
+    }
+    return member.id;
+  });
+
+  /** The given fields as Linear's issue input, with the status and assignee resolved to ids. */
+  const taskFields = Effect.fn("Board.taskFields")(function* (
+    scope: TaskBoard,
+    fields: BoardTaskFields,
+  ) {
+    let stateId: string | undefined;
+    if (fields.status !== undefined) {
+      const states = scope.team.states.nodes;
+      const state = workflowStateNamed(states, fields.status);
+      if (state === null) {
+        return yield* new BoardInputError({
+          detail: `The ${scope.team.key} board has no status named "${fields.status}". Its statuses are ${states.map((candidate) => candidate.name).join(", ")}.`,
+        });
+      }
+      stateId = state.id;
+    }
+    const assignee =
+      fields.assignee === undefined ? undefined : yield* assigneeId(scope, fields.assignee);
+    return {
+      ...(fields.title === undefined ? {} : { title: fields.title }),
+      ...(fields.description === undefined ? {} : { description: fields.description }),
+      ...(stateId === undefined ? {} : { stateId }),
+      ...(assignee === undefined ? {} : { assigneeId: assignee }),
+    };
+  });
+
+  /** Links the task to the thread; the task is written already, so a failure only logs. */
+  const linkThread = Effect.fn("Board.linkThread")(function* (
+    scope: TaskBoard,
+    issueId: string,
+    thread: BoardTaskThread,
+  ) {
+    const input = {
+      issueId,
+      url: threadLinkUrl(environmentId, thread.id),
+      title: thread.title.trim() || "Agent thread",
+    };
+    return yield* linear(scope.generation, THREAD_LINK_MUTATION, { input }, ThreadLinkData).pipe(
+      Effect.map(({ attachmentCreate }) => attachmentCreate.success),
+      Effect.catch((error) =>
+        Effect.logWarning("Board could not link a task to its thread.", {
+          issueId,
+          threadId: thread.id,
+          error,
+        }).pipe(Effect.as(false)),
+      ),
+    );
+  });
+
+  const notAccepted = new BoardError({
+    reason: "invalid-response",
+    detail: "Linear did not accept the change to the task.",
+  });
+
+  const addTask: Board["Service"]["addTask"] = Effect.fn("Board.addTask")(function* (input) {
+    const scope = yield* taskBoard(input.projectId, "add the task");
+    const fields = yield* taskFields(scope, input);
+    const { issueCreate } = yield* linear(
+      scope.generation,
+      ISSUE_CREATE_MUTATION,
+      {
+        input: {
+          teamId: scope.team.id,
+          ...(scope.project === null ? {} : { projectId: scope.project.id }),
+          ...fields,
+        },
+      },
+      IssueCreateData,
+    );
+    if (!issueCreate.success || issueCreate.issue === null) return yield* notAccepted;
+    const threadLinked = yield* linkThread(scope, issueCreate.issue.id, input.thread);
+    yield* refreshOpen;
+    return { task: boardTask(issueCreate.issue), threadLinked };
+  });
+
+  const updateTask: Board["Service"]["updateTask"] = Effect.fn("Board.updateTask")(
+    function* (input) {
+      const scope = yield* taskBoard(input.projectId, "update the task");
+      const { issue } = yield* linear(
+        scope.generation,
+        TASK_QUERY,
+        { id: input.identifier },
+        TaskData,
+      );
+      if (
+        issue === null ||
+        issue.team.id !== scope.team.id ||
+        (scope.project !== null && issue.project?.id !== scope.project.id)
+      ) {
+        return yield* new BoardError({
+          reason: "issue-not-found",
+          detail: `${input.identifier} is not on this project's board.`,
+        });
+      }
+      const fields = yield* taskFields(scope, input);
+      const changes = Object.keys(fields).length > 0;
+      let task = boardTask(issue);
+      if (changes) {
+        const { issueUpdate } = yield* linear(
+          scope.generation,
+          ISSUE_UPDATE_MUTATION,
+          { id: issue.id, input: fields },
+          IssueUpdateData,
+        );
+        if (!issueUpdate.success || issueUpdate.issue === null) return yield* notAccepted;
+        task = boardTask(issueUpdate.issue);
+      }
+      const linked = hasThreadLink(
+        issue.threadLinks.nodes,
+        scope.viewerId,
+        environmentId,
+        input.thread.id,
+      );
+      const threadLinked = linked || (yield* linkThread(scope, issue.id, input.thread));
+      if (changes || !linked) yield* refreshOpen;
+      return { task, threadLinked };
+    },
+  );
+
+  const listTasks: Board["Service"]["listTasks"] = Effect.fn("Board.listTasks")(
+    function* (projectId) {
+      const snapshot = yield* read(projectId);
+      switch (snapshot.status) {
+        case "not-connected":
+          return yield* signInFirst("list the tasks");
+        case "unconfigured":
+          return yield* noBoard(snapshot);
+        case "failed":
+          return yield* new BoardError(snapshot.failure);
+        case "ready":
+          return { tasks: openBoardTasks(snapshot.board), truncated: snapshot.board.truncated };
+      }
+    },
+  );
+
   return Board.of({
     connection: SubscriptionRef.get(connectionState),
     connectionChanges: SubscriptionRef.changes(connectionState),
@@ -1030,6 +1293,9 @@ const make = Effect.gen(function* () {
     refreshOpen,
     issueDetail,
     comment,
+    addTask,
+    updateTask,
+    listTasks,
     session: Effect.gen(function* () {
       // Taken before the read, so a sign-in change in between fails the session's queries.
       const generation = credentialGeneration;

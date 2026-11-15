@@ -93,7 +93,7 @@ import {
   SecretExpect,
   secretDiagnostics,
 } from "./secret-grading.ts";
-import { boardMemory, LINEAR_PREFIX, linearTools } from "./board.ts";
+import { boardMemory, boardTools, LINEAR_PREFIX } from "./board.ts";
 /** Agent models by id, with the display name a harness gives them. */
 const MODELS = {
   "claude-sonnet-5-5": "Sonnet 5.5",
@@ -651,7 +651,7 @@ export const buildBase = (
   },
 ) => {
   const t3 = visibleT3Tools(options);
-  const mcpTools = options.board === undefined ? [] : linearTools;
+  const mcpTools = options.board === undefined ? [] : boardTools;
   const firstAssistant = template.messages.findIndex((message) => message.role === "assistant");
   const head = template.messages.slice(0, firstAssistant === -1 ? undefined : firstAssistant);
   const systemTexts = [

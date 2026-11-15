@@ -242,7 +242,7 @@ it.effect("names a project's Linear board and the thread's link, even without me
       return { ...base, projects: [{ ...entry, project: { ...entry.project, linear } }] };
     };
     const threadLink =
-      "<board>\nThis project's board is the COD team in Linear. Use it for every issue you read, file or update, unless the user names another board.\nOnce the requirements are clear and you are about to make your first change (a file edit, a branch or a worktree), the work needs an issue on this board.";
+      "<board>\nThis project's board is the COD team in Linear; its tasks are Linear issues. Use it for every task you read, file or update, unless the user names another board.\nUse board_list to see its open tasks, board_add to file a task and board_update to change one";
 
     const memory = yield* makeMemory({ catalog: boardCatalog() }).build;
     const view = yield* memory.read(PROJECT_ID);
@@ -266,7 +266,7 @@ it.effect("names a project's Linear board and the thread's link, even without me
       catalog: boardCatalog({}, { team: "PLAT", project: "Platform" }),
     }).build;
     expect(yield* narrowed.instructions(PROJECT_ID, THREAD_ID)).toContain(
-      `This project's board is the Linear project "Platform" in the PLAT team.`,
+      `This project's board is the Linear project "Platform" in the PLAT team;`,
     );
   }).pipe(Effect.scoped),
 );

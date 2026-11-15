@@ -11,15 +11,20 @@ import {
   type BoardIssueDetail,
   type BoardPriority,
   type BoardPullRequest,
+  type BoardTask,
   type BoardThreadLink,
   type BoardUser,
   type BoardWorkflowState,
 } from "@t3tools/contracts";
 import { DEFAULT_HOSTED_APP_URL } from "@t3tools/shared/connectAuth";
-import { parseThreadLinkHref } from "@t3tools/shared/threadLinks";
+import {
+  THREAD_LINK_PROTOCOL,
+  parseThreadLinkHref,
+  threadLinkCandidates,
+} from "@t3tools/shared/threadLinks";
 import * as Schema from "effect/Schema";
 
-import { commentKind } from "./linearInboxRouting.ts";
+import { CLOSED_STATE_TYPES, commentKind } from "./linearInboxRouting.ts";
 
 /** Linear's GraphQL API, read with an OAuth access token. Queries checked against Linear's public schema. */
 export const LINEAR_API_URL = "https://api.linear.app/graphql";
@@ -116,6 +121,38 @@ export const ISSUE_DETAIL_QUERY = `query BoardIssueDetail($id: String!) {
 
 export const COMMENT_CREATE_MUTATION = `mutation BoardComment($input: CommentCreateInput!) {
   commentCreate(input: $input) { success comment { id } }
+}`;
+
+const TASK_FIELDS =
+  "id identifier title url state { name type } assignee { name displayName } project { name }";
+
+export const ISSUE_CREATE_MUTATION = `mutation BoardIssueCreate($input: IssueCreateInput!) {
+  issueCreate(input: $input) { success issue { ${TASK_FIELDS} } }
+}`;
+
+export const ISSUE_UPDATE_MUTATION = `mutation BoardIssueUpdate($id: String!, $input: IssueUpdateInput!) {
+  issueUpdate(id: $id, input: $input) { success issue { ${TASK_FIELDS} } }
+}`;
+
+/** Linear keeps one attachment per issue and URL: a second create with the same URL updates it. */
+export const THREAD_LINK_MUTATION = `mutation BoardThreadLink($input: AttachmentCreateInput!) {
+  attachmentCreate(input: $input) { success }
+}`;
+
+/** An issue an agent updates: what it returns, and what decides whether it is on the board. */
+export const TASK_QUERY = `query BoardTask($id: String!) {
+  issue(id: $id) {
+    ${TASK_FIELDS}
+    team { id }
+    project { id name }
+    threadLinks: attachments(first: 50, filter: ${THREAD_LINK_FILTER}) {
+      nodes { url creator { id } }
+    }
+  }
+}`;
+
+export const TEAM_MEMBERS_QUERY = `query BoardTeamMembers($id: String!) {
+  team(id: $id) { members(first: 250) { nodes { id name displayName email } } }
 }`;
 
 /** Open issues of the team (and project), plus those closed within RECENTLY_CLOSED. */
@@ -271,6 +308,52 @@ export const CommentCreateData = Schema.Struct({
     success: Schema.Boolean,
     comment: Schema.Struct({ id: Schema.String }),
   }),
+});
+
+const LinearTask = Schema.Struct({
+  id: Schema.String,
+  identifier: Schema.String,
+  title: Schema.String,
+  url: Schema.String,
+  state: Schema.Struct({ name: Schema.String, type: Schema.String }),
+  assignee: Schema.NullOr(Schema.Struct({ name: Schema.String, displayName: Schema.String })),
+  project: Schema.NullOr(Schema.Struct({ name: Schema.String })),
+});
+type LinearTask = typeof LinearTask.Type;
+
+const IssuePayload = Schema.Struct({ success: Schema.Boolean, issue: Schema.NullOr(LinearTask) });
+export const IssueCreateData = Schema.Struct({ issueCreate: IssuePayload });
+export const IssueUpdateData = Schema.Struct({ issueUpdate: IssuePayload });
+export const ThreadLinkData = Schema.Struct({
+  attachmentCreate: Schema.Struct({ success: Schema.Boolean }),
+});
+
+export const TaskData = Schema.Struct({
+  issue: Schema.NullOr(
+    Schema.Struct({
+      ...LinearTask.fields,
+      team: Schema.Struct({ id: Schema.String }),
+      project: Schema.NullOr(Schema.Struct({ id: Schema.String, name: Schema.String })),
+      threadLinks: Nodes(
+        Schema.Struct({
+          url: Schema.String,
+          creator: Schema.NullOr(Schema.Struct({ id: Schema.String })),
+        }),
+      ),
+    }),
+  ),
+});
+
+const LinearMember = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  displayName: Schema.String,
+  email: Schema.String,
+});
+type LinearMember = typeof LinearMember.Type;
+
+export const TeamMembersData = Schema.Struct({
+  team: Schema.Struct({ members: Nodes(LinearMember) }),
 });
 
 const GraphqlErrors = Schema.Struct({
@@ -532,4 +615,76 @@ export function boardColumns(
       .sort((a, b) => a.sortOrder - b.sortOrder)
       .map(boardIssue),
   }));
+}
+
+/** The link an agent attaches to a task so the board, and teammates' agents, find its thread. */
+export const threadLinkUrl = (environmentId: EnvironmentId, threadId: ThreadId) =>
+  `${THREAD_LINK_PROTOCOL}://v2/${environmentId}/${threadId}`;
+
+/**
+ * Whether the viewer already linked the task to this thread here. Only the viewer's links route
+ * comments, so a link someone else attached does not count.
+ */
+export function hasThreadLink(
+  links: ReadonlyArray<{ readonly url: string; readonly creator: { readonly id: string } | null }>,
+  viewerId: string,
+  environmentId: EnvironmentId,
+  threadId: ThreadId,
+): boolean {
+  return links.some((link) => {
+    if (link.creator?.id !== viewerId) return false;
+    const parsed = parseThreadLinkHref(link.url);
+    return (
+      parsed?.environmentId === environmentId &&
+      threadLinkCandidates(parsed, environmentId).some((ref) => ref.threadId === threadId)
+    );
+  });
+}
+
+/** The team's workflow state an agent names, ignoring case and surrounding space. */
+export function workflowStateNamed(
+  states: ReadonlyArray<LinearState>,
+  name: string,
+): LinearState | null {
+  const wanted = name.trim().toLowerCase();
+  return states.find((state) => state.name.trim().toLowerCase() === wanted) ?? null;
+}
+
+/** The team member an agent names by name, display name or email, ignoring case. */
+export function teamMemberNamed(
+  members: ReadonlyArray<LinearMember>,
+  name: string,
+): LinearMember | "ambiguous" | null {
+  const wanted = name.trim().toLowerCase();
+  const byEmail = members.find((member) => member.email.toLowerCase() === wanted);
+  if (byEmail !== undefined) return byEmail;
+  const matches = members.filter(
+    (member) => member.name.toLowerCase() === wanted || member.displayName.toLowerCase() === wanted,
+  );
+  return matches.length > 1 ? "ambiguous" : (matches[0] ?? null);
+}
+
+export const boardTask = (task: LinearTask): BoardTask => ({
+  identifier: task.identifier,
+  title: task.title,
+  url: task.url,
+  status: { name: task.state.name, type: task.state.type },
+  assignee: task.assignee === null ? null : task.assignee.displayName || task.assignee.name,
+  project: task.project?.name ?? null,
+});
+
+/** The board's open tasks, column by column, as an agent lists them. */
+export function openBoardTasks(board: BoardData): ReadonlyArray<BoardTask> {
+  return board.columns
+    .filter((column) => !CLOSED_STATE_TYPES.has(column.state.type))
+    .flatMap((column) =>
+      column.issues.map((issue) => ({
+        identifier: issue.identifier,
+        title: issue.title,
+        url: issue.url,
+        status: { name: column.state.name, type: column.state.type },
+        assignee: issue.assignee?.name ?? null,
+        project: board.project?.name ?? null,
+      })),
+    );
 }

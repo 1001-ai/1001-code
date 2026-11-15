@@ -1,4 +1,7 @@
 import {
+  BOARD_ADD_TOOL_NAME,
+  BOARD_LIST_TOOL_NAME,
+  BOARD_UPDATE_TOOL_NAME,
   buildMemoryBlock,
   type MemoryDecideInput,
   type MemoryDocument,
@@ -19,7 +22,6 @@ import {
   type ThreadId,
   teamCatalogRepositoryMatches,
 } from "@t3tools/contracts";
-import { THREAD_LINK_PROTOCOL } from "@t3tools/shared/threadLinks";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -34,6 +36,7 @@ import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 
+import { threadLinkUrl } from "../board/linearBoard.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
@@ -87,7 +90,10 @@ const NOT_IN_CATALOG = "This project is not in the team catalog.";
 /** Per project; the oldest answered ones go first, so the view stays small on the wire. */
 const MAX_PROPOSALS_PER_PROJECT = 200;
 
-/** The board reads a thread from an issue's link attachments, so a comment alone is not enough. */
+/**
+ * The board reads a thread from its task's link attachments, so a comment alone is not enough.
+ * The board tools attach this thread's link themselves.
+ */
 export const boardInstructions = (linear: TeamCatalogLinear, link: string): string => {
   const board =
     linear.project === undefined
@@ -95,9 +101,10 @@ export const boardInstructions = (linear: TeamCatalogLinear, link: string): stri
       : `the Linear project "${linear.project}" in the ${linear.team} team`;
   return [
     "<board>",
-    `This project's board is ${board}. Use it for every issue you read, file or update, unless the user names another board.`,
-    "Once the requirements are clear and you are about to make your first change (a file edit, a branch or a worktree), the work needs an issue on this board. Look for one that covers it. If none does, file one before that first change. Assign it to the person you work for and move it to In Progress. Even a small fix gets an issue. Answering questions, reading code and planning need none.",
-    `This thread's link is ${link}. When you file an issue on this board or work on one, add this link to that issue once, as a link attachment (not only in a comment), so the board and teammates' agents can find this thread. Include it in the "agent:" comments you write there too.`,
+    `This project's board is ${board}; its tasks are Linear issues. Use it for every task you read, file or update, unless the user names another board.`,
+    `Use ${BOARD_LIST_TOOL_NAME} to see its open tasks, ${BOARD_ADD_TOOL_NAME} to file a task and ${BOARD_UPDATE_TOOL_NAME} to change one (status, assignee, title or description). They act as the person you work for. Use the Linear connector only for what they do not cover, such as comments.`,
+    `Once the requirements are clear and you are about to make your first change (a file edit, a branch or a worktree), the work needs a task on this board. Look for one that covers it. If none does, file one before that first change. Assign it to the person you work for (assignee "me") and set its status to In Progress. Even a small fix gets a task. Answering questions, reading code and planning need none.`,
+    `This thread's link is ${link}. ${BOARD_ADD_TOOL_NAME} and ${BOARD_UPDATE_TOOL_NAME} attach it to the task, so the board and teammates' agents can find this thread; when you take over an existing task, update it with ${BOARD_UPDATE_TOOL_NAME}. Include the link in the "agent:" comments you write there too.`,
     "</board>",
   ].join("\n");
 };
@@ -276,8 +283,7 @@ const make = Effect.gen(function* () {
       yield* refreshWhenStale(yield* teamCatalog.snapshot);
       const { view, project } = yield* readWithProject(projectId);
       if (project?.linear === undefined) return view.block ?? undefined;
-      const link = `${THREAD_LINK_PROTOCOL}://v2/${environmentId}/${threadId}`;
-      const board = boardInstructions(project.linear, link);
+      const board = boardInstructions(project.linear, threadLinkUrl(environmentId, threadId));
       return view.block === null ? board : `${view.block}\n\n${board}`;
     },
     // A cancelled run must stay cancelled; only a failed read degrades to no memory.
