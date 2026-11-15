@@ -5,6 +5,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   boardIssueOpenTarget,
   boardLinearIssueUrl,
+  boardOpenIssueView,
   boardTeamKey,
   findBoardIssue,
   findIssueRefs,
@@ -131,6 +132,63 @@ describe("board lookups", () => {
   it("builds a Linear URL from the board's workspace", () => {
     expect(boardLinearIssueUrl(columns, "COD-99")).toBe("https://linear.app/acme/issue/COD-99");
     expect(boardLinearIssueUrl([], "COD-99")).toBeNull();
+  });
+});
+
+describe("boardOpenIssueView", () => {
+  const fromChat = (issue: string, linearUrl: string | null) => ({
+    issue,
+    fromOutside: true,
+    linearUrl,
+  });
+
+  it.each([
+    {
+      name: "a board issue opened from the board",
+      board: columns,
+      open: { issue: "b", fromOutside: false, linearUrl: null },
+      shows: "COD-60",
+      note: null,
+    },
+    {
+      name: "a chat link to a board issue",
+      board: columns,
+      open: fromChat("COD-60", "https://linear.app/acme/issue/COD-60/x"),
+      shows: "COD-60",
+      note: null,
+    },
+    {
+      name: "another workspace's issue with a board issue's id",
+      board: columns,
+      open: fromChat("COD-60", "https://linear.app/other/issue/COD-60/x"),
+      shows: null,
+      note: { identifier: "COD-60", linearUrl: "https://linear.app/other/issue/COD-60/x" },
+    },
+    {
+      name: "a plain id the board does not show",
+      board: columns,
+      open: fromChat("COD-99", null),
+      shows: null,
+      note: { identifier: "COD-99", linearUrl: "https://linear.app/acme/issue/COD-99" },
+    },
+    {
+      name: "a chat link while the board is not ready",
+      board: null,
+      open: fromChat("COD-60", "https://linear.app/acme/issue/COD-60/x"),
+      shows: null,
+      note: { identifier: "COD-60", linearUrl: "https://linear.app/acme/issue/COD-60/x" },
+    },
+    {
+      name: "an issue opened from the board that left it",
+      board: columns,
+      open: { issue: "gone", fromOutside: false, linearUrl: null },
+      shows: null,
+      note: null,
+    },
+  ])("$name", ({ board, open, shows, note }) => {
+    const view = boardOpenIssueView(board, open);
+    expect(view.open?.issue.identifier ?? null).toBe(shows);
+    expect(view.note).toEqual(note);
   });
 });
 

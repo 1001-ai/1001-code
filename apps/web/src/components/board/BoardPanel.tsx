@@ -34,7 +34,7 @@ import {
   filterBoardColumns,
 } from "./board.logic";
 import { BoardIssueDetail } from "./BoardIssueDetail";
-import { boardLinearIssueUrl, findBoardIssue } from "./boardIssueRefs.logic";
+import { boardOpenIssueView } from "./boardIssueRefs.logic";
 import { type BoardOpenIssue, useBoardOpenIssueStore } from "./boardOpenIssueStore";
 import { Assignee, BoardThreadChip, PriorityGlyph, PullRequestBadge, StateDot } from "./boardParts";
 
@@ -62,10 +62,11 @@ export default function BoardPanel(props: {
   const openIssue = useBoardOpenIssueStore((state) => state.byThreadKey[threadKey] ?? null);
   const setOpenIssue = (issue: BoardOpenIssue | null) =>
     useBoardOpenIssueStore.getState().setOpenIssue(threadKey, issue);
-  const open =
-    openIssue !== null && snapshot?.status === "ready"
-      ? findBoardIssue(snapshot.board.columns, openIssue.issue)
-      : null;
+  const ready = snapshot?.status === "ready";
+  const { open, note } = boardOpenIssueView(
+    snapshot?.status === "ready" ? snapshot.board.columns : null,
+    openIssue,
+  );
   const panelRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const openLink = useOpenLink(props.threadRef);
@@ -113,6 +114,45 @@ export default function BoardPanel(props: {
     </Button>
   );
 
+  // An issue opened from outside that the board cannot show says so, and offers Linear.
+  const noteLinearUrl = note?.linearUrl ?? null;
+  const noteElement =
+    note === null ? null : (
+      <div className="px-3 pt-2">
+        <Alert variant="info">
+          <AlertDescription>
+            {ready
+              ? `${note.identifier} is not on this board.`
+              : `${note.identifier} cannot be shown while the board is unavailable.`}
+          </AlertDescription>
+          <AlertAction>
+            {noteLinearUrl !== null ? (
+              <Button
+                size="xs"
+                variant="outline"
+                onClick={(event) => onOpenUrl(noteLinearUrl, event)}
+              >
+                <ExternalLinkIcon />
+                Open in Linear
+              </Button>
+            ) : null}
+            <Button size="xs" variant="ghost" onClick={() => setOpenIssue(null)}>
+              Dismiss
+            </Button>
+          </AlertAction>
+        </Alert>
+      </div>
+    );
+  const withNote = (message: React.ReactNode) =>
+    noteElement === null ? (
+      message
+    ) : (
+      <div className="flex min-h-0 flex-1 flex-col">
+        {noteElement}
+        {message}
+      </div>
+    );
+
   if (props.projectId === null) {
     return <BoardMessage title="No project" description="Open a project to see its board." />;
   }
@@ -125,7 +165,7 @@ export default function BoardPanel(props: {
   }
   switch (snapshot.status) {
     case "not-connected":
-      return (
+      return withNote(
         <BoardMessage
           title="Sign in to Linear"
           description="The board shows the team project's Linear issues, read with your own Linear account. Sign in to Linear in Settings."
@@ -134,18 +174,18 @@ export default function BoardPanel(props: {
             <Settings2Icon />
             Sign in to Linear
           </Button>
-        </BoardMessage>
+        </BoardMessage>,
       );
     case "unconfigured":
-      return (
+      return withNote(
         <UnconfiguredBoard
           snapshot={snapshot}
           refreshButton={refreshButton}
           openSettings={openSettings}
-        />
+        />,
       );
     case "failed":
-      return (
+      return withNote(
         <BoardMessage
           title={failureTitle(snapshot.failure.reason)}
           description={snapshot.failure.detail}
@@ -157,15 +197,9 @@ export default function BoardPanel(props: {
               Sign in to Linear again
             </Button>
           ) : null}
-        </BoardMessage>
+        </BoardMessage>,
       );
     case "ready": {
-      // An issue opened from the board that left it just closes; one opened from a chat link says so.
-      const missing = openIssue?.fromOutside === true && open === null ? openIssue : null;
-      const missingLinearUrl =
-        missing === null
-          ? null
-          : (missing.linearUrl ?? boardLinearIssueUrl(snapshot.board.columns, missing.issue));
       return (
         <div ref={panelRef} className="flex min-h-0 flex-1 flex-col">
           {open !== null ? (
@@ -180,28 +214,7 @@ export default function BoardPanel(props: {
               onOpenUrl={onOpenUrl}
             />
           ) : null}
-          {missing !== null ? (
-            <div className="px-3 pt-2">
-              <Alert variant="info">
-                <AlertDescription>{missing.issue} is not on this board.</AlertDescription>
-                <AlertAction>
-                  {missingLinearUrl !== null ? (
-                    <Button
-                      size="xs"
-                      variant="outline"
-                      onClick={(event) => onOpenUrl(missingLinearUrl, event)}
-                    >
-                      <ExternalLinkIcon />
-                      Open in Linear
-                    </Button>
-                  ) : null}
-                  <Button size="xs" variant="ghost" onClick={() => setOpenIssue(null)}>
-                    Dismiss
-                  </Button>
-                </AlertAction>
-              </Alert>
-            </div>
-          ) : null}
+          {noteElement}
           <ReadyBoardView
             snapshot={snapshot}
             hidden={open !== null}

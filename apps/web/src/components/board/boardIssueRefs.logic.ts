@@ -10,6 +10,8 @@ import { teamCatalogRepositoryMatches } from "@t3tools/contracts";
 import { formatComposerContextHref } from "@t3tools/shared/composerContextReferences";
 import type { PhrasingContent, Root, RootContent } from "mdast";
 
+import type { BoardOpenIssue } from "./boardOpenIssueStore";
+
 /** The context kind an issue id in prose renders through `renderContextReference`. */
 export const BOARD_ISSUE_REF_KIND = "linear-issue";
 
@@ -102,6 +104,47 @@ export function boardLinearIssueUrl(
     }
   }
   return null;
+}
+
+function linearWorkspace(href: string): string | null {
+  try {
+    const url = new URL(href);
+    return url.hostname === "linear.app" ? (url.pathname.split("/")[1] ?? null) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * What the Board shows for its open issue: the issue in detail, or, for one opened from outside the
+ * board that it cannot show (not on it, another workspace's issue with the same id, or no board
+ * loaded), a note that offers Linear. `columns` is null while the board is not ready.
+ */
+export function boardOpenIssueView(
+  columns: ReadonlyArray<BoardColumn> | null,
+  openIssue: BoardOpenIssue | null,
+): {
+  readonly open: { readonly issue: BoardIssue; readonly state: BoardWorkflowState } | null;
+  readonly note: { readonly identifier: string; readonly linearUrl: string | null } | null;
+} {
+  if (openIssue === null) return { open: null, note: null };
+  let open = columns === null ? null : findBoardIssue(columns, openIssue.issue);
+  if (
+    open !== null &&
+    openIssue.linearUrl !== null &&
+    linearWorkspace(openIssue.linearUrl) !== linearWorkspace(open.issue.url)
+  )
+    open = null;
+  if (open !== null || !openIssue.fromOutside) return { open, note: null };
+  return {
+    open: null,
+    note: {
+      identifier: openIssue.issue,
+      linearUrl:
+        openIssue.linearUrl ??
+        (columns === null ? null : boardLinearIssueUrl(columns, openIssue.issue)),
+    },
+  };
 }
 
 /**
