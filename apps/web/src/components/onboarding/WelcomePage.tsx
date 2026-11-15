@@ -111,6 +111,7 @@ import { ScrollArea } from "../ui/scroll-area";
 import { SidebarInset } from "../ui/sidebar";
 import { toastManager } from "../ui/toast";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
+import { WelcomeBoardSection } from "./WelcomeBoardSection";
 import { cn } from "../../lib/utils";
 import { formatRelativeTime } from "../../timestampFormat";
 
@@ -288,6 +289,7 @@ export function WelcomePage({
                 projectImport={projectImport}
                 isImporting={isImporting}
               />
+              <WelcomeBoardSection environmentId={environmentId} />
               {showPhone ? <PhoneSection environmentId={environmentId} /> : null}
             </div>
             <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
@@ -343,7 +345,7 @@ function TelemetryNotice({ environmentId }: { readonly environmentId: Environmen
 }
 
 // Each part of the page is one band: its label on the left, its rows on the right.
-function WelcomeSection({
+export function WelcomeSection({
   title,
   children,
 }: {
@@ -359,7 +361,7 @@ function WelcomeSection({
 }
 
 // Rows share one icon column, so names, checkboxes, and steps line up down the page.
-function RowIcon({ children }: { readonly children: ReactNode }) {
+export function RowIcon({ children }: { readonly children: ReactNode }) {
   return (
     <span className="flex size-5 shrink-0 items-center justify-center text-muted-foreground">
       {children}
