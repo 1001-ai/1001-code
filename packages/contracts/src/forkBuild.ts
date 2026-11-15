@@ -69,3 +69,19 @@ export function forkBuildEnvDefaults(
     }),
   );
 }
+
+/**
+ * Variables a dev app hands the shells it starts. A desktop build that inherits them bakes dev
+ * origins into the web bundle or, with `T3CODE_DESKTOP_DEV`, starts the dev Electron.
+ */
+const FORK_BUILD_DEV_ENV_NAMES = [
+  "T3CODE_DESKTOP_DEV",
+  "VITE_DEV_SERVER_URL",
+  "VITE_HTTP_URL",
+  "VITE_WS_URL",
+] as const;
+
+/** The dev app variables set in a build environment; a desktop build refuses to run with any. */
+export function forkBuildDevEnvNames(env: Readonly<Record<string, string | undefined>>): string[] {
+  return FORK_BUILD_DEV_ENV_NAMES.filter((name) => nonEmpty(env[name]));
+}

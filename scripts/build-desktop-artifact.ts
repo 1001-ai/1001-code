@@ -15,7 +15,7 @@ import {
   type DirectoryRecord,
 } from "@electron/asar";
 
-import { FORK_DESKTOP, forkBuildEnvDefaults } from "@t3tools/contracts";
+import { FORK_DESKTOP, forkBuildDevEnvNames, forkBuildEnvDefaults } from "@t3tools/contracts";
 import { fromYaml } from "@t3tools/shared/schemaYaml";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { clerkFrontendApiHostnameFromPublishableKey } from "@t3tools/shared/relayAuth";
@@ -659,6 +659,15 @@ export class MissingDesktopBuildInputError extends Schema.TaggedError<MissingDes
 ) {
   override get message(): string {
     return `Missing ${desktopBuildInputArtifactNames[this.artifact]} at ${this.artifactPath}. Run '${this.buildCommand}' first.`;
+  }
+}
+
+class DesktopBuildDevEnvironmentError extends Schema.TaggedError<DesktopBuildDevEnvironmentError>()(
+  "DesktopBuildDevEnvironmentError",
+  { names: Schema.Array(Schema.String) },
+) {
+  override get message(): string {
+    return `Refusing to build with ${this.names.join(", ")} set. A dev app passes these to the shells it starts; they would bake dev origins into the app or start the dev Electron. Unset them, or build from a clean environment with env -i.`;
   }
 }
 
@@ -3608,6 +3617,10 @@ export const validateLinuxPackagedPayload = Effect.fn(
 const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(function* (
   options: ResolvedBuildOptions,
 ) {
+  const devEnvNames = forkBuildDevEnvNames(process.env);
+  if (devEnvNames.length > 0) {
+    return yield* new DesktopBuildDevEnvironmentError({ names: devEnvNames });
+  }
   const repoRoot = yield* RepoRoot;
   const path = yield* Path.Path;
   const fs = yield* FileSystem.FileSystem;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 
-import { FORK_UPDATES_MESSAGE, forkBuildEnvDefaults } from "./forkBuild.ts";
+import { FORK_UPDATES_MESSAGE, forkBuildDevEnvNames, forkBuildEnvDefaults } from "./forkBuild.ts";
 import { managedUpdatesDenial, type ManagedPolicySummary } from "./managedPolicy.ts";
 
 const managed = (mode: "auto" | "off"): ManagedPolicySummary => ({
@@ -46,5 +46,18 @@ describe("forkBuildEnvDefaults", () => {
     expect(
       forkBuildEnvDefaults({ T3CODE_LINEAR_CLIENT_ID: "", T3CODE_PORT: "1", HOME: "/x" }, {}),
     ).toEqual({});
+  });
+});
+
+describe("forkBuildDevEnvNames", () => {
+  it("names the dev app variables that are set, ignoring blank ones", () => {
+    expect(
+      forkBuildDevEnvNames({
+        T3CODE_DESKTOP_DEV: "1",
+        VITE_HTTP_URL: "http://127.0.0.1:1234",
+        VITE_WS_URL: " ",
+        T3CODE_TEAM_CATALOG: "catalog",
+      }),
+    ).toEqual(["T3CODE_DESKTOP_DEV", "VITE_HTTP_URL"]);
   });
 });

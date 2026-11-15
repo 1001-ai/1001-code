@@ -66,7 +66,7 @@ export class DesktopBackendPortUnavailableError extends Schema.TaggedError<Deskt
   },
 ) {
   override get message(): string {
-    return `No desktop backend port is available on hosts ${this.hosts.join(", ")} between ${this.startPort} and ${this.maxPort}.`;
+    return `Port ${this.startPort} is in use. ${FORK_DESKTOP.productName} always runs its server there so Linear sign-in keeps working. Quit whatever holds it, such as a dev server started with T3CODE_PORT_OFFSET=1001, or set T3CODE_PORT to use another port.`;
   }
 }
 

@@ -4,6 +4,7 @@ import * as NodeModule from "node:module";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
+import { FORK_DESKTOP } from "../../../packages/contracts/src/forkBuild.ts";
 import { ensureElectronRuntime } from "./ensure-electron-runtime.mjs";
 
 const isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL);
@@ -16,8 +17,8 @@ const devBundleIdSuffix = NodePath.basename(repoRoot)
 const APP_DISPLAY_NAME = isDevelopment ? "1001 Code (Dev)" : "1001 Code (Beta)";
 const APP_BUNDLE_ID = isDevelopment
   ? `com.t3tools.t3code.dev.${devBundleIdSuffix || "local"}`
-  : "com.t3tools.t3code";
-const APP_PROTOCOL_SCHEMES = isDevelopment ? ["t3code-dev"] : ["t3code"];
+  : FORK_DESKTOP.appId;
+const APP_PROTOCOL_SCHEMES = isDevelopment ? ["t3code-dev"] : [FORK_DESKTOP.scheme];
 const LAUNCHER_VERSION = 20;
 const developmentMacIconPngPath = NodePath.join(
   repoRoot,
