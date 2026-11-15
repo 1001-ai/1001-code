@@ -41,6 +41,7 @@
         "prepare-server-compile-cache.cjs",
         "smoke-desktop-app.ts",
         "sync-upstream.ts",
+        "sign-macos-local.ts",
         "verify-windows-desktop-artifact.ts",
       ],
       "ignoreDependencies": ["esbuild"],

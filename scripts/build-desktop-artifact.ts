@@ -42,6 +42,7 @@ import {
   selectCliRuntimeExternalDependencies,
 } from "./lib/cli-external-packages.ts";
 import { loadRepoEnv } from "./lib/public-config.ts";
+import { applyLocalMacSigning } from "./lib/local-macos-signing.ts";
 import { selectDesktopRuntimeExternalDependencies } from "./lib/desktop-external-packages.ts";
 import { resolveCatalogDependencies } from "./lib/resolve-catalog.ts";
 
@@ -973,6 +974,7 @@ interface ResolvedBuildOptions {
 
 interface StagePackageJson {
   readonly name: string;
+  readonly productName: string;
   readonly version: string;
   readonly buildVersion: string;
   readonly t3codeCommitHash: string;
@@ -3914,6 +3916,8 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
       : undefined;
   const stagePackageJson: StagePackageJson = {
     name: "t3code",
+    // Electron names the macOS "<name> Safe Storage" Keychain item from this, not from app.setName.
+    productName: resolveDesktopProductName(appVersion),
     version: appVersion,
     buildVersion: appVersion,
     t3codeCommitHash: commitHash,
@@ -3950,6 +3954,7 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
     },
   };
 
+  yield* applyLocalMacSigning(stagePackageJson.build, options);
   const stagePackageJsonString = yield* encodeJsonString(stagePackageJson);
   yield* fs.writeFileString(path.join(stageAppDir, "package.json"), `${stagePackageJsonString}\n`);
   const stageWorkspaceConfig = createStageWorkspaceConfig({
