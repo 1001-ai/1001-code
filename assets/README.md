@@ -10,7 +10,9 @@ Each project uses `text.svg` for the 1001 mark and `background.svg` when the bac
 
 `1001/` holds the logo as supplied (`logo-black.png`), its white counterpart, and `mark.svg`, a vector trace of it. The `text.svg` layers, `prod/logo.svg`, and the web mark in `apps/web/src/components/T3Wordmark.tsx` all carry that trace. Replace the trace if an original vector turns up.
 
-The tracked PNG and ICO files were last rendered without Icon Composer: flat layers, with the silhouettes and the macOS shadow taken from upstream's exports. They will not match an Icon Composer export, so `vp run icons:check` reports them until `vp run icons:export` and the macOS exports below replace them with native renders.
+The prod icon is a terminal prompt that types the 1001 mark: `chevron.svg`, `text.svg` and `cursor.svg` are separate glass layers on a dark gradient fill. Its layers are drawn in a 1024-unit design space (the icon body at 100..924) and wrapped onto the 128-unit layer canvas. `prod/logo.svg` is the same design as a flat SVG.
+
+The prod PNG and ICO files are native Icon Composer exports, except `prod/black-macos-1024.png`: it is the macOS export scaled to 824×824 and placed on the classic safe area with a soft shadow, not a `macOS pre-Tahoe` export. Replace it with a native export when convenient. The dev and nightly PNG and ICO files were last rendered without Icon Composer: flat layers, with the silhouettes and the macOS shadow taken from upstream's exports. They will not match an Icon Composer export, so `vp run icons:check` reports them until `vp run icons:export` and the macOS exports below replace them with native renders.
 
 Run `vp run icons:export` from the repository root to regenerate the tracked iOS, Linux, Windows, and web assets. The development web exports are also copied to `apps/web/public` for the browser favicon, web app manifest icons, and splash screen. Run `vp run icons:check` to verify that the generated assets and public copies match their sources without changing files.
 
