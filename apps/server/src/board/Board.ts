@@ -585,39 +585,39 @@ const make = Effect.gen(function* () {
     ) {
       return yield* notOnBoard;
     }
-    let threadId: ThreadId | null = null;
-    for (const candidate of linkedThreadIds(
-      issue.threadLinks.nodes,
-      credential.viewer.id,
-      environmentId,
-    )) {
-      // A failed lookup only hides the link; the issue still reads.
-      const thread = yield* threads
-        .getThreadShell(candidate)
-        .pipe(Effect.orElseSucceed(() => null));
-      if (thread !== null) {
-        threadId = candidate;
-        break;
-      }
+    const threadIds = linkedThreadIds(issue.threadLinks.nodes, credential.viewer.id, environmentId);
+    return { generation, issue, threadIds };
+  });
+
+  /** The first of a link's id candidates that names a thread here, or null. */
+  const findLinkedThread = Effect.fn("Board.findLinkedThread")(function* (
+    threadIds: ReadonlyArray<ThreadId>,
+  ) {
+    for (const threadId of threadIds) {
+      const thread = yield* threads.getThreadShell(threadId);
+      if (thread !== null) return { threadId, thread };
     }
-    return { generation, issue, threadId };
+    return null;
   });
 
   const issueDetail: Board["Service"]["issueDetail"] = Effect.fn("Board.issueDetail")(
     function* (input) {
-      const { issue, threadId } = yield* readIssue(input);
-      return boardIssueDetail(issue, threadId);
+      const { issue, threadIds } = yield* readIssue(input);
+      // A failed lookup only hides the link; the issue still reads.
+      const linked = yield* findLinkedThread(threadIds).pipe(Effect.orElseSucceed(() => null));
+      return boardIssueDetail(issue, linked?.threadId ?? null);
     },
   );
 
   /** Queues the user's comment in the linked thread; Linear has it already, so failing here only logs. */
   const queueComment = Effect.fn("Board.queueComment")(function* (
-    threadId: ThreadId,
+    threadIds: ReadonlyArray<ThreadId>,
     commentId: string,
     text: string,
   ) {
-    const thread = yield* threads.getThreadShell(threadId);
-    if (thread === null) return null;
+    const linked = yield* findLinkedThread(threadIds);
+    if (linked === null) return null;
+    const { threadId, thread } = linked;
     const key = `board-comment:${threadId}:${commentId}`;
     yield* threads.sendToThread({
       projectId: thread.projectId,
@@ -634,7 +634,7 @@ const make = Effect.gen(function* () {
   });
 
   const comment: Board["Service"]["comment"] = Effect.fn("Board.comment")(function* (input) {
-    const { generation, issue, threadId } = yield* readIssue(input);
+    const { generation, issue, threadIds } = yield* readIssue(input);
     const { commentCreate } = yield* linear(
       generation,
       COMMENT_CREATE_MUTATION,
@@ -653,7 +653,7 @@ const make = Effect.gen(function* () {
         detail: "Linear did not accept the comment.",
       });
     }
-    if (threadId === null) return { threadId: null };
+    if (threadIds.length === 0) return { threadId: null };
     const parent =
       input.parentId === undefined
         ? undefined
@@ -668,11 +668,12 @@ const make = Effect.gen(function* () {
             ? "someone"
             : commentAuthor(parent),
     });
-    const queued = yield* queueComment(threadId, commentCreate.comment.id, text).pipe(
+    // Linear has the comment, so a failed lookup or send only logs; the panel says it did not reach the thread.
+    const queued = yield* queueComment(threadIds, commentCreate.comment.id, text).pipe(
       Effect.catch((error) =>
         Effect.logWarning("Board could not send a comment to its thread.", {
           comment: commentCreate.comment.id,
-          threadId,
+          threadIds,
           error,
         }).pipe(Effect.as(null)),
       ),

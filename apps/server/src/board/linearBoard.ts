@@ -460,16 +460,29 @@ function boardCommentThreads(
   comments: ReadonlyArray<LinearIssueComment>,
 ): ReadonlyArray<BoardCommentThread> {
   const sorted = comments.toSorted((a, b) => a.createdAt.localeCompare(b.createdAt));
-  const ids = new Set(sorted.map((comment) => comment.id));
+  const parents = new Map(sorted.map((comment) => [comment.id, comment.parent?.id ?? null]));
+  // Linear's own UI nests one level, but its API lets a reply answer a reply: file it under the root.
+  const rootOf = (id: string): string => {
+    const seen = new Set<string>();
+    let current = id;
+    for (let parent = parents.get(current); parent != null && parents.has(parent);) {
+      if (seen.has(parent)) break;
+      seen.add(parent);
+      current = parent;
+      parent = parents.get(current);
+    }
+    return current;
+  };
   const replies = new Map<string, Array<BoardComment>>();
   for (const comment of sorted) {
-    if (comment.parent === null || !ids.has(comment.parent.id)) continue;
-    const list = replies.get(comment.parent.id) ?? [];
+    const root = rootOf(comment.id);
+    if (root === comment.id) continue;
+    const list = replies.get(root) ?? [];
     list.push(boardComment(comment));
-    replies.set(comment.parent.id, list);
+    replies.set(root, list);
   }
   return sorted
-    .filter((comment) => comment.parent === null || !ids.has(comment.parent.id))
+    .filter((comment) => rootOf(comment.id) === comment.id)
     .map((comment) => ({ ...boardComment(comment), replies: replies.get(comment.id) ?? [] }));
 }
 

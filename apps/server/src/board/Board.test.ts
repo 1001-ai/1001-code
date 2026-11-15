@@ -440,6 +440,14 @@ const detailAnswer = (id: string, teamId: string, linked = true): Answer => ({
             linearComment("c-3", "2026-11-14T11:00:00.000Z", "Linked a pull request.", {
               bot: "GitHub",
             }),
+            // A reply to a reply, which Linear's API allows; it belongs under the root.
+            linearComment(
+              "c-4",
+              "2026-11-14T10:30:00.000Z",
+              "Thanks.",
+              { user: "Lawrence" },
+              "c-2",
+            ),
             linearComment(
               "c-2",
               "2026-11-14T10:00:00.000Z",
@@ -986,6 +994,13 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Board", (it) => 
                     author: "dana",
                     createdAt: "2026-11-14T10:00:00.000Z",
                     agent: true,
+                  },
+                  {
+                    id: "c-4",
+                    body: "Thanks.",
+                    author: "Lawrence",
+                    createdAt: "2026-11-14T10:30:00.000Z",
+                    agent: false,
                   },
                 ],
               },
