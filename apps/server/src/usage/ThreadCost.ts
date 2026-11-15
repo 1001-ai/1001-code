@@ -6,6 +6,7 @@ import {
   type ThreadCostEstimateInput,
   type ThreadId,
 } from "@t3tools/contracts";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -49,10 +50,14 @@ export interface ThreadCostRecords extends ThreadCostSource {
 /** Each Cursor provider thread's dashboard records, so its billed cost replaces the estimate. */
 export function withCursorBilling(
   family: ReadonlyArray<ThreadCostRecords>,
-  records: ReadonlyArray<BilledRecord & { readonly sessionId: string }>,
+  history: {
+    readonly records: ReadonlyArray<BilledRecord & { readonly sessionId: string }>;
+    readonly available: boolean;
+  } | null,
 ): ReadonlyArray<ThreadCostRecords> {
+  if (history === null || !history.available) return family;
   const bySession = new Map<string, BilledRecord[]>();
-  for (const record of records) {
+  for (const record of history.records) {
     const list = bySession.get(record.sessionId);
     if (list === undefined) bySession.set(record.sessionId, [record]);
     else list.push(record);
@@ -60,8 +65,7 @@ export function withCursorBilling(
   return family.map((thread) => {
     const billed = new Map<ProviderThreadId, ReadonlyArray<BilledRecord>>();
     for (const [providerThreadId, agentId] of thread.cursorAgents ?? []) {
-      const list = bySession.get(agentId);
-      if (list !== undefined) billed.set(providerThreadId, list);
+      billed.set(providerThreadId, bySession.get(agentId) ?? []);
     }
     return billed.size === 0 ? thread : { ...thread, billed };
   });
@@ -126,23 +130,26 @@ const make = Effect.gen(function* () {
     function* (input: ThreadCostEstimateInput) {
       const { family, truncated } = yield* collectThreadFamily(input.threadId, read);
       const hasCursor = family.some((thread) => (thread.cursorAgents?.size ?? 0) > 0);
-      const [rates, settings, cursorRecords] = yield* Effect.all(
+      const [rates, settings, cursorHistory] = yield* Effect.all(
         [
           usage.readRates,
           settingsService.getSettings.pipe(Effect.option),
-          hasCursor ? usage.readAccountRecords("cursor") : Effect.succeed([]),
+          hasCursor ? usage.readAccountRecords("cursor") : Effect.succeed(null),
         ],
         { concurrency: 3 },
       );
       const configured = settings._tag === "Some" ? settings.value : null;
       return estimateThreadCost(
-        withCursorBilling(family, cursorRecords),
+        withCursorBilling(family, cursorHistory),
         {
           rates,
           overrides: createOverrideRateTable(configured?.usagePriceOverrides ?? {}),
           aliases: resolveModelAliases(configured?.usageModelAliases ?? {}),
         },
         truncated,
+        cursorHistory === null
+          ? null
+          : { nowMs: yield* Clock.currentTimeMillis, refreshing: cursorHistory.refreshing },
       );
     },
     (effect, input) =>

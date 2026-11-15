@@ -319,37 +319,61 @@ describe("estimateThreadCost", () => {
       reportedCostUsd,
       speed: "standard" as const,
     });
-    const cursorTurn = (minutes: number, turnTokenUsage?: TurnTokenUsage) =>
+    const cursorTurn = (startedAtMs: number, turnTokenUsage?: TurnTokenUsage) =>
       turn(turnTokenUsage, undefined, {
         driver: "cursor",
-        startedAt: DateTime.makeUnsafe(at(minutes)),
+        startedAt: DateTime.makeUnsafe(startedAtMs),
       });
-    const [cursorThread] = withCursorBilling(
-      [
-        {
-          providerTurns: [
-            // Before this fork reported Cursor usage: only the dashboard knows these.
-            cursorTurn(0),
-            // A long turn the dashboard logs in two records.
-            cursorTurn(10),
-            cursorTurn(60, usage()),
-          ],
-          subagents: [],
-          fallbackModel: "main-model",
-          cursorAgents: new Map([[PROVIDER_THREAD, "agent-1"]]),
-        },
-      ],
-      [
+    const family = [
+      {
+        providerTurns: [
+          // Older than the dashboard history and from before Cursor usage was reported.
+          cursorTurn(at(-60)),
+          // Before Cursor usage was reported: only the dashboard knows these.
+          cursorTurn(at(0)),
+          // A long turn the dashboard logs in two records.
+          cursorTurn(at(10)),
+          cursorTurn(at(60), usage()),
+          // A follow-up seconds after the last record, whose own record has not landed.
+          cursorTurn(at(60) + 4_000, usage()),
+        ],
+        subagents: [],
+        fallbackModel: "main-model",
+        cursorAgents: new Map([[PROVIDER_THREAD, "agent-1"]]),
+      },
+    ];
+    const history = {
+      available: true,
+      records: [
         billed(0, "agent-1", 2),
         billed(10, "agent-1", 3),
         billed(30, "agent-1", null),
+        billed(60, "agent-1", 4),
         billed(0, "agent-2", 100),
       ],
-    );
-    const estimate = estimateThreadCost([cursorThread!], pricing());
-    // 2 + 3 billed, 5 for the unreported record at small-model's rates, 12 estimated for the newest turn.
-    expect(estimate.costUsd).toBeCloseTo(22, 6);
-    expect(estimate).toMatchObject({ pricedTurns: 3, unpricedTurns: 0, unreportedTurns: 0 });
+    };
+    const estimate = (nowMs: number, refreshing = false) =>
+      estimateThreadCost(withCursorBilling(family, history), pricing(), false, {
+        nowMs,
+        refreshing,
+      });
+
+    // Billed 2 + 3 + 4, 5 for the record without a cost at small-model's rates, 12 estimated.
+    expect(estimate(at(61)).costUsd).toBeCloseTo(26, 6);
+    expect(estimate(at(61))).toMatchObject({
+      pricedTurns: 4,
+      unpricedTurns: 0,
+      unreportedTurns: 1,
+      billingPending: true,
+    });
+    // An hour on, the follow-up keeps its estimate and nothing waits on billing.
+    expect(estimate(at(130)).billingPending).toBeUndefined();
+    expect(estimate(at(130), true).billingPending).toBe(true);
+    // Without a readable history every turn is estimated from its tokens.
+    expect(
+      estimateThreadCost(withCursorBilling(family, { ...history, available: false }), pricing())
+        .costUsd,
+    ).toBeCloseTo(24, 6);
   });
 
   it("never reports $0 for work it could not price", () => {

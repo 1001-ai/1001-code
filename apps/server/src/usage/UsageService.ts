@@ -140,15 +140,20 @@ const decodeCachedSources = Schema.decodeUnknownOption(
   Schema.Struct({ sources: Schema.Record(Schema.String, CachedSource) }),
 );
 
+export interface AccountRecords {
+  readonly records: ReadonlyArray<UsageRecord>;
+  /** A login's history could be read, even if it holds no records yet. */
+  readonly available: boolean;
+  readonly refreshing: boolean;
+}
+
 export class UsageService extends Context.Service<
   UsageService,
   {
     readonly readSummary: (input: UsageSummaryInput) => Effect.Effect<UsageSummary, UsageReadError>;
     readonly refreshRates: Effect.Effect<UsagePricing>;
     readonly readRates: Effect.Effect<RateTable>;
-    readonly readAccountRecords: (
-      provider: UsageProviderKind,
-    ) => Effect.Effect<ReadonlyArray<UsageRecord>>;
+    readonly readAccountRecords: (provider: UsageProviderKind) => Effect.Effect<AccountRecords>;
   }
 >()("t3/usage/UsageService") {}
 
@@ -1026,11 +1031,18 @@ export const make = Effect.gen(function* () {
             Effect.provideContext(readerContext),
           ),
       );
-      return sources
-        .flat()
-        .flatMap((source) => source.files?.flatMap((file) => file.records) ?? []);
+      const flat = sources.flat();
+      return {
+        records: flat.flatMap((source) => source.files?.flatMap((file) => file.records) ?? []),
+        available: flat.some((source) => source.files !== null),
+        refreshing: flat.some((source) => source.refreshing === true),
+      } satisfies AccountRecords;
     },
-    Effect.orElseSucceed((): ReadonlyArray<UsageRecord> => []),
+    Effect.orElseSucceed((): AccountRecords => ({
+      records: [],
+      available: false,
+      refreshing: false,
+    })),
   );
 
   return { readSummary, refreshRates, awaitPersisted, readRates, readAccountRecords } as const;

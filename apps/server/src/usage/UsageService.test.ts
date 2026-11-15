@@ -3424,15 +3424,20 @@ describe("UsageService", () => {
       cursor.state.gate = yield* Deferred.make<void>();
       yield* Effect.gen(function* () {
         const service = yield* makeWithCursor(cursor.read);
-        assert.deepStrictEqual(yield* service.readAccountRecords("cursor"), []);
+        assert.deepStrictEqual(yield* service.readAccountRecords("cursor"), {
+          records: [],
+          available: true,
+          refreshing: true,
+        });
         yield* Deferred.succeed(cursor.state.gate!, undefined);
         // Joins the refresh the first read started.
         yield* service.readSummary({ ...WINDOW, awaitRefresh: true });
-        const records = yield* service.readAccountRecords("cursor");
+        const history = yield* service.readAccountRecords("cursor");
         assert.deepStrictEqual(
-          records.map(({ sessionId, totals }) => [sessionId, totals.outputTokens]),
+          history.records.map(({ sessionId, totals }) => [sessionId, totals.outputTokens]),
           [["conversation-1", 7]],
         );
+        assert.isFalse(history.refreshing);
         assert.strictEqual(cursor.state.calls.length, 1);
       }).pipe(
         Effect.provide(

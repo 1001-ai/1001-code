@@ -41,15 +41,47 @@ export interface ThreadCostSource {
   >;
   /** The thread's selected model, for turns that did not report one. */
   readonly fallbackModel: string | null;
-  /** The provider's own billing history for a provider thread, such as Cursor's usage dashboard. */
+  /**
+   * The provider's own billing history for a provider thread, such as Cursor's usage dashboard.
+   * Present whenever that history could be read, even before it holds the thread's records.
+   */
   readonly billed?: ReadonlyMap<ProviderThreadId, ReadonlyArray<BilledRecord>>;
 }
 
+export interface ThreadCostBilling {
+  readonly nowMs: number;
+  /** The billing history is being fetched, so what the estimate saw may be stale. */
+  readonly refreshing: boolean;
+}
+
 /**
- * Cursor logs a turn's usage under the turn's start time, a second or so after T3 marks it, and
- * long turns in more than one record. A turn that started by the newest record is in the history.
+ * Cursor stamps a turn's records with the turn's start, about a second after T3 marks it, and
+ * splits long turns into several. This allows for clocks that disagree by a little more.
  */
-const BILLED_START_SLACK_MS = 5_000;
+const BILLED_START_SLACK_MS = 2_000;
+
+// Cursor finalizes records within the hour; an older turn without one is left to its estimate.
+const BILLING_SETTLE_MS = 60 * 60_000;
+
+/** Each record goes to the newest of the provider thread's turns that had started by its stamp. */
+function billedTurns(
+  turns: ReadonlyArray<ThreadCostTurn>,
+  records: ReadonlyArray<BilledRecord>,
+): ReadonlySet<ThreadCostTurn> {
+  const starts = turns
+    .flatMap((turn) =>
+      turn.startedAt === null
+        ? []
+        : [{ turn, fromMs: DateTime.toEpochMillis(turn.startedAt) - BILLED_START_SLACK_MS }],
+    )
+    .toSorted((a, b) => a.fromMs - b.fromMs);
+  const covered = new Set<ThreadCostTurn>();
+  for (const { timestampMs } of records) {
+    const owner = starts.findLast((start) => start.fromMs <= timestampMs);
+    if (owner !== undefined) covered.add(owner.turn);
+  }
+  return covered;
+}
 
 // The Usage page's order: an alias replaces the model and its rate model, then priceUsage.
 function billedCost(pricing: ThreadCostPricing, record: BilledRecord) {
@@ -220,35 +252,43 @@ export function estimateThreadCost(
   threads: ReadonlyArray<ThreadCostSource>,
   pricing: ThreadCostPricing,
   truncated = false,
+  billing: ThreadCostBilling | null = null,
 ): ThreadCostEstimate {
   let costUsd = 0;
   let pricedTurns = 0;
+  let pricedRecords = 0;
   let unpricedTurns = 0;
   let unreportedTurns = 0;
+  let billingPending = billing?.refreshing === true;
   for (const thread of threads) {
     const recorded = new Map<string, LedgerUsage>();
     const cacheTtlMs = new Map<string, number>();
-    const billedThrough = new Map<string, number>();
+    const covered = new Set<ThreadCostTurn>();
     for (const [providerThreadId, records] of thread.billed ?? []) {
-      if (records.length === 0) continue;
-      let latestMs = Number.NEGATIVE_INFINITY;
       for (const record of records) {
         const priced = billedCost(pricing, record);
         if (priced.costSource === "unpriced") unpricedTurns += 1;
+        else pricedRecords += 1;
         costUsd += priced.costUsd;
-        latestMs = Math.max(latestMs, record.timestampMs);
       }
-      billedThrough.set(providerThreadId, latestMs);
+      const turns = thread.providerTurns.filter(
+        (turn) => turn.providerThreadId === providerThreadId,
+      );
+      for (const turn of billedTurns(turns, records)) covered.add(turn);
     }
     for (const turn of thread.providerTurns) {
-      const billedMs = billedThrough.get(turn.providerThreadId);
-      if (
-        billedMs !== undefined &&
-        turn.startedAt !== null &&
-        DateTime.toEpochMillis(turn.startedAt) <= billedMs + BILLED_START_SLACK_MS
-      ) {
+      if (covered.has(turn)) {
         pricedTurns += 1;
         continue;
+      }
+      if (
+        billing !== null &&
+        thread.billed?.has(turn.providerThreadId) === true &&
+        REPORTING_TURN_STATUSES.has(turn.status) &&
+        turn.startedAt !== null &&
+        DateTime.toEpochMillis(turn.startedAt) >= billing.nowMs - BILLING_SETTLE_MS
+      ) {
+        billingPending = true;
       }
       const usage = turn.turnTokenUsage;
       if (!hasCounts(usage)) {
@@ -297,11 +337,12 @@ export function estimateThreadCost(
     }
   }
   return {
-    costUsd: pricedTurns > 0 ? costUsd : null,
+    costUsd: pricedTurns > 0 || pricedRecords > 0 ? costUsd : null,
     pricedTurns,
     unpricedTurns,
     unreportedTurns,
     subagentThreads: Math.max(0, threads.length - 1),
     truncated,
+    ...(billingPending ? { billingPending } : {}),
   };
 }
