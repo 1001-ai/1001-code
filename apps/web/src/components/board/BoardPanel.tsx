@@ -371,6 +371,15 @@ function ReadyBoardView(props: {
           <Toggle value="all">All</Toggle>
           <Toggle value="mine">Mine</Toggle>
         </ToggleGroup>
+        <span className="min-w-0 flex-1 truncate whitespace-nowrap text-end text-xs text-muted-foreground">
+          {props.refreshing ? (
+            "Fetching…"
+          ) : (
+            <>
+              Updated <RelativeTime timestamp={board.fetchedAt} />
+            </>
+          )}
+        </span>
         <Tooltip>
           <TooltipTrigger
             render={
