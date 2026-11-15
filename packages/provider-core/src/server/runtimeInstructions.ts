@@ -1,7 +1,9 @@
 import { QUESTION_CARD_INSTRUCTIONS } from "./questionCardInstructions.ts";
 import { appendLiveAppCheckout } from "./liveCheckoutInstructions.ts";
+import { REPLY_MARKER_INSTRUCTIONS } from "./replyMarkerInstructions.ts";
 
 export { QUESTION_CARD_INSTRUCTIONS };
+export { REPLY_MARKER_INSTRUCTIONS, replyMarkerCodexContext } from "./replyMarkerInstructions.ts";
 export { liveAppCheckoutCodexContext, setLiveAppCheckout } from "./liveCheckoutInstructions.ts";
 
 /** Session-invariant; harnesses with a native system-prompt append can carry it once per session. */
@@ -19,6 +21,8 @@ export function buildRuntimeInstructions(runtime: {
   readonly pullRequestLinking?: boolean;
   /** False when the caller sends the live checkout text in its own entry. */
   readonly liveAppCheckout?: boolean;
+  /** False when the caller sends the reply marker text in its own entry. */
+  readonly replyMarkers?: boolean;
 }): string {
   const harness = toSingleLine(runtime.harness);
   const model = toSingleLine(runtime.model ?? "");
@@ -32,7 +36,7 @@ export function buildRuntimeInstructions(runtime: {
   return appendLiveAppCheckout(
     runtime.pullRequestLinking === false
       ? runtimeInfo
-      : `${runtimeInfo}\n\n${PULL_REQUEST_LINKING_INSTRUCTIONS}\n\n${QUESTION_CARD_INSTRUCTIONS}`,
+      : `${runtimeInfo}\n\n${PULL_REQUEST_LINKING_INSTRUCTIONS}\n\n${QUESTION_CARD_INSTRUCTIONS}${runtime.replyMarkers === false ? "" : `\n\n${REPLY_MARKER_INSTRUCTIONS}`}`,
     runtime.liveAppCheckout,
   );
 }

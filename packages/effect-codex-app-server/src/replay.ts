@@ -12,7 +12,7 @@ import * as Stream from "effect/Stream";
 
 import * as CodexClient from "./client.ts";
 import * as CodexError from "./errors.ts";
-import { stripForkQuestionCardContext } from "./replayForkContext.ts";
+import { stripForkInstructionContext } from "./replayForkContext.ts";
 
 export const CodexAppServerReplayEntry = Schema.Union([
   Schema.Struct({
@@ -226,7 +226,7 @@ function normalizeReplayFrame(value: unknown): unknown {
       }
       params.collaborationMode = collaborationMode;
     }
-    stripForkQuestionCardContext(params);
+    stripForkInstructionContext(params);
     normalized.params = params;
   }
 

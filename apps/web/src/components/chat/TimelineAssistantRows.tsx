@@ -31,7 +31,7 @@ import { useV2ItemSupport } from "../../state/v2ItemSupport";
 import { TimelineRowCtx, TimelineRowActivityCtx, type TimelineRow } from "./timelineRowContext";
 import { MESSAGE_HEADING_LEVEL, MessageAuthorHeading } from "./TimelineRowParts";
 import { ExchangeReLines, ExchangeReplyMarker, useExchangeBubble } from "./ExchangeThread";
-import { splitReLines, textAfterReLines } from "./exchangeThread.logic";
+import { splitReLines, textAfterReLines } from "@t3tools/shared/replyMarkers";
 
 export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
@@ -43,7 +43,7 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
   const text = liveText ?? row.message.text;
   const messageText =
     text || (row.message.streaming || row.suppressEmptyResponse ? "" : "(empty response)");
-  const reLines = splitReLines(messageText);
+  const reLines = splitReLines(messageText, Boolean(row.message.streaming));
   const bodyText = reLines?.body ?? messageText;
   const exchangeBubble = useExchangeBubble(row.id);
 

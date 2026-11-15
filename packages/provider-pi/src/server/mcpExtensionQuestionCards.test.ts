@@ -2,7 +2,10 @@
 import * as NodeModule from "node:module";
 import * as NodeVM from "node:vm";
 import { assert, describe, it } from "@effect/vitest";
-import { QUESTION_CARD_INSTRUCTIONS } from "@t3tools/provider-core/server/runtimeInstructions";
+import {
+  QUESTION_CARD_INSTRUCTIONS,
+  REPLY_MARKER_INSTRUCTIONS,
+} from "@t3tools/provider-core/server/runtimeInstructions";
 
 import { PI_T3_MCP_EXTENSION_SOURCE } from "./mcpExtensionSource.ts";
 
@@ -35,16 +38,20 @@ async function agentStartHooksWithoutMcp() {
   return hooks;
 }
 
-describe("Pi question card instructions", () => {
+describe("Pi question card and reply marker instructions", () => {
   it("reach the system prompt without the T3 MCP server", async () => {
     const [hook] = await agentStartHooksWithoutMcp();
     assert.isDefined(hook);
 
     const appended = hook!({ systemPrompt: "base" }, {});
-    assert.strictEqual(appended?.systemPrompt, `base\n\n${QUESTION_CARD_INSTRUCTIONS}`);
+    assert.strictEqual(
+      appended?.systemPrompt,
+      `base\n\n${QUESTION_CARD_INSTRUCTIONS}\n\n${REPLY_MARKER_INSTRUCTIONS}`,
+    );
 
     const sections: Record<string, string> = {};
     assert.isUndefined(hook!({ systemPrompt: "base", systemPromptOptions: { sections } }, {}));
     assert.strictEqual(sections.t3_code_question_cards, QUESTION_CARD_INSTRUCTIONS);
+    assert.strictEqual(sections.t3_code_reply_markers, REPLY_MARKER_INSTRUCTIONS);
   });
 });

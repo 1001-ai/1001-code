@@ -1,6 +1,7 @@
 import type { ResponseContextRecord, ScopedThreadRef } from "@t3tools/contracts";
 import { resolveUserMessagePresentation } from "@t3tools/client-runtime/user-message";
 import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
+import { textAfterReLines, type ReLine } from "@t3tools/shared/replyMarkers";
 import {
   createContext,
   use,
@@ -26,7 +27,6 @@ import {
   replyMarkersEnabled,
   sameExchangeStructure,
   shouldAttachThreadReply,
-  textAfterReLines,
   threadExchangeKeys,
   threadLatestReplyRowId,
   threadRowIds,
@@ -461,11 +461,11 @@ export function useExchangeBubble(rowId: string): {
 }
 
 /** An agent's opening "Re:" lines, drawn small and muted; they open the thread they answer. */
-export function ExchangeReLines({ rowId, lines }: { rowId: string; lines: ReadonlyArray<string> }) {
+export function ExchangeReLines({ rowId, lines }: { rowId: string; lines: ReadonlyArray<ReLine> }) {
   const { ctx, exchange } = useExchange(rowId);
   const className =
     "mb-1.5 block max-w-full text-start text-xs whitespace-pre-line text-muted-foreground [overflow-wrap:anywhere]";
-  const content = lines.join("\n");
+  const content = lines.map((line) => line.text).join("\n");
   if (!ctx || !exchange || exchange.userRowIds.length === 0) {
     return <p className={className}>{content}</p>;
   }
