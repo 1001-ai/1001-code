@@ -46,6 +46,12 @@ export const FORK_DESKTOP = {
   backendPort: 14774,
   /** OS URL scheme and renderer origin (`<scheme>://app`). */
   scheme: "code1001",
+  /**
+   * Self-signed code signing certificate in the login keychain that unsigned macOS builds sign
+   * with when present, so rebuilds keep one code identity. `scripts/create-local-signing-identity.ts`
+   * creates it.
+   */
+  localSigningIdentity: "1001 Code Local Signing",
 } as const;
 
 /**
