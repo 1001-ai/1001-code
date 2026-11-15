@@ -133,7 +133,6 @@ export function QuestionCard({
   const send = (next: string) => {
     if (sendAnswer?.(question.id, next)) {
       setSent({ answer: next.trim(), after: answer?.messageId ?? null });
-      setChangingFrom(null);
     }
   };
   const submitFreeText = (event: FormEvent<HTMLFormElement>) => {
@@ -207,8 +206,9 @@ export function QuestionCard({
           <span className="min-w-0 [overflow-wrap:anywhere]">
             Answered: <span className="text-foreground">{answer.answer}</span>
           </span>
-          <span aria-hidden>·</span>
-          {changing ? (
+          {/* Change and Cancel wait for an in-flight send; neither could stop it. */}
+          {sendingAnswer !== null ? null : <span aria-hidden>·</span>}
+          {sendingAnswer === null && changing ? (
             <QuietAction
               aria-label={`Keep your answer to ${question.id}`}
               onClick={() => {
@@ -218,7 +218,7 @@ export function QuestionCard({
             >
               Cancel
             </QuietAction>
-          ) : (
+          ) : sendingAnswer === null ? (
             <QuietAction
               aria-label={`Change your answer to ${question.id}`}
               onClick={() => {
@@ -232,7 +232,7 @@ export function QuestionCard({
             >
               Change
             </QuietAction>
-          )}
+          ) : null}
         </div>
       ) : null}
       {sendingAnswer !== null ? (
