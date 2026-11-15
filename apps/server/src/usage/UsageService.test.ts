@@ -3415,6 +3415,39 @@ describe("UsageService", () => {
     }).pipe(Effect.scoped),
   );
 
+  it.live("hands out Cursor's account history without waiting on its refresh", () =>
+    Effect.gen(function* () {
+      const { settings, home } = yield* setup;
+      yield* TestClock.setTime(CURSOR_NOW);
+      const cursor = makeFakeCursor();
+      cursor.state.events = [{ timestampMs: CURSOR_NOW - HOUR_MS, outputTokens: 7 }];
+      cursor.state.gate = yield* Deferred.make<void>();
+      yield* Effect.gen(function* () {
+        const service = yield* makeWithCursor(cursor.read);
+        assert.deepStrictEqual(yield* service.readAccountRecords("cursor"), []);
+        yield* Deferred.succeed(cursor.state.gate!, undefined);
+        // Joins the refresh the first read started.
+        yield* service.readSummary({ ...WINDOW, awaitRefresh: true });
+        const records = yield* service.readAccountRecords("cursor");
+        assert.deepStrictEqual(
+          records.map(({ sessionId, totals }) => [sessionId, totals.outputTokens]),
+          [["conversation-1", 7]],
+        );
+        assert.strictEqual(cursor.state.calls.length, 1);
+      }).pipe(
+        Effect.provide(
+          layerService({
+            prefix: "usage-service-read-account-records",
+            home,
+            settings,
+            platform: "darwin",
+            environment: { CURSOR_API_KEY: "environment-key" },
+          }),
+        ),
+      );
+    }).pipe(Effect.scoped, Effect.provide(TestClock.layer())),
+  );
+
   it.live("does not orphan an in-flight scan when its first caller is interrupted", () =>
     Effect.gen(function* () {
       const { settings, home } = yield* setup;

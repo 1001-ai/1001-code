@@ -146,6 +146,9 @@ export class UsageService extends Context.Service<
     readonly readSummary: (input: UsageSummaryInput) => Effect.Effect<UsageSummary, UsageReadError>;
     readonly refreshRates: Effect.Effect<UsagePricing>;
     readonly readRates: Effect.Effect<RateTable>;
+    readonly readAccountRecords: (
+      provider: UsageProviderKind,
+    ) => Effect.Effect<ReadonlyArray<UsageRecord>>;
   }
 >()("t3/usage/UsageService") {}
 
@@ -1001,7 +1004,36 @@ export const make = Effect.gen(function* () {
     return rates;
   });
 
-  return { readSummary, refreshRates, awaitPersisted, readRates } as const;
+  // Like readRates: the account history in hand, while a stale copy refreshes behind.
+  const readAccountRecords = Effect.fn("UsageService.readAccountRecords")(
+    function* (provider: UsageProviderKind) {
+      const settings = yield* readSettings;
+      const retentionCutoffMs =
+        (yield* Clock.currentTimeMillis) - CACHE_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+      const sources = yield* Effect.forEach(
+        scanReaders.filter(({ reader }) => reader.provider === provider),
+        ({ driver, reader }) =>
+          usageInstances(driver, settings).pipe(
+            Effect.flatMap((instances) =>
+              reader.scan({
+                instances,
+                settings,
+                windowStartMs: retentionCutoffMs,
+                retentionCutoffMs,
+                awaitRefresh: false,
+              }),
+            ),
+            Effect.provideContext(readerContext),
+          ),
+      );
+      return sources
+        .flat()
+        .flatMap((source) => source.files?.flatMap((file) => file.records) ?? []);
+    },
+    Effect.orElseSucceed((): ReadonlyArray<UsageRecord> => []),
+  );
+
+  return { readSummary, refreshRates, awaitPersisted, readRates, readAccountRecords } as const;
 });
 
 export const layer = Layer.effect(UsageService, make);

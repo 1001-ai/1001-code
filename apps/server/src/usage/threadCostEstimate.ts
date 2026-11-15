@@ -1,13 +1,22 @@
 import type {
   OrchestrationV2ProviderTurn,
   OrchestrationV2Subagent,
+  ProviderThreadId,
   ThreadCostEstimate,
   TurnTokenUsage,
 } from "@t3tools/contracts";
 import { EMPTY_TOTALS } from "@t3tools/provider-core/server/usage";
+import { cursorRateModel } from "@t3tools/provider-cursor/server/accountUsage";
+import * as DateTime from "effect/DateTime";
 
 import { withRateModel } from "../provider/Drivers/antigravityUsageReader.ts";
-import { lookupRate, type RateTable, type TokenRates } from "./usagePricing.ts";
+import {
+  lookupRate,
+  type PricedRecord,
+  priceUsage,
+  type RateTable,
+  type TokenRates,
+} from "./usagePricing.ts";
 
 export interface ThreadCostPricing {
   readonly rates: RateTable;
@@ -17,11 +26,13 @@ export interface ThreadCostPricing {
 
 export type ThreadCostTurn = Pick<
   OrchestrationV2ProviderTurn,
-  "status" | "model" | "turnTokenUsage" | "nodeId" | "providerThreadId" | "tokenUsage"
+  "status" | "model" | "turnTokenUsage" | "nodeId" | "providerThreadId" | "tokenUsage" | "startedAt"
 > & {
   /** The driver of the provider thread that ran the turn, which decides how its model is priced. */
   readonly driver: string | null;
 };
+
+export type BilledRecord = PricedRecord & { readonly timestampMs: number };
 
 export interface ThreadCostSource {
   readonly providerTurns: ReadonlyArray<ThreadCostTurn>;
@@ -30,6 +41,25 @@ export interface ThreadCostSource {
   >;
   /** The thread's selected model, for turns that did not report one. */
   readonly fallbackModel: string | null;
+  /** The provider's own billing history for a provider thread, such as Cursor's usage dashboard. */
+  readonly billed?: ReadonlyMap<ProviderThreadId, ReadonlyArray<BilledRecord>>;
+}
+
+/**
+ * Cursor logs a turn's usage under the turn's start time, a second or so after T3 marks it, and
+ * long turns in more than one record. A turn that started by the newest record is in the history.
+ */
+const BILLED_START_SLACK_MS = 5_000;
+
+// The Usage page's order: an alias replaces the model and its rate model, then priceUsage.
+function billedCost(pricing: ThreadCostPricing, record: BilledRecord) {
+  const alias = pricing.aliases.get(record.model);
+  const { rateModel: _rateModel, ...rest } = record;
+  return priceUsage(
+    pricing.rates,
+    alias === undefined ? record : { ...rest, model: alias },
+    pricing.overrides,
+  );
 }
 
 // Failed and cancelled turns may have done no model work, so only these count as missing a report.
@@ -43,7 +73,8 @@ const OPENCODE_LITELLM_PREFIXES = new Map([["opencode-go", "opencode_go"]]);
 
 /**
  * The names the Usage page prices a turn's model under. OpenCode turns report `provider/model`
- * where its history has the bare model, and Antigravity variants share a base model's price.
+ * where its history has the bare model, and Antigravity and Cursor variants share a base model's
+ * price.
  */
 function priceNames(
   driver: string | null,
@@ -72,6 +103,7 @@ function priceNames(
     });
     return { model: reported, rateModel };
   }
+  if (driver === "cursor") return { model: reported, rateModel: cursorRateModel(reported) };
   return { model: reported, rateModel: undefined };
 }
 
@@ -196,7 +228,28 @@ export function estimateThreadCost(
   for (const thread of threads) {
     const recorded = new Map<string, LedgerUsage>();
     const cacheTtlMs = new Map<string, number>();
+    const billedThrough = new Map<string, number>();
+    for (const [providerThreadId, records] of thread.billed ?? []) {
+      if (records.length === 0) continue;
+      let latestMs = Number.NEGATIVE_INFINITY;
+      for (const record of records) {
+        const priced = billedCost(pricing, record);
+        if (priced.costSource === "unpriced") unpricedTurns += 1;
+        costUsd += priced.costUsd;
+        latestMs = Math.max(latestMs, record.timestampMs);
+      }
+      billedThrough.set(providerThreadId, latestMs);
+    }
     for (const turn of thread.providerTurns) {
+      const billedMs = billedThrough.get(turn.providerThreadId);
+      if (
+        billedMs !== undefined &&
+        turn.startedAt !== null &&
+        DateTime.toEpochMillis(turn.startedAt) <= billedMs + BILLED_START_SLACK_MS
+      ) {
+        pricedTurns += 1;
+        continue;
+      }
       const usage = turn.turnTokenUsage;
       if (!hasCounts(usage)) {
         if (

@@ -1,8 +1,14 @@
 import { describe, expect, it } from "@effect/vitest";
 import { NodeId, ProviderThreadId, ThreadId, type TurnTokenUsage } from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 
-import { collectThreadFamily, MAX_FAMILY_THREADS, type ThreadCostRecords } from "./ThreadCost.ts";
+import {
+  collectThreadFamily,
+  MAX_FAMILY_THREADS,
+  type ThreadCostRecords,
+  withCursorBilling,
+} from "./ThreadCost.ts";
 import {
   estimateThreadCost,
   type ThreadCostPricing,
@@ -49,6 +55,7 @@ const turn = (
   status: "completed",
   nodeId: ROOT_NODE,
   providerThreadId: PROVIDER_THREAD,
+  startedAt: null,
   driver: null,
   ...(model === undefined ? {} : { model }),
   ...(turnTokenUsage === undefined ? {} : { turnTokenUsage }),
@@ -282,6 +289,67 @@ describe("estimateThreadCost", () => {
         }),
       ),
     ).toBeCloseTo(2, 6);
+  });
+
+  it("prices Cursor's effort and thinking variants at their base model, like the Usage page", () => {
+    const cost = (model: string) =>
+      estimateThreadCost(
+        [thread([turn(usage(), undefined, { driver: "cursor" })], model)],
+        pricing(),
+      ).costUsd;
+
+    expect(cost("small-model-thinking-high")).toBeCloseTo(6, 6);
+    expect(cost("cursor-small-model-fast")).toBeCloseTo(6, 6);
+  });
+
+  it("takes Cursor's billed cost for turns its dashboard has, and estimates only later turns", () => {
+    const at = (minutes: number) => Date.parse("2026-11-07T20:00:00Z") + minutes * 60_000;
+    const billed = (minutes: number, sessionId: string, reportedCostUsd: number | null) => ({
+      timestampMs: at(minutes) + 1_000,
+      sessionId,
+      model: "small-model-high",
+      rateModel: "small-model",
+      totals: {
+        uncachedInputTokens: 0,
+        cachedInputTokens: 0,
+        cacheCreationTokens: 0,
+        outputTokens: MILLION,
+        reasoningTokens: 0,
+      },
+      reportedCostUsd,
+      speed: "standard" as const,
+    });
+    const cursorTurn = (minutes: number, turnTokenUsage?: TurnTokenUsage) =>
+      turn(turnTokenUsage, undefined, {
+        driver: "cursor",
+        startedAt: DateTime.makeUnsafe(at(minutes)),
+      });
+    const [cursorThread] = withCursorBilling(
+      [
+        {
+          providerTurns: [
+            // Before this fork reported Cursor usage: only the dashboard knows these.
+            cursorTurn(0),
+            // A long turn the dashboard logs in two records.
+            cursorTurn(10),
+            cursorTurn(60, usage()),
+          ],
+          subagents: [],
+          fallbackModel: "main-model",
+          cursorAgents: new Map([[PROVIDER_THREAD, "agent-1"]]),
+        },
+      ],
+      [
+        billed(0, "agent-1", 2),
+        billed(10, "agent-1", 3),
+        billed(30, "agent-1", null),
+        billed(0, "agent-2", 100),
+      ],
+    );
+    const estimate = estimateThreadCost([cursorThread!], pricing());
+    // 2 + 3 billed, 5 for the unreported record at small-model's rates, 12 estimated for the newest turn.
+    expect(estimate.costUsd).toBeCloseTo(22, 6);
+    expect(estimate).toMatchObject({ pricedTurns: 3, unpricedTurns: 0, unreportedTurns: 0 });
   });
 
   it("never reports $0 for work it could not price", () => {

@@ -15,6 +15,7 @@ import {
   RunAttemptId,
   RunId,
   ThreadId,
+  type TurnTokenUsage,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
@@ -364,9 +365,21 @@ describe("CursorAdapterV2", () => {
       // delivered, regenerated the closing, then gave up on the run.
       updates: [
         { type: "text-delta", text: "The answer." },
-        { type: "turn-ended" },
+        {
+          type: "turn-ended",
+          usage: { inputTokens: 100, outputTokens: 40, cacheReadTokens: 900, cacheWriteTokens: 50 },
+        },
         { type: "text-delta", text: "A regenerated closing." },
-        { type: "turn-ended" },
+        {
+          type: "turn-ended",
+          usage: {
+            inputTokens: 10,
+            outputTokens: 5,
+            cacheReadTokens: 1_000,
+            cacheWriteTokens: 0,
+            reasoningTokens: 3,
+          },
+        },
       ] satisfies ReadonlyArray<InteractionUpdate>,
       wait: Effect.succeed({
         id: "native-cursor-run",
@@ -377,6 +390,17 @@ describe("CursorAdapterV2", () => {
         durationMs: 1,
       }),
       failure: null,
+      // Every turn-ended in the run counts, with cache reads and writes inside input.
+      turnTokenUsage: {
+        usageScope: "main_agent",
+        usageStatus: "complete",
+        hasSubagents: false,
+        inputTokens: 2_060,
+        outputTokens: 45,
+        cachedInputTokens: 1_900,
+        cacheCreationTokens: 50,
+        reasoningTokens: 3,
+      } satisfies TurnTokenUsage,
     },
     {
       reason: "the error a continuation after the turn ended stopped with",
@@ -413,7 +437,7 @@ describe("CursorAdapterV2", () => {
       failure: null,
       answers: [],
     },
-  ])("ends the turn with $reason", ({ updates = [], wait, failure, answers }) =>
+  ])("ends the turn with $reason", ({ updates = [], wait, failure, answers, turnTokenUsage }) =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const workspace = yield* fileSystem.makeTempDirectoryScoped({ prefix: "cursor-v2-failure-" });
@@ -522,6 +546,14 @@ describe("CursorAdapterV2", () => {
           ),
           answers,
         );
+      }
+      if (turnTokenUsage !== undefined) {
+        const finished = events.findLast(
+          (event) =>
+            event.type === "provider_turn.updated" && event.providerTurn.status !== "running",
+        );
+        assert(finished?.type === "provider_turn.updated");
+        assert.deepEqual(finished.providerTurn.turnTokenUsage, turnTokenUsage);
       }
     }).pipe(
       Effect.scoped,
