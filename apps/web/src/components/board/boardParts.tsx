@@ -109,7 +109,7 @@ export function UserAvatar(props: { readonly user: BoardUser; readonly large?: b
       aria-label={props.user.name}
       className={cn(
         size,
-        "flex shrink-0 items-center justify-center rounded-full bg-muted text-4xs font-medium text-muted-foreground",
+        "flex shrink-0 items-center justify-center rounded-full bg-foreground/15 text-4xs font-semibold text-foreground",
       )}
     >
       {initials}
