@@ -157,10 +157,9 @@ and choose **Hide status line**, or turn **Status line under composer** on or of
 **Settings → Appearance → Thread details**. The thread details card shows the same estimate in its
 **Estimated cost** row, and running subagents in its **Running subagents** row.
 
-For a fuller view, turn on **Usage limits** in **Settings → Appearance → Thread details**, or right-click the thread details card.
-The bottom of the thread details card then shows how much is left in each limit window of the
-current provider account. Some windows, such as a weekly Opus limit, count only one model. Hover a
-row to see when it resets and your pace. Turn on **Context window** to also show the thread's
+For a fuller view, the bottom of the thread details card shows how much is left in each limit window of the
+current provider account. Turn it off with **Usage limits** in **Settings → Appearance → Thread details**, or right-click the card. Some windows, such as a weekly Opus limit, count only one model. Hover a
+row to see when it resets and your pace. **Context window** also shows the thread's
 context use against the model's limit. A tick on the bar marks where the provider compacts
 automatically, when it reports that point.
 
