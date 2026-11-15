@@ -1,4 +1,10 @@
-import type { BoardTaskChange, OrchestrationV2TurnItem } from "@t3tools/contracts";
+import {
+  BOARD_ADD_TOOL_NAME,
+  BOARD_UPDATE_TOOL_NAME,
+  BoardTaskWriteResult,
+  type BoardTaskChange,
+  type OrchestrationV2TurnItem,
+} from "@t3tools/contracts";
 import { readToolResultData } from "@t3tools/shared/toolOutput";
 import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
@@ -56,8 +62,37 @@ const nonEmpty = (value: unknown): value is string =>
 const boundedText = (value: string | null | undefined) =>
   nonEmpty(value) ? value.slice(0, MAX_TEXT_LENGTH) : undefined;
 
-/** Filing has no `id`; an update counts when it sets the assignee, else when it sets the state. */
-function boardTaskChangeKind(rawInput: unknown): BoardTaskChange["kind"] | null {
+const T3_SERVER = "t3-code(?:-direct)?|t3_code(?:_direct)?|t3code";
+/**
+ * T3's own board tools, only on T3's MCP server: `mcp__<server>__<tool>` (Claude, Cursor, Pi),
+ * `<server>.<tool>` (Codex, ACP agents) and OpenCode's `t3-code_<tool>` or `t3-code-<thread>_<tool>`.
+ */
+const T3_BOARD_WRITE_TOOL = new RegExp(
+  `^(?:mcp__(?:${T3_SERVER})__|(?:${T3_SERVER})\\.|t3-code(?:-[\\w-]+)?_)(${BOARD_ADD_TOOL_NAME}|${BOARD_UPDATE_TOOL_NAME})$`,
+);
+
+const decodeBoardWriteResult = Schema.decodeUnknownOption(BoardTaskWriteResult);
+
+/** A T3 board tool's result in the shape of Linear's `save_issue` result. */
+const boardWriteIssueResult = (data: unknown): typeof LinearIssueResult.Type | undefined =>
+  Option.getOrUndefined(
+    Option.map(decodeBoardWriteResult(data), ({ task }) => ({
+      id: task.identifier,
+      title: task.title,
+      url: task.url,
+      status: task.status.name,
+      statusType: task.status.type,
+      assignee: task.assignee,
+      project: task.project,
+    })),
+  );
+
+/**
+ * Filing is `board_add` or a `save_issue` without `id`; an update counts when it sets the
+ * assignee, else when it sets the state (`status` for `board_update`).
+ */
+function boardTaskChangeKind(tool: string, rawInput: unknown): BoardTaskChange["kind"] | null {
+  if (tool === BOARD_ADD_TOOL_NAME) return "created";
   if (!Predicate.isObject(rawInput)) return null;
   // codex-acp sends `{ server, tool, arguments }` and Kiro `{ tool_id, arguments }`.
   const args = rawInput.arguments;
@@ -66,26 +101,29 @@ function boardTaskChangeKind(rawInput: unknown): BoardTaskChange["kind"] | null 
     (typeof rawInput.tool === "string" || typeof rawInput.tool_id === "string")
       ? args
       : rawInput;
-  if (!nonEmpty(input.id)) return "created";
+  if (tool === "save_issue" && !nonEmpty(input.id)) return "created";
   if (nonEmpty(input.assignee)) return "picked_up";
-  if (nonEmpty(input.state)) return "status";
+  if (nonEmpty(tool === "save_issue" ? input.state : input.status)) return "status";
   return null;
 }
 
-/** What a finished Linear `save_issue` call did to a task; undefined for anything else. */
+/**
+ * What a finished Linear `save_issue`, or T3 `board_add` or `board_update`, call did to a task;
+ * undefined for anything else.
+ */
 export function boardTaskChange(item: OrchestrationV2TurnItem): BoardTaskChange | undefined {
-  if (
-    item.type !== "dynamic_tool" ||
-    item.status !== "completed" ||
-    linearWriteTool(item.toolName) !== "save_issue"
-  ) {
-    return undefined;
-  }
-  const kind = boardTaskChangeKind(item.input);
+  if (item.type !== "dynamic_tool" || item.status !== "completed") return undefined;
+  const boardTool = T3_BOARD_WRITE_TOOL.exec(item.toolName?.trim().toLowerCase() ?? "")?.[1];
+  const tool =
+    boardTool ?? (linearWriteTool(item.toolName) === "save_issue" ? "save_issue" : undefined);
+  if (tool === undefined) return undefined;
+  const kind = boardTaskChangeKind(tool, item.input);
   if (kind === null) return undefined;
-  const result = Option.getOrUndefined(
-    decodeIssueResult(readToolResultData(item.output, MAX_RESULT_BYTES)),
-  );
+  const data = readToolResultData(item.output, MAX_RESULT_BYTES);
+  const result =
+    boardTool === undefined
+      ? Option.getOrUndefined(decodeIssueResult(data))
+      : boardWriteIssueResult(data);
   if (
     result === undefined ||
     !ISSUE_IDENTIFIER.test(result.id) ||
@@ -111,7 +149,7 @@ export function boardTaskChange(item: OrchestrationV2TurnItem): BoardTaskChange 
   };
 }
 
-/** Adds the card's data to a Linear `save_issue` item's wire output. */
+/** Adds the card's data to a task-changing tool item's wire output. */
 export function withBoardTaskChange(
   item: OrchestrationV2TurnItem,
   output: object | undefined,

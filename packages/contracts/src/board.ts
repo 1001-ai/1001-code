@@ -303,9 +303,10 @@ export const BoardTaskList = Schema.Struct({
 export type BoardTaskList = typeof BoardTaskList.Type;
 
 /**
- * What an agent's Linear `save_issue` call did to a task: filed it, picked it up (set its
- * assignee) or moved it (set its state). The server reads it from the call's input and Linear's
- * result and sends it as `output.boardTask` on the wire tool item, so the chat shows a card.
+ * What an agent's Linear `save_issue`, or T3 `board_add` or `board_update`, call did to a task:
+ * filed it, picked it up (set its assignee) or moved it (set its status). The server reads it from
+ * the call's input and result and sends it as `output.boardTask` on the wire tool item, so the
+ * chat shows a card.
  */
 export const BoardTaskChange = Schema.Struct({
   kind: Schema.Literals(["created", "picked_up", "status"]),
