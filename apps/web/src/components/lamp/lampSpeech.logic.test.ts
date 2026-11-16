@@ -9,6 +9,7 @@ import {
   lampSpeechProgressed,
   lampSpeechQueued,
   lampStatus,
+  lampTalk,
   lampUserHeard,
   lampVoiceReadiness,
   splitSentences,
@@ -29,6 +30,39 @@ function speakingAt(sentenceIndex: number, wordIndex: number): LampVoiceSession 
   const session = lampSpeechBegan(lampSpeechQueued(TEXT));
   const word = session.said!.sentences[sentenceIndex]!.words[wordIndex]!;
   return lampSpeechProgressed(session, { sentenceIndex, word, done: false });
+}
+
+/** A press of Space the test drives: a voice that stops, and a microphone that starts, when told. */
+function pressing(input: { readonly open: boolean; readonly speaking: boolean }) {
+  const events: string[] = [];
+  let open = input.open;
+  let voiceStopped = () => {};
+  let microphoneStarted = () => {};
+  const quiet = new Promise<void>((resolve) => (voiceStopped = resolve));
+  const started = new Promise<void>((resolve) => (microphoneStarted = resolve));
+  const stop = (when: string) => {
+    events.push(`voice stops ${when}`);
+    return quiet;
+  };
+  const talking = lampTalk({
+    open: () => open,
+    speech: input.speaking ? { stop } : null,
+    microphone: {
+      start: () => {
+        events.push("microphone starts");
+        return started;
+      },
+      cancel: () => void events.push("microphone cancelled"),
+    },
+    onInterrupted: () => void events.push("interruption recorded"),
+  });
+  return {
+    events,
+    talking,
+    close: () => void (open = false),
+    voiceStopped,
+    microphoneStarted,
+  };
 }
 
 describe("lamp speech", () => {
@@ -137,6 +171,41 @@ describe("lamp speech", () => {
     expect(heard.interruption).not.toBeNull();
     expect(next.interruption).toBeNull();
     expect(next.heard).toBeNull();
+  });
+
+  it("listens from the press, while the agent finishes the word it is on", async () => {
+    const press = pressing({ open: true, speaking: true });
+    // Capture does not wait for the voice, so the user's first words are kept.
+    expect(press.events).toEqual(["voice stops after-word", "microphone starts"]);
+    press.microphoneStarted();
+    press.voiceStopped();
+    await press.talking;
+    expect(press.events).toEqual([
+      "voice stops after-word",
+      "microphone starts",
+      "interruption recorded",
+    ]);
+
+    const quiet = pressing({ open: true, speaking: false });
+    quiet.microphoneStarted();
+    await quiet.talking;
+    expect(quiet.events).toEqual(["microphone starts"]);
+  });
+
+  it("opens no microphone once the layer has closed, and cancels one that was starting", async () => {
+    const closed = pressing({ open: false, speaking: true });
+    expect(closed.events).toEqual([]);
+
+    const closing = pressing({ open: true, speaking: true });
+    closing.close();
+    closing.microphoneStarted();
+    closing.voiceStopped();
+    await closing.talking;
+    expect(closing.events).toEqual([
+      "voice stops after-word",
+      "microphone starts",
+      "microphone cancelled",
+    ]);
   });
 
   it("is listening until the user's words are transcribed, and speaking only while it talks", () => {

@@ -29,6 +29,9 @@ export const lampVoice = {
   listening: () => useLampVoiceStore.setState(lampListeningBegan),
   heard: (transcript: string) =>
     useLampVoiceStore.setState((session) => lampUserHeard(session, transcript)),
+  /** The layer has gone. Nothing of the exchange is left for the next open to show. */
+  ended: () => useLampVoiceStore.setState(LAMP_VOICE_SILENT, true),
+  session: () => useLampVoiceStore.getState(),
 };
 
 export function useLampVoiceSession(): LampVoiceSession {

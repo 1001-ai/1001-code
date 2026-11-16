@@ -1,7 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId, ResolvedKeybindingRule } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 
 import { useStableCallback } from "~/hooks/useStableCallback";
 
@@ -13,6 +13,7 @@ import { lampLayerHoldsKeyboard } from "./lampLayer.state";
 import { lampSpeaker } from "./lampSpeaker";
 import {
   lampStatus,
+  lampTalk,
   lampVoiceReadiness,
   type LampSpeech,
   type LampVoiceReadiness,
@@ -59,12 +60,15 @@ export function useLampVoice(input: {
     environmentId: input.environmentId,
     ownerKey: `lamp:${input.threadKey}`,
     draftText: NO_DRAFT.text,
+    // While the layer closes, dictation refuses to start, abandons a recording and drops a late transcript.
+    disabled: input.closing,
     readDraft: () => NO_DRAFT,
     commitDraft: (text) => lampVoice.heard(text),
   });
   const speaking = useRef<LampSpeech | null>(null);
   const greeting = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const attempt = useRef(0);
+  // False from the commit that closes the layer: what a press of Space waits on asks it again.
+  const open = useRef(false);
 
   const readiness: LampVoiceReadiness = lampVoiceReadiness({
     available: speech.available,
@@ -73,7 +77,6 @@ export function useLampVoice(input: {
   });
 
   const talk = useStableCallback(async () => {
-    const mine = ++attempt.current;
     setTriedUnready(readiness !== "ready");
     if (readiness !== "ready") return;
     if (greeting.current !== null) {
@@ -82,19 +85,18 @@ export function useLampVoice(input: {
       lampVoice.interrupted();
     }
     const current = speaking.current;
-    if (current) {
-      await current.stop("after-word");
-      if (speaking.current === current) speaking.current = null;
-      lampVoice.interrupted();
-      if (mine !== attempt.current) return;
-    }
     lampVoice.listening();
-    await speech.start();
+    await lampTalk({
+      open: () => open.current,
+      speech: current,
+      microphone: speech,
+      onInterrupted: () => {
+        if (speaking.current === current) speaking.current = null;
+        lampVoice.interrupted();
+      },
+    });
   });
-  const stopListening = useStableCallback(() => {
-    attempt.current += 1;
-    speech.cancel();
-  });
+  const stopListening = speech.cancel;
 
   useDictationShortcut({
     keybindings: [...keybindings, SPACE_TALKS],
@@ -112,9 +114,10 @@ export function useLampVoice(input: {
   });
 
   const { closing, openDurationMs } = input;
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- speaks once the layer has opened, and stops the voice and the microphone when it closes
-  useEffect(() => {
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- starts the exchange before an open paints, speaks once the layer has opened, and stops the voice and the microphone in the commit that closes it
+  useLayoutEffect(() => {
     if (closing) return;
+    open.current = true;
     const text = nextLampSpeech();
     lampVoice.queue(text);
     // Speech synthesis needs a user gesture: an open without one shows the text as said.
@@ -129,14 +132,18 @@ export function useLampVoice(input: {
       speaking.current = lampSpeaker.speak(text, lampVoice.progressed);
     }, openDurationMs());
     return () => {
+      open.current = false;
       if (greeting.current !== null) clearTimeout(greeting.current);
       greeting.current = null;
       void speaking.current?.stop("now");
       speaking.current = null;
       stopListening();
+      // The text stays while the layer fades out.
       lampVoice.silenced();
     };
   }, [closing, openDurationMs, stopListening]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- ends the exchange when the layer unmounts, in the layout phase so it runs before another layer's open in the same commit
+  useLayoutEffect(() => lampVoice.ended, []);
 
   const voiceSettings = {
     label: "Voice settings",

@@ -206,6 +206,28 @@ export function lampUserHeard(session: LampVoiceSession, transcript: string): La
   };
 }
 
+/**
+ * The user starts to talk. Capture starts at the press, so their first words are kept and a hold
+ * is timed from it, while the agent finishes the word it is on. `open` is false once the layer
+ * closes: every wait asks it again, so nothing starts then and a capture that did is cancelled.
+ */
+export async function lampTalk(input: {
+  readonly open: () => boolean;
+  /** What the agent is saying, if it is speaking. */
+  readonly speech: LampSpeech | null;
+  readonly microphone: { start(): Promise<void>; cancel(): void };
+  readonly onInterrupted: () => void;
+}): Promise<void> {
+  if (!input.open()) return;
+  // The microphone may catch the end of that word: nothing here can tell whether it does.
+  const quiet = input.speech?.stop("after-word").then(() => {
+    if (input.open()) input.onInterrupted();
+  });
+  await input.microphone.start();
+  if (!input.open()) input.microphone.cancel();
+  await quiet;
+}
+
 /** The agent's text in the three parts the captions colour: spoken, being spoken, to come. */
 export function captionParts(said: LampSaid): {
   readonly spoken: string;
