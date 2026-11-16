@@ -266,6 +266,7 @@ const make = Effect.gen(function* () {
     const base = {
       source: catalog.source,
       revision: catalog.revision,
+      fetchedAt: catalog.fetchedAt,
       refreshing: catalog.refreshing,
       error: catalog.error,
       viewer: catalog.viewer,
