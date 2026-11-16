@@ -44,18 +44,25 @@ export function useLampAgent(input: {
   useEffect(() => {
     if (closing) return;
     let live = true;
-    void open({ environmentId, input: { threadId } }).then((result) => {
-      const opened: VoiceAgentOpenResult =
-        result._tag === "Success" ? result.value : { status: "unavailable", message: NOT_REACHED };
-      if (opened.status === "ready") {
-        // The layer closed while the server was opening the conversation: end it at once.
-        if (!live) return void close({ environmentId, input: { sessionId: opened.sessionId } });
-        sessionId.current = opened.sessionId;
-      }
-      if (live) setLink(opened);
-    });
+    // One task later: an effect that React runs twice in development then asks the server once,
+    // and each ask may start a paid turn.
+    const asking = setTimeout(() => {
+      void open({ environmentId, input: { threadId } }).then((result) => {
+        const opened: VoiceAgentOpenResult =
+          result._tag === "Success"
+            ? result.value
+            : { status: "unavailable", message: NOT_REACHED };
+        if (opened.status === "ready") {
+          // The layer closed while the server was opening the conversation: end it at once.
+          if (!live) return void close({ environmentId, input: { sessionId: opened.sessionId } });
+          sessionId.current = opened.sessionId;
+        }
+        if (live) setLink(opened);
+      });
+    }, 0);
     return () => {
       live = false;
+      clearTimeout(asking);
       const ended = sessionId.current;
       sessionId.current = null;
       if (ended !== null) void close({ environmentId, input: { sessionId: ended } });
