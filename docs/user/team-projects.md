@@ -253,11 +253,14 @@ each agent's messages, `inbox/<agent>.md` and `inbox/all.md` with messages to ag
 
 The voice agent tells you aloud what the agents on the [Agents board](#agents-board) have done,
 and answers by voice. Open it with the voice agent button at the end of the top-right controls,
-the command palette, or its shortcut, in a thread of a team project. It needs the Claude
-provider signed in, and runs on a small, fast Claude model through that sign-in.
+the command palette, or its shortcut, in a thread of a team project, or in a new chat before
+its first message. It needs the Claude provider signed in, and runs on a small, fast Claude
+model through that sign-in. When it cannot start, it says why in one line.
 
 - **Updates.** When it opens, it tells you what changed on the board since the last update it
-  gave you, starting with what needs you. When nothing changed it says so in one line.
+  gave you, starting with what needs you. When nothing changed it says so in one line. It knows
+  your name from the GitHub CLI, so it says whose answer an agent waits for: "for you" when a
+  report names you or nobody, and the other person's name otherwise.
 - **Talking.** Hold **Space** and speak; release to send. You can cut in while it speaks: it
   finishes its word, answers you, and then picks its earlier point back up. Ask it about the
   agents, such as how many are running or who is blocked.
@@ -274,7 +277,9 @@ provider signed in, and runs on a small, fast Claude model through that sign-in.
 
 Close it with **Esc**, a click outside, or by sending a prompt. After it closes, the chat shows
 a **Voice conversation** card at the end; click it to read the transcript. A conversation in
-which nothing was said leaves no card.
+which nothing was said leaves no card. The card is the only trace in the chat: the voice agent
+is not a side chat and is in no list. A new chat shows the card too, and keeps it once you send
+the first message.
 
 The voice agent can only read the board, send those messages, show screenshots and propose
 memories. It cannot run commands or change files; ask for that in the chat. What other agents
