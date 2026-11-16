@@ -43,6 +43,7 @@ import {
 } from "./lib/cli-external-packages.ts";
 import { loadRepoEnv } from "./lib/public-config.ts";
 import { applyLocalMacSigning } from "./lib/local-macos-signing.ts";
+import { withMacAppIcon } from "./lib/mac-app-icon.ts";
 import { selectDesktopRuntimeExternalDependencies } from "./lib/desktop-external-packages.ts";
 import { resolveCatalogDependencies } from "./lib/resolve-catalog.ts";
 
@@ -129,7 +130,6 @@ export const readWorkspaceConfig = Effect.fn("readWorkspaceConfig")(function* ()
 
 interface DesktopBuildIconAssets {
   readonly macIconPng: string;
-  readonly macIconComposerProject: string;
   readonly linuxIconPng: string;
   readonly windowsIconIco: string;
 }
@@ -2509,14 +2509,9 @@ const generateMacIconSet = Effect.fn("build-desktop-artifact.generateMacIconSet"
   });
 });
 
-// electron-builder compiles an Icon Composer project with actool (Xcode 26 or newer) into
-// Assets.car for macOS 26 and an icon.icns for older macOS.
-const MAC_ICON_COMPOSER_RESOURCE = "icon.icon";
-
 const stageMacIcons = Effect.fn("build-desktop-artifact.stageMacIcons")(function* (
   stageResourcesDir: string,
   sourcePng: string,
-  iconComposerProject: string,
   verbose: boolean,
 ) {
   const fs = yield* FileSystem.FileSystem;
@@ -2541,14 +2536,6 @@ const stageMacIcons = Effect.fn("build-desktop-artifact.stageMacIcons")(function
   });
 
   yield* generateMacIconSet(sourcePng, iconIcnsPath, tmpRoot, path, verbose);
-
-  if (!(yield* fs.exists(iconComposerProject))) {
-    return yield* new DesktopIconSourceMissingError({
-      platform: "mac",
-      sourcePath: iconComposerProject,
-    });
-  }
-  yield* fs.copy(iconComposerProject, path.join(stageResourcesDir, MAC_ICON_COMPOSER_RESOURCE));
 });
 
 export const stageDesktopDmgBackground = Effect.fn("stageDesktopDmgBackground")(function* (
@@ -2757,7 +2744,6 @@ export function resolveDesktopBuildIconAssets(version: string): DesktopBuildIcon
   if (resolveDesktopUpdateChannel(version) === "nightly") {
     return {
       macIconPng: BRAND_ASSET_PATHS.nightlyMacIconPng,
-      macIconComposerProject: BRAND_ASSET_PATHS.nightlyIconComposerProject,
       linuxIconPng: BRAND_ASSET_PATHS.nightlyLinuxIconPng,
       windowsIconIco: BRAND_ASSET_PATHS.nightlyWindowsIconIco,
     };
@@ -2765,7 +2751,6 @@ export function resolveDesktopBuildIconAssets(version: string): DesktopBuildIcon
 
   return {
     macIconPng: BRAND_ASSET_PATHS.productionMacIconPng,
-    macIconComposerProject: BRAND_ASSET_PATHS.productionIconComposerProject,
     linuxIconPng: BRAND_ASSET_PATHS.productionLinuxIconPng,
     windowsIconIco: BRAND_ASSET_PATHS.productionWindowsIconIco,
   };
@@ -2857,9 +2842,9 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   if (platform === "mac") {
     const path = yield* Path.Path;
     const repoRoot = yield* RepoRoot;
-    buildConfig.mac = {
+    buildConfig.mac = withMacAppIcon(repoRoot, updateChannel, {
       target: target === "dmg" ? [target, "zip"] : [target],
-      icon: MAC_ICON_COMPOSER_RESOURCE,
+      icon: "icon.icns",
       category: "public.app-category.developer-tools",
       extendInfo: {
         // macOS 26 offers Messages/Mail codes in every text field unless opted out.
@@ -2907,7 +2892,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
             provisioningProfile: macPasskeySigning.provisioningProfilePath,
           }
         : {}),
-    };
+    });
   }
 
   if (platform === "mac" && target === "dmg") {
@@ -3016,12 +3001,7 @@ const assertPlatformBuildResources = Effect.fn("assertPlatformBuildResources")(f
   verbose: boolean,
 ) {
   if (platform === "mac") {
-    yield* stageMacIcons(
-      stageResourcesDir,
-      iconAssets.macIconPng,
-      iconAssets.macIconComposerProject,
-      verbose,
-    );
+    yield* stageMacIcons(stageResourcesDir, iconAssets.macIconPng, verbose);
     return;
   }
 
@@ -3868,7 +3848,6 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
     stageResourcesDir,
     {
       macIconPng: path.join(repoRoot, iconAssets.macIconPng),
-      macIconComposerProject: path.join(repoRoot, iconAssets.macIconComposerProject),
       linuxIconPng: path.join(repoRoot, iconAssets.linuxIconPng),
       windowsIconIco: path.join(repoRoot, iconAssets.windowsIconIco),
     },

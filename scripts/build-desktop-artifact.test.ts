@@ -583,8 +583,20 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
             undefined,
             undefined,
           );
-          const mac = config.mac as { icon: string; extendInfo: Record<string, unknown> };
-          assert.strictEqual(mac.icon, "icon.icon", `${version}, signed=${signed}: icon`);
+          const mac = config.mac as {
+            icon: string;
+            extendInfo: Record<string, unknown>;
+            extraResources: ReadonlyArray<{ from: string; to: string }>;
+          };
+          const iconDir = version.includes("nightly")
+            ? "assets/nightly/macos-app-icon"
+            : "assets/prod/macos-app-icon";
+          assert.isTrue(mac.icon.endsWith(`${iconDir}/icon.icns`), `${version}: ${mac.icon}`);
+          assert.strictEqual(mac.extendInfo.CFBundleIconName, "Icon");
+          assert.deepInclude(mac.extraResources, {
+            from: (yield* Path.Path).join(import.meta.dirname, "..", iconDir, "Assets.car"),
+            to: "Assets.car",
+          });
           for (const key of [
             "NSCalendarsUsageDescription",
             "NSCalendarsFullAccessUsageDescription",
