@@ -139,9 +139,15 @@ Leaving reasoning level or service tier unset uses the provider's own configurat
 
 ## Quote an assistant response
 
-On web and desktop, select text within one assistant response and choose
-**Cite in composer**. You can add a comment about the quote and write instructions
-around it.
+On web and desktop, select text within one assistant response and choose **Cite**. The
+text becomes an annotation: it stays highlighted in the reply, with a numbered marker beside
+it, and a comment box opens above it. Press **Enter** to save the comment, or **Escape** to keep
+the annotation without one. Select the highlight or its marker to edit the comment or remove the
+annotation.
+
+The composer lists your annotations as one **N annotations** button above the message; open it
+to jump to an annotation or remove it. Annotations are sent after your message text, and the
+highlights go away once it is sent.
 
 Select the quote in a draft or sent message to return to its source. If the source
 is unavailable or has changed, the saved quote remains readable.
@@ -150,12 +156,9 @@ When selecting a quote, or a question id an agent's reply mentions, jumps the ch
 message, a **Back** button appears beside **Scroll to end** and returns you to where you were
 reading.
 
-The chip shows your comment when it has one, or a short quote preview otherwise. Use the pencil
-button to add or change the comment. To remove the citation, place the caret beside its chip and
-delete it like other inline context. Copying, reloading, and restoring a
-[stashed prompt](#prompt-stash) keep each comment
-with its quote, and sending tells the agent which words were quoted and which comment you wrote.
-The quoted text and comment count toward the message limit.
+A quote pasted into the text shows as a chip with your comment, or a short quote preview.
+Sending tells the agent which words were quoted and which comment you wrote. The quoted text and
+comment count toward the message limit.
 
 Mobile displays saved quotes and comments, but does not create citations or
 navigate to their sources.

@@ -102,6 +102,7 @@ import {
 import { UnifiedSettings } from "@t3tools/contracts/settings";
 
 const isElementContextDetails = Schema.is(ElementContextDetails);
+import { clearReplyAnnotations } from "./components/chat/replyAnnotations";
 import { ReviewCommentContextSchema, type ReviewCommentContext } from "./reviewCommentContext";
 const isRuntimeMode = Schema.is(RuntimeMode);
 const isProviderDriverKind = Schema.is(ProviderDriverKind);
@@ -4243,6 +4244,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
           verifyPersistedAttachments(threadKey, attachments, set);
         },
         clearComposerContent: (threadRef) => {
+          clearReplyAnnotations(threadRef);
           const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
           if (threadKey.length === 0) {
             return;

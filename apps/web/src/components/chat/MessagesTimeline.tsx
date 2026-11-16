@@ -72,6 +72,7 @@ import {
   resolveDisclosureRevealScrollDelta,
 } from "./timelineScrollAnchoring";
 import { AssistantSelectionToolbar } from "./AssistantSelectionToolbar";
+import { ReplyAnnotationsOverlay } from "./ReplyAnnotationsOverlay";
 import type { AssistantCitationSourceAnchor } from "~/lib/assistantTextSelection";
 import { type AssistantCitationRequest } from "./AssistantCitationSource";
 import { useAssistantCitationTarget } from "./useAssistantCitationTarget";
@@ -1429,6 +1430,12 @@ const ConversationTimeline = memo(function ConversationTimeline({
                 viewport={timelineViewportElement}
                 threadRef={citationThreadRef}
                 onCite={onCiteAssistantText}
+              />
+            ) : null}
+            {citationThreadRef ? (
+              <ReplyAnnotationsOverlay
+                viewport={timelineViewportElement}
+                threadRef={citationThreadRef}
               />
             ) : null}
             <LegendList<MessagesTimelineRow>
