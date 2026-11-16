@@ -491,7 +491,8 @@ const make = Effect.gen(function* () {
               current.speak({
                 text: request.text,
                 ...(model.language ? { language: model.language } : {}),
-                options: { ...model.requestOptions, voice_id: voice.id },
+                voiceId: voice.id,
+                ...(model.requestOptions ? { options: model.requestOptions } : {}),
               }),
             catch: (cause) => new VoiceOutputWorkerError({ stage: "speak", cause }),
           }).pipe(

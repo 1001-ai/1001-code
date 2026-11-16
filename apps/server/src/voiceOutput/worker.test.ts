@@ -70,7 +70,7 @@ it("speaks in an isolated process that sees a minimal environment", async () => 
     expect(
       loaded.environment.filter((name) => !allowed.includes(name) && !name.startsWith("__")),
     ).toEqual([]);
-    const audio = await model.speak({ text: "Hello.", options: { voice_id: "amber" } });
+    const audio = await model.speak({ text: "Hello.", voiceId: "amber" });
     expect(audio.sampleRate).toBe(24000);
     expect([...new Int16Array(audio.pcm.buffer, audio.pcm.byteOffset, 2)]).toEqual([0, 0]);
     expect(model.alive).toBe(true);

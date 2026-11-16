@@ -41,7 +41,10 @@ const VoiceOutputFileUrl = Schema.String.check(
 );
 
 const VoiceOutputCatalogVoice = Schema.Struct({
-  /** Sent to the runtime as the request option `voice_id`. */
+  /**
+   * Sent to the runtime as the request option `voice_id`. A model that declares no such option
+   * has one built-in voice: list one entry, whose id only names it here.
+   */
   id: VoiceOutputId,
   name: TrimmedNonEmptyString.check(Schema.isMaxLength(80)),
 });

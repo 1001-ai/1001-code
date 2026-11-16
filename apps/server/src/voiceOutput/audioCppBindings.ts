@@ -2,15 +2,17 @@ import type * as Koffi from "koffi";
 
 export type AudioCppSpeechRequest = {
   readonly text: string;
-  /** Omit when the model should pick its own language. */
+  /** Omit when the model should pick its own language. Some models refuse a language. */
   readonly language?: string;
-  /** Request options the model declares, such as `voice_id` or `speed`. */
+  /** Sent as the request option `voice_id`, but only to a model that declares that option. */
+  readonly voiceId?: string;
+  /** Request options the model declares, such as `speed`. Some models refuse any other. */
   readonly options?: Readonly<Record<string, string>>;
 };
 
 export type AudioCppSpeechModel = {
   readonly backend: string;
-  /** Speaks the whole text and returns its interleaved samples in [-1, 1]. */
+  /** Speaks the whole text and returns its interleaved samples, nominally in [-1, 1]. */
   readonly speak: (request: AudioCppSpeechRequest) => {
     readonly samples: Float32Array;
     readonly sampleRate: number;
@@ -21,7 +23,8 @@ export type AudioCppSpeechModel = {
 /**
  * Binds what speech needs of audio.cpp's C ABI (`include/audiocpp.h`, ABI 0.4). The worker inlines
  * it with `toString()`, so it references nothing from module scope. Calls block the thread.
- * No test here loads the library, so this file is checked only against the header.
+ * It speaks with one offline run: streaming sessions deliver audio in three different ways, and
+ * some models refuse them. Tests here use a stand-in for koffi; see fork/README.md for the real check.
  */
 export function bindAudioCpp(koffi: typeof Koffi, libraryPath: string) {
   const lib = koffi.load(libraryPath);
@@ -30,7 +33,6 @@ export function bindAudioCpp(koffi: typeof Koffi, libraryPath: string) {
   const Session = koffi.pointer(koffi.opaque());
   const Request = koffi.pointer(koffi.opaque());
   const Result = koffi.pointer(koffi.opaque());
-  const Event = koffi.pointer(koffi.opaque());
   const BackendConfig = koffi.struct({ backend: "const char *", device: "int", threads: "int" });
   const out = (type: string | Koffi.TypeObject) => koffi.out(koffi.pointer(type));
   const native = {
@@ -51,6 +53,20 @@ export function bindAudioCpp(koffi: typeof Koffi, libraryPath: string) {
       "const char *",
       "const char *",
     ]),
+    modelOptionCount: lib.func("audiocpp_model_option_count", "size_t", [Model, "int"]),
+    // Only the name is read; the six outputs after it are optional and passed as null.
+    modelOption: lib.func("audiocpp_model_option", "int", [
+      Model,
+      "int",
+      "size_t",
+      out("const char *"),
+      "void *",
+      "void *",
+      "void *",
+      "void *",
+      "void *",
+      "void *",
+    ]),
     sessionCreate: lib.func("audiocpp_session_create", "int", [
       Model,
       "const char *",
@@ -59,15 +75,10 @@ export function bindAudioCpp(koffi: typeof Koffi, libraryPath: string) {
       "void *",
       out(Session),
     ]),
-    streamStart: lib.func("audiocpp_stream_start", "int", [Session, Request]),
-    streamNextEvent: lib.func("audiocpp_stream_next_event", "int", [Session, out(Event)]),
-    streamReset: lib.func("audiocpp_stream_reset", "int", [Session]),
-    eventFree: lib.func("audiocpp_event_free", "void", [Event]),
-    eventAsResult: lib.func("audiocpp_event_as_result", Result, [Event]),
-    namedAudio: lib.func("audiocpp_result_named_audio", "int", [
+    sessionRun: lib.func("audiocpp_session_run", "int", [Session, Request, out(Result)]),
+    resultFree: lib.func("audiocpp_result_free", "void", [Result]),
+    resultAudio: lib.func("audiocpp_result_audio", "int", [
       Result,
-      "size_t",
-      out("const char *"),
       out("void *"),
       out("size_t"),
       out("int"),
@@ -101,17 +112,24 @@ export function bindAudioCpp(koffi: typeof Koffi, libraryPath: string) {
   const openSession = (model: unknown, backend: string, threads: number) => {
     const session: [unknown] = [null];
     check(
-      native.sessionCreate(
-        model,
-        "tts",
-        "streaming",
-        { backend, device: 0, threads },
-        null,
-        session,
-      ),
+      native.sessionCreate(model, "tts", "offline", { backend, device: 0, threads }, null, session),
       `${backend} session creation`,
     );
     return session[0];
+  };
+
+  // Scope 0 is the request scope (`AUDIOCPP_OPTION_SCOPE_REQUEST`).
+  const declaresRequestOption = (model: unknown, wanted: string) => {
+    const count = Number(native.modelOptionCount(model, 0));
+    for (let index = 0; index < count; index++) {
+      const name: [string | null] = [null];
+      check(
+        native.modelOption(model, 0, index, name, null, null, null, null, null, null),
+        "option listing",
+      );
+      if (name[0] === wanted) return true;
+    }
+    return false;
   };
 
   return {
@@ -125,9 +143,12 @@ export function bindAudioCpp(koffi: typeof Koffi, libraryPath: string) {
       const model = loaded[0];
       let session: unknown;
       let sessionBackend = backend;
+      let choosesVoice: boolean;
       try {
-        if (!native.modelSupports(model, "tts", "streaming"))
-          throw new Error("This model does not support streaming text to speech.");
+        if (!native.modelSupports(model, "tts", "offline"))
+          throw new Error("This model does not support text to speech.");
+        // A model with one built-in voice declares no `voice_id`, and some refuse an unknown option.
+        choosesVoice = declaresRequestOption(model, "voice_id");
         try {
           session = openSession(model, backend, threads);
         } catch (error) {
@@ -141,70 +162,40 @@ export function bindAudioCpp(koffi: typeof Koffi, libraryPath: string) {
       }
       return {
         backend: sessionBackend,
-        speak({ text, language, options = {} }) {
+        speak({ text, language, voiceId, options = {} }) {
           const request = native.requestCreate();
           if (!request) throw new Error("audio.cpp could not allocate a request.");
+          const result: [unknown] = [null];
           try {
             check(native.requestSetText(request, text, language ?? null), "request text");
-            for (const [key, value] of Object.entries(options))
+            const sent =
+              choosesVoice && voiceId !== undefined ? { ...options, voice_id: voiceId } : options;
+            for (const [key, value] of Object.entries(sent))
               check(native.requestSetOption(request, key, value), `request option ${key}`);
-            // Starting copies the request into the session, so it can be freed right away.
-            check(native.streamStart(session, request), "stream start");
+            check(native.sessionRun(session, request, result), "synthesis");
           } finally {
             native.requestFree(request);
           }
-          const chunks: Float32Array[] = [];
-          let rate = 0;
-          let channelCount = 0;
           try {
-            for (;;) {
-              const event: [unknown] = [null];
-              check(native.streamNextEvent(session, event), "synthesis");
-              // An empty queue ends the text; it is not an error.
-              if (!event[0]) break;
-              try {
-                const id: [string] = [""];
-                const samples: [unknown] = [null];
-                const frames: [number | bigint] = [0];
-                const sampleRate: [number] = [0];
-                const channels: [number] = [0];
-                check(
-                  native.namedAudio(
-                    native.eventAsResult(event[0]),
-                    0,
-                    id,
-                    samples,
-                    frames,
-                    sampleRate,
-                    channels,
-                  ),
-                  "audio read",
-                );
-                const length = Number(frames[0]) * channels[0];
-                if (!length) continue;
-                if (rate && (rate !== sampleRate[0] || channelCount !== channels[0]))
-                  throw new Error("audio.cpp changed the audio format inside one request.");
-                rate = sampleRate[0];
-                channelCount = channels[0];
-                // The view borrows event memory, so copy it before the event is freed.
-                const copy = new Float32Array(length);
-                copy.set(new Float32Array(koffi.view(samples[0], length * 4)));
-                chunks.push(copy);
-              } finally {
-                native.eventFree(event[0]);
-              }
-            }
+            const samples: [unknown] = [null];
+            const frames: [number | bigint] = [0];
+            const sampleRate: [number] = [0];
+            const channels: [number] = [0];
+            check(
+              native.resultAudio(result[0], samples, frames, sampleRate, channels),
+              "audio read",
+            );
+            const length = Number(frames[0]) * channels[0];
+            if (!length || !sampleRate[0]) throw new Error("audio.cpp produced no audio.");
+            // The view borrows the result's memory, so copy it before the result is freed.
+            return {
+              samples: new Float32Array(koffi.view(samples[0], length * 4)).slice(),
+              sampleRate: sampleRate[0],
+              channels: channels[0],
+            };
           } finally {
-            native.streamReset(session);
+            native.resultFree(result[0]);
           }
-          if (!rate) throw new Error("audio.cpp produced no audio.");
-          const all = new Float32Array(chunks.reduce((size, chunk) => size + chunk.length, 0));
-          let offset = 0;
-          for (const chunk of chunks) {
-            all.set(chunk, offset);
-            offset += chunk.length;
-          }
-          return { samples: all, sampleRate: rate, channels: channelCount };
         },
       };
     },

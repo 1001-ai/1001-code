@@ -448,7 +448,8 @@ it.effect(
           expect(worker.speak).toHaveBeenLastCalledWith({
             text: "Hi  there, yo",
             language: "en",
-            options: { speed: "1.1", voice_id: "slate" },
+            voiceId: "slate",
+            options: { speed: "1.1" },
           });
           expect(speech).toMatchObject({
             sampleRate: 24_000,
@@ -464,7 +465,7 @@ it.effect(
           // A request may name another voice, as a sample does, without changing the choice.
           yield* voices.speak({ text: "Sample.", modelId: "lantern", voiceId: "amber" });
           expect(worker.speak).toHaveBeenLastCalledWith(
-            expect.objectContaining({ options: { speed: "1.1", voice_id: "amber" } }),
+            expect.objectContaining({ voiceId: "amber", options: { speed: "1.1" } }),
           );
           expect(worker.load).toHaveBeenCalledOnce();
           expect(
