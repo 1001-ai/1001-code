@@ -390,6 +390,14 @@ import {
   MemoryView,
 } from "./memory.ts";
 import {
+  AgentsBoardError,
+  AgentsBoardMedia,
+  AgentsBoardMediaInput,
+  AgentsBoardProjectInput,
+  AgentsBoardSetBranchInput,
+  AgentsBoardSnapshot,
+} from "./agentsBoard.ts";
+import {
   StorageCleanupReport,
   DatabaseReclaimError,
   DatabaseStorageStatus,
@@ -596,6 +604,10 @@ export const WS_METHODS = {
   memorySubscribe: "memory.subscribe",
   memoryPropose: "memory.propose",
   memoryDecide: "memory.decide",
+  agentsBoardSubscribe: "agentsBoard.subscribe",
+  agentsBoardRefresh: "agentsBoard.refresh",
+  agentsBoardSetBranch: "agentsBoard.setBranch",
+  agentsBoardMedia: "agentsBoard.media",
 
   scheduledTasksSubscribe: "scheduledTasks.subscribe",
   scheduledTasksUpsert: "scheduledTasks.upsert",
@@ -1157,6 +1169,31 @@ const WsMemoryDecideRpc = Rpc.make(WS_METHODS.memoryDecide, {
   payload: MemoryDecideInput,
   success: MemoryProposal,
   error: Schema.Union([TeamCatalogError, EnvironmentAuthorizationError]),
+});
+
+const WsAgentsBoardSubscribeRpc = Rpc.make(WS_METHODS.agentsBoardSubscribe, {
+  payload: AgentsBoardProjectInput,
+  success: AgentsBoardSnapshot,
+  error: EnvironmentAuthorizationError,
+  stream: true,
+});
+
+const WsAgentsBoardRefreshRpc = Rpc.make(WS_METHODS.agentsBoardRefresh, {
+  payload: AgentsBoardProjectInput,
+  success: AgentsBoardSnapshot,
+  error: EnvironmentAuthorizationError,
+});
+
+const WsAgentsBoardSetBranchRpc = Rpc.make(WS_METHODS.agentsBoardSetBranch, {
+  payload: AgentsBoardSetBranchInput,
+  success: AgentsBoardSnapshot,
+  error: Schema.Union([AgentsBoardError, EnvironmentAuthorizationError]),
+});
+
+const WsAgentsBoardMediaRpc = Rpc.make(WS_METHODS.agentsBoardMedia, {
+  payload: AgentsBoardMediaInput,
+  success: AgentsBoardMedia,
+  error: Schema.Union([AgentsBoardError, EnvironmentAuthorizationError]),
 });
 
 const WsServerSignalProcessRpc = Rpc.make(WS_METHODS.serverSignalProcess, {
@@ -2298,6 +2335,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsMemorySubscribeRpc,
   WsMemoryProposeRpc,
   WsMemoryDecideRpc,
+  WsAgentsBoardSubscribeRpc,
+  WsAgentsBoardRefreshRpc,
+  WsAgentsBoardSetBranchRpc,
+  WsAgentsBoardMediaRpc,
   WsServerSignalProcessRpc,
   WsScheduledTasksSubscribeRpc,
   WsScheduledTasksUpsertRpc,

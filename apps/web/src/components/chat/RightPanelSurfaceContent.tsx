@@ -35,6 +35,7 @@ const DevicePanel = lazy(() =>
 const FilePreviewPanel = lazy(() => import("../files/FilePreviewPanel"));
 const BoardPanel = lazy(() => import("../board/BoardPanel"));
 const MemoryPanel = lazy(() => import("../memory/MemoryPanel"));
+const AgentsBoardPanel = lazy(() => import("../agentsBoard/AgentsBoardPanel"));
 
 type RightPanelTerminalProps = Omit<
   PersistentThreadTerminalPanelProps,
@@ -189,6 +190,12 @@ export function RightPanelSurfaceContent(props: {
             threadRef={threadRef}
             projectId={props.pullRequest.projectId}
           />
+        </Suspense>
+      );
+    case "agents-board":
+      return (
+        <Suspense fallback={null}>
+          <AgentsBoardPanel threadRef={threadRef} projectId={props.pullRequest.projectId} />
         </Suspense>
       );
     case "side-chat":
