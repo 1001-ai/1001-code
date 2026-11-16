@@ -1,14 +1,18 @@
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import {
   type EnvironmentId,
   type ThreadId,
   VOICE_AGENT_SAID_MAX_LENGTH,
   type VoiceAgentInterruption,
   type VoiceAgentOpenResult,
+  voiceAgentOpenFailureMessage,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
 import { useEffect, useRef, useState } from "react";
 
+import { useComposerDraftStore } from "~/composerDraftStore";
 import { useStableCallback } from "~/hooks/useStableCallback";
 import { useEnvironmentThread } from "~/state/threads";
 import { useAtomCommand } from "~/state/use-atom-command";
@@ -16,7 +20,6 @@ import { voiceAgentClose, voiceAgentOpen, voiceAgentSay } from "~/state/voiceAge
 
 import { lampAgentRunning, type LampAgentMessage } from "./lampAgent.logic";
 
-const NOT_REACHED = "The voice agent could not be reached.";
 const NO_MESSAGES: ReadonlyArray<LampAgentMessage> = [];
 
 /** Where the layer stands with its agent: asking for it, talking to it, or told why it cannot. */
@@ -47,11 +50,23 @@ export function useLampAgent(input: {
     // One task later: an effect that React runs twice in development then asks the server once,
     // and each ask may start a paid turn.
     const asking = setTimeout(() => {
-      void open({ environmentId, input: { threadId } }).then((result) => {
+      // A new chat has no thread on the server until its first message: the server is told its
+      // project, and keeps the conversation under the id the chat gets. It reads the project
+      // only when the thread does not exist.
+      const projectId = useComposerDraftStore
+        .getState()
+        .getDraftSessionByRef(scopeThreadRef(environmentId, threadId))?.projectId;
+      void open({
+        environmentId,
+        input: { threadId, ...(projectId === undefined ? {} : { projectId }) },
+      }).then((result) => {
         const opened: VoiceAgentOpenResult =
           result._tag === "Success"
             ? result.value
-            : { status: "unavailable", message: NOT_REACHED };
+            : {
+                status: "unavailable",
+                message: voiceAgentOpenFailureMessage(squashAtomCommandFailure(result)),
+              };
         if (opened.status === "ready") {
           // The layer closed while the server was opening the conversation: end it at once.
           if (!live) return void close({ environmentId, input: { sessionId: opened.sessionId } });

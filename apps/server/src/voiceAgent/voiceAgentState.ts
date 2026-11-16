@@ -23,6 +23,8 @@ const StoredSession = Schema.Struct({
   turns: Schema.Number,
   /** How often the user has spoken in it. */
   said: Schema.Number,
+  /** The user's name as the agents board signs it, read once when the conversation opened. */
+  userName: Schema.optional(Schema.NullOr(Schema.String)),
   /** The cursor to keep once the agent has given this conversation's update. */
   pendingCursor: Schema.optional(Schema.Struct({ key: Schema.String, cursor: Cursor })),
 });

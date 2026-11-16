@@ -20,6 +20,7 @@ import {
   type VoiceAgentSayInput,
   type VoiceAgentSayResult,
   type VoiceAgentState,
+  type VoiceAgentThreadInput,
   type VoiceAgentTranscript,
   defaultInstanceIdForDriver,
 } from "@t3tools/contracts";
@@ -101,9 +102,13 @@ export class VoiceAgent extends Context.Service<
   {
     /** What a chat shows of its voice agent now, then every change. */
     readonly changes: (parentThreadId: ThreadId) => Stream.Stream<VoiceAgentState>;
-    /** Starts a conversation over a chat and asks the agent for the update, when there is one. */
+    /**
+     * Starts a conversation over a chat and asks the agent for the update, when there is one.
+     * A new chat has no thread yet: with its `projectId` the conversation is kept under the id
+     * the chat will get, and no thread is made for the chat itself.
+     */
     readonly open: (
-      parentThreadId: ThreadId,
+      input: VoiceAgentThreadInput,
     ) => Effect.Effect<VoiceAgentOpenResult, VoiceAgentError>;
     /** What the user said. A running answer is steered, not restarted. */
     readonly say: (
@@ -144,8 +149,10 @@ export class VoiceAgent extends Context.Service<
 const CLAUDE_DRIVER = ProviderDriverKind.make("claudeAgent");
 const BOARD_REFRESH_TIMEOUT = "8 seconds";
 
-const UNAVAILABLE_MESSAGE =
-  "The voice agent needs Claude. Sign in to Claude in Settings, then open this again.";
+const NO_CLAUDE_MESSAGE =
+  "The voice agent runs on Claude, and no Claude provider is ready on this server. Install Claude Code and sign in to it under Settings, then open this again.";
+const CLAUDE_OFF_FOR_PROJECT_MESSAGE =
+  "The voice agent runs on Claude, and Claude is turned off for this project. Turn it on in the project's settings, then open this again.";
 
 /**
  * The Claude provider the voice agent runs on, with the user's own sign-in. Other providers are
@@ -179,6 +186,12 @@ const DEV_REPLAY_SELECTION: ModelSelection = {
 
 const decodeState = Schema.decodeUnknownOption(Schema.fromJsonString(VoiceAgentStateFile));
 const encodeState = Schema.encodeSync(Schema.fromJsonString(VoiceAgentStateFile));
+
+/** What the voice thread takes from its chat: a chat with no thread yet has only its project. */
+type VoiceAgentParent = Pick<
+  OrchestrationV2ThreadShell,
+  "id" | "projectId" | "branch" | "worktreePath"
+>;
 
 interface ShownMedia {
   readonly sessionId: string;
@@ -329,7 +342,7 @@ const make = Effect.gen(function* () {
 
   /** The chat's voice thread, made on first use. */
   const ensureThread = Effect.fn("VoiceAgent.ensureThread")(function* (
-    parent: OrchestrationV2ThreadShell,
+    parent: VoiceAgentParent,
     modelSelection: ModelSelection,
   ) {
     const known = state.threads[parent.id];
@@ -403,11 +416,20 @@ const make = Effect.gen(function* () {
       );
   });
 
-  const open: VoiceAgent["Service"]["open"] = Effect.fn("VoiceAgent.open")(function* (parentId) {
-    const parent = yield* shellOf(parentId);
-    if (parent === null || isVoiceAgentThread(parent)) {
+  const open: VoiceAgent["Service"]["open"] = Effect.fn("VoiceAgent.open")(function* (input) {
+    const parentId = input.threadId;
+    const shell = yield* shellOf(parentId);
+    if (shell !== null && isVoiceAgentThread(shell)) {
       return yield* new VoiceAgentError({ reason: "thread-not-found" });
     }
+    // A new chat has no thread until its first message, and making one is not this service's
+    // to do: the voice thread hangs under the id the chat will get, in the chat's project.
+    const parent: VoiceAgentParent | null =
+      shell ??
+      (input.projectId === undefined
+        ? null
+        : { id: parentId, projectId: input.projectId, branch: null, worktreePath: null });
+    if (parent === null) return yield* new VoiceAgentError({ reason: "thread-not-found" });
     const provider = replay ? undefined : voiceAgentProvider(yield* registry.getProviders);
     const selection: ModelSelection | undefined = replay
       ? DEV_REPLAY_SELECTION
@@ -419,7 +441,10 @@ const make = Effect.gen(function* () {
         instanceId: selection.instanceId,
       }));
     if (selection === undefined || !enabled) {
-      return { status: "unavailable", message: UNAVAILABLE_MESSAGE } as const;
+      return {
+        status: "unavailable",
+        message: selection === undefined ? NO_CLAUDE_MESSAGE : CLAUDE_OFF_FOR_PROJECT_MESSAGE,
+      } as const;
     }
     return yield* lock.withPermits(1)(
       Effect.gen(function* () {
@@ -435,7 +460,17 @@ const make = Effect.gen(function* () {
           ),
           Effect.mapError(() => new VoiceAgentError({ reason: "not-delivered" })),
         );
-        const board = yield* readBoard(parent.projectId);
+        // Once a conversation: who the user is to the other agents, read where the board signs.
+        const [board, userName] = yield* Effect.all(
+          [
+            readBoard(parent.projectId),
+            agentsBoard.signerName.pipe(
+              Effect.timeoutOption(BOARD_REFRESH_TIMEOUT),
+              Effect.map(Option.getOrNull),
+            ),
+          ],
+          { concurrency: 2 },
+        );
         const openedAt = yield* nowIso;
         const digest =
           board === null
@@ -454,6 +489,7 @@ const make = Effect.gen(function* () {
           closedAt: null,
           turns: 0,
           said: 0,
+          userName,
           ...(board === null || digest === null || digest.changes === null
             ? {}
             : { pendingCursor: { key: board.key, cursor: digest.cursor } }),
@@ -471,7 +507,7 @@ const make = Effect.gen(function* () {
           yield* publish;
           return { ...ready, update: "nothing-new" } as const;
         }
-        yield* send(session, "open", voiceAgentOpenedMessage(changes));
+        yield* send(session, "open", voiceAgentOpenedMessage(changes, userName));
         yield* publish;
         return { ...ready, update: "requested" } as const;
       }),
@@ -488,7 +524,11 @@ const make = Effect.gen(function* () {
     const sent = yield* send(
       session,
       "say",
-      voiceAgentSaidMessage({ text: input.text, interruption: input.interruption }),
+      voiceAgentSaidMessage({
+        text: input.text,
+        interruption: input.interruption,
+        userName: session.userName,
+      }),
     );
     yield* lock.withPermits(1)(
       save({

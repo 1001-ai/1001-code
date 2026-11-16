@@ -1,7 +1,7 @@
 import * as Schema from "effect/Schema";
 
 import { AgentsBoardAgentId, AgentsBoardMediaPath } from "./agentsBoard.ts";
-import { IsoDateTime, NonNegativeInt, ThreadId } from "./baseSchemas.ts";
+import { IsoDateTime, NonNegativeInt, ProjectId, ThreadId } from "./baseSchemas.ts";
 import { MEMORY_PROPOSE_TOOL_NAME } from "./memory.ts";
 
 /**
@@ -57,7 +57,14 @@ export const VoiceAgentSessionId = Schema.String.check(
 export type VoiceAgentSessionId = typeof VoiceAgentSessionId.Type;
 
 /** The chat the layer was opened over. */
-export const VoiceAgentThreadInput = Schema.Struct({ threadId: ThreadId });
+export const VoiceAgentThreadInput = Schema.Struct({
+  threadId: ThreadId,
+  /**
+   * The project of a new chat that has no thread on the server yet. Only `open` reads it, and
+   * only when the thread does not exist: the conversation is kept under the id the chat gets.
+   */
+  projectId: Schema.optional(ProjectId),
+});
 export type VoiceAgentThreadInput = typeof VoiceAgentThreadInput.Type;
 
 export const VoiceAgentOpenResult = Schema.Union([
@@ -161,18 +168,31 @@ export const VoiceAgentErrorReason = Schema.Literals([
 export type VoiceAgentErrorReason = typeof VoiceAgentErrorReason.Type;
 
 const ERROR_MESSAGES: Record<VoiceAgentErrorReason, string> = {
-  "thread-not-found": "This chat no longer exists.",
+  "thread-not-found": "This chat no longer exists, so the voice agent has nothing to open over.",
   "session-not-found": "This voice conversation no longer exists.",
   "session-closed": "This voice conversation has ended.",
-  "not-delivered": "The voice agent could not be reached.",
+  "not-delivered":
+    "The server could not start the voice agent's answer. Check that Claude answers in a chat, then open this again.",
 };
 
-export class VoiceAgentError extends Schema.TaggedError<VoiceAgentError>()("VoiceAgentError", {
-  reason: VoiceAgentErrorReason,
-}) {
-  override get message(): string {
-    return ERROR_MESSAGES[this.reason];
-  }
+/** What the layer says when the server did not answer at all. */
+const VOICE_AGENT_NO_ANSWER_MESSAGE =
+  "The server did not answer. Check the connection to this environment, then open the voice agent again.";
+
+const isErrorReason = Schema.is(VoiceAgentErrorReason);
+
+/**
+ * The one line the layer shows when a conversation could not be opened: the server's own reason
+ * when it gave one, that this connection may not use the agent, and otherwise that the server
+ * did not answer.
+ */
+export function voiceAgentOpenFailureMessage(error: unknown): string {
+  const fields = typeof error === "object" && error !== null ? error : {};
+  const reason = "reason" in fields ? fields.reason : undefined;
+  if (isErrorReason(reason)) return ERROR_MESSAGES[reason];
+  return "_tag" in fields && fields._tag === "EnvironmentAuthorizationError"
+    ? "This connection is not allowed to use the voice agent on this server."
+    : VOICE_AGENT_NO_ANSWER_MESSAGE;
 }
 
 /**
@@ -186,4 +206,12 @@ export function withoutVoiceAgentThreads<
   return threads.some((thread) => thread.lineage.voiceAgent === true)
     ? threads.filter((thread) => thread.lineage.voiceAgent !== true)
     : threads;
+}
+
+export class VoiceAgentError extends Schema.TaggedError<VoiceAgentError>()("VoiceAgentError", {
+  reason: VoiceAgentErrorReason,
+}) {
+  override get message(): string {
+    return ERROR_MESSAGES[this.reason];
+  }
 }

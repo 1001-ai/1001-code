@@ -84,6 +84,8 @@ export class AgentsBoard extends Context.Service<
     readonly sendInboxMessage: (
       input: AgentsBoardInboxMessageInput,
     ) => Effect.Effect<AgentsBoardInboxMessageSent, AgentsBoardError>;
+    /** The name `sendInboxMessage` signs with now; null when the GitHub CLI is not signed in. */
+    readonly signerName: Effect.Effect<string | null>;
   }
 >()("t3/agentsBoard/AgentsBoard") {}
 
@@ -819,7 +821,20 @@ const make = Effect.gen(function* () {
     };
   });
 
-  return AgentsBoard.of({ read, changes, refresh, setBranch, media, sendInboxMessage });
+  const signerName = signer().pipe(
+    Effect.map((person) => person.name),
+    Effect.orElseSucceed(() => null),
+  );
+
+  return AgentsBoard.of({
+    read,
+    changes,
+    refresh,
+    setBranch,
+    media,
+    sendInboxMessage,
+    signerName,
+  });
 });
 
 export const layer = Layer.effect(AgentsBoard, make);

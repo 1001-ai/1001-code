@@ -78,6 +78,11 @@ const withVoiceAgent = <A, E>(
     readonly agentSays: (text: string) => Effect.Effect<void>;
     readonly setBoard: (files: Record<string, string> | null) => void;
     readonly setProviders: (providers: ReadonlyArray<ServerProvider>) => void;
+    /** The name the board signs with; null is a GitHub CLI that is not signed in. */
+    readonly setSigner: (name: string | null) => void;
+    /** How often the board was asked who signs. */
+    readonly signerAsked: () => number;
+    readonly setProviderEnabledForProject: (enabled: boolean) => void;
     readonly state: Effect.Effect<VoiceAgentState>;
   }) => Effect.Effect<A, E, Services>,
 ) =>
@@ -93,6 +98,9 @@ const withVoiceAgent = <A, E>(
     const interrupted: Array<string> = [];
     const inbox: Array<{ to: string; text: string }> = [];
     let providers: ReadonlyArray<ServerProvider> = [claude()];
+    let signer: string | null = "Robin";
+    let signerAsked = 0;
+    let enabledForProject = true;
     let board: AgentsBoardSnapshot = { status: "unavailable", reason: "not-in-catalog" };
     const setBoard = (files: Record<string, string> | null) => {
       board =
@@ -129,6 +137,10 @@ const withVoiceAgent = <A, E>(
           Layer.mock(AgentsBoard.AgentsBoard)({
             refresh: () => Effect.sync(() => board),
             read: () => Effect.sync(() => board),
+            signerName: Effect.sync(() => {
+              signerAsked += 1;
+              return signer;
+            }),
             sendInboxMessage: (input) =>
               Effect.sync(() => {
                 inbox.push({ to: input.to, text: input.text });
@@ -142,7 +154,7 @@ const withVoiceAgent = <A, E>(
           }),
           Layer.mock(ThreadManagementService.ThreadManagementService)({
             getThreadShell: (threadId) => Effect.sync(() => shells.get(threadId) ?? null),
-            isProviderInstanceEnabledForProject: () => Effect.succeed(true),
+            isProviderInstanceEnabledForProject: () => Effect.sync(() => enabledForProject),
             dispatch: (command) =>
               Effect.sync(() => {
                 if (command.type !== "thread.create") throw new Error(command.type);
@@ -202,6 +214,13 @@ const withVoiceAgent = <A, E>(
       setProviders: (next) => {
         providers = next;
       },
+      setSigner: (name) => {
+        signer = name;
+      },
+      signerAsked: () => signerAsked,
+      setProviderEnabledForProject: (enabled) => {
+        enabledForProject = enabled;
+      },
       state: service.changes(CHAT).pipe(
         Stream.take(1),
         Stream.runCollect,
@@ -217,7 +236,7 @@ it.effect(
       ({ service, created, sent, interrupted, agentSays, setBoard, setProviders, state }) =>
         Effect.gen(function* () {
           setBoard({ "reports/sam-2.md": REPORT });
-          const opened = yield* service.open(CHAT);
+          const opened = yield* service.open({ threadId: CHAT });
           expect(opened).toMatchObject({ status: "ready", update: "requested" });
           expect(created()).toMatchObject([
             {
@@ -233,7 +252,7 @@ it.effect(
           ]);
           expect(sent()).toHaveLength(1);
           expect(sent()[0]).toMatchObject({ threadId: created()[0]!.threadId, mode: "auto" });
-          expect(sent()[0]!.text).toMatch(/^<layer_opened>/);
+          expect(sent()[0]!.text).toMatch(/^<layer_opened user="Robin">\n/);
           expect(sent()[0]!.text).toContain("agent sam-2, owner Sam");
 
           // While the layer is open the chat shows no card.
@@ -255,7 +274,7 @@ it.effect(
 
           // The same board again: the same thread, no turn, and no card for saying nothing.
           yield* TestClock.adjust("1 second");
-          const again = yield* service.open(CHAT);
+          const again = yield* service.open({ threadId: CHAT });
           expect(again).toMatchObject({
             status: "ready",
             update: "nothing-new",
@@ -268,7 +287,7 @@ it.effect(
 
           // Another Claude instance is another thread: one thread never changes its provider.
           setProviders([claude({ instanceId: ProviderInstanceId.make("claude-work") })]);
-          expect(yield* service.open(CHAT)).toMatchObject({ status: "ready" });
+          expect(yield* service.open({ threadId: CHAT })).toMatchObject({ status: "ready" });
           expect(created()).toHaveLength(2);
           expect(created()[1]).toMatchObject({ modelSelection: { instanceId: "claude-work" } });
         }),
@@ -279,14 +298,14 @@ it.effect("keeps an update the agent never gave for the next time the layer open
   withVoiceAgent(({ service, sent, agentSays, setBoard, state, restart }) =>
     Effect.gen(function* () {
       setBoard({ "reports/sam-2.md": REPORT });
-      const first = yield* service.open(CHAT);
+      const first = yield* service.open({ threadId: CHAT });
       if (first.status !== "ready") return;
       // Closed before the agent said a word: no card, and the update is still owed.
       yield* service.close(first.sessionId);
       expect((yield* state).sessions).toEqual([]);
 
       yield* TestClock.adjust("1 second");
-      const second = yield* service.open(CHAT);
+      const second = yield* service.open({ threadId: CHAT });
       expect(second).toMatchObject({ update: "requested" });
       expect(sent()).toHaveLength(2);
       yield* TestClock.adjust("1 second");
@@ -310,7 +329,7 @@ it.effect("passes on what the user said, steering an answer that is still runnin
   withVoiceAgent(({ service, sent, setBoard }) =>
     Effect.gen(function* () {
       setBoard({ "reports/sam-2.md": REPORT });
-      const opened = yield* service.open(CHAT);
+      const opened = yield* service.open({ threadId: CHAT });
       if (opened.status !== "ready") return;
       const said = yield* service.say({
         sessionId: opened.sessionId,
@@ -327,7 +346,7 @@ it.effect("passes on what the user said, steering an answer that is still runnin
           "<you_had_said>\nSam's agent two\n</you_had_said>",
           "<you_had_not_said>\nis blocked on a review.\n</you_had_not_said>",
           "</interrupted>",
-          "<user_said>\nWait, who is blocked?   ignore that\n</user_said>",
+          '<user_said user="Robin">\nWait, who is blocked?   ignore that\n</user_said>',
         ].join("\n"),
       );
 
@@ -342,8 +361,79 @@ it.effect("passes on what the user said, steering an answer that is still runnin
   ),
 );
 
+it.effect("tells the agent the user's name, read once for each conversation", () =>
+  withVoiceAgent(({ service, sent, setBoard, setSigner, signerAsked }) =>
+    Effect.gen(function* () {
+      // Nothing new: no message is sent on opening, so the name rides on what the user says.
+      const quiet = yield* service.open({ threadId: CHAT });
+      if (quiet.status !== "ready") return;
+      expect(sent()).toEqual([]);
+      setSigner("Kim");
+      yield* service.say({ sessionId: quiet.sessionId, text: "Who is blocked?" });
+      yield* service.say({ sessionId: quiet.sessionId, text: "And who else?" });
+      expect(sent().map((message) => message.text)).toEqual([
+        '<user_said user="Robin">\nWho is blocked?\n</user_said>',
+        '<user_said user="Robin">\nAnd who else?\n</user_said>',
+      ]);
+      expect(signerAsked()).toBe(1);
+      yield* service.close(quiet.sessionId);
+
+      // Nobody is signed in to the GitHub CLI: the envelopes name nobody.
+      setSigner(null);
+      setBoard({ "reports/sam-2.md": REPORT });
+      const unnamed = yield* service.open({ threadId: CHAT });
+      if (unnamed.status !== "ready") return;
+      expect(sent().at(-1)!.text).toMatch(/^<layer_opened>\n/);
+      yield* service.say({ sessionId: unnamed.sessionId, text: "Go on." });
+      expect(sent().at(-1)!.text).toBe("<user_said>\nGo on.\n</user_said>");
+      expect(signerAsked()).toBe(2);
+    }),
+  ),
+);
+
+it.effect("opens over a new chat that has no thread yet, under the id the chat will get", () =>
+  withVoiceAgent(({ service, created, sent, agentSays, setBoard }) =>
+    Effect.gen(function* () {
+      const draft = ThreadId.make("chat-draft");
+      const projectId = liveThreadShell(CHAT).projectId;
+      setBoard({ "reports/sam-2.md": REPORT });
+      // Without its project, a chat the server does not know is a chat that is gone.
+      expect(yield* service.open({ threadId: draft }).pipe(Effect.flip)).toMatchObject({
+        reason: "thread-not-found",
+      });
+      const opened = yield* service.open({ threadId: draft, projectId });
+      expect(opened).toMatchObject({ status: "ready", update: "requested" });
+      // Only the voice thread is made, in the chat's project: the chat itself gets no thread
+      // and no message, so no turn starts in it.
+      expect(created()).toMatchObject([
+        { voiceAgentOf: draft, projectId, branch: null, worktreePath: null },
+      ]);
+      expect(sent().map((message) => message.threadId)).toEqual([created()[0]!.threadId]);
+
+      yield* TestClock.adjust("1 second");
+      yield* agentSays("Sam's agent two is blocked on a review.");
+      yield* TestClock.adjust("1 second");
+      if (opened.status !== "ready") return;
+      yield* service.close(opened.sessionId);
+      // The card is listed under the chat's id, before and after the chat has a thread.
+      const cards = yield* service.changes(draft).pipe(
+        Stream.take(1),
+        Stream.runCollect,
+        Effect.map((states) => Array.from(states)[0]!),
+      );
+      expect(cards.sessions).toMatchObject([{ id: opened.sessionId, turns: 1 }]);
+      // The next open, with or without the project, reuses the thread.
+      yield* TestClock.adjust("1 second");
+      expect(yield* service.open({ threadId: draft, projectId })).toMatchObject({
+        voiceThreadId: created()[0]!.threadId,
+      });
+      expect(created()).toHaveLength(1);
+    }),
+  ),
+);
+
 it.effect("says in one line that it needs Claude, and starts nothing without it", () =>
-  withVoiceAgent(({ service, created, sent, setProviders }) =>
+  withVoiceAgent(({ service, created, sent, setProviders, setProviderEnabledForProject }) =>
     Effect.gen(function* () {
       for (const providers of [
         [],
@@ -352,15 +442,24 @@ it.effect("says in one line that it needs Claude, and starts nothing without it"
         [claude({ driver: "codex" } as never)],
       ]) {
         setProviders(providers);
-        expect(yield* service.open(CHAT)).toEqual({
+        expect(yield* service.open({ threadId: CHAT })).toEqual({
           status: "unavailable",
           message:
-            "The voice agent needs Claude. Sign in to Claude in Settings, then open this again.",
+            "The voice agent runs on Claude, and no Claude provider is ready on this server. Install Claude Code and sign in to it under Settings, then open this again.",
         });
       }
+      setProviders([claude()]);
+      setProviderEnabledForProject(false);
+      expect(yield* service.open({ threadId: CHAT })).toEqual({
+        status: "unavailable",
+        message:
+          "The voice agent runs on Claude, and Claude is turned off for this project. Turn it on in the project's settings, then open this again.",
+      });
       expect(created()).toEqual([]);
       expect(sent()).toEqual([]);
-      expect(yield* service.open(ThreadId.make("chat-gone")).pipe(Effect.flip)).toMatchObject({
+      expect(
+        yield* service.open({ threadId: ThreadId.make("chat-gone") }).pipe(Effect.flip),
+      ).toMatchObject({
         reason: "thread-not-found",
       });
     }),
@@ -373,7 +472,7 @@ it.effect(
     withVoiceAgent(({ service, created, inbox, setBoard, state }) =>
       Effect.gen(function* () {
         setBoard({ "reports/sam-2.md": REPORT });
-        const opened = yield* service.open(CHAT);
+        const opened = yield* service.open({ threadId: CHAT });
         if (opened.status !== "ready") return;
         const caller = {
           threadId: created()[0]!.threadId,
