@@ -93,7 +93,8 @@ import {
   resolvePreviewAnnotationImage,
   userMessageFileLabel,
 } from "./TimelineUserMessageRow.logic";
-import { ExchangeReplyLink, useExchangeBubble } from "./ExchangeThread";
+import { ExchangeReplyLink, ExchangeThreadButton, useExchangeBubble } from "./ExchangeThread";
+import { useMessageContextMenu, type MessageCopy } from "./MessageContextMenu";
 
 // Drawn inside the media so dark screenshots keep an edge on the dark background.
 const MEDIA_EDGE_CLASS_NAME =
@@ -595,6 +596,15 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
         });
   const copyText =
     resolvedContext.text || mediaCopyRecords.map(formatComposerContextReference).join("\n");
+  const copyMessage: MessageCopy | null = !copyText
+    ? null
+    : contextClipboardFragment
+      ? {
+          text: copyText,
+          extraFlavors: { [COMPOSER_CONTEXT_CLIPBOARD_MIME]: contextClipboardFragment },
+        }
+      : { text: plainText };
+  const messageMenu = useMessageContextMenu({ rowId: row.id, copy: copyMessage, promptLink });
   const onBodyCopyCapture = (event: React.ClipboardEvent<HTMLDivElement>) => {
     if (resolvedContext.records.length === 0 || !event.clipboardData) return;
     const selection = window.getSelection();
@@ -817,19 +827,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
         {typeof revertTurnCount === "number" && (
           <RevertUserMessageButton turnCount={revertTurnCount} messageId={row.message.id} />
         )}
-        {copyText && (
-          <MessageCopyButton
-            text={contextClipboardFragment ? copyText : plainText}
-            {...(contextClipboardFragment
-              ? {
-                  extraFlavors: {
-                    [COMPOSER_CONTEXT_CLIPBOARD_MIME]: contextClipboardFragment,
-                  },
-                }
-              : {})}
-            variant="ghost"
-          />
-        )}
+        {copyMessage && <MessageCopyButton {...copyMessage} variant="ghost" />}
         {promptLink !== null && (
           <MessageCopyButton
             text={promptLink}
@@ -838,6 +836,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             variant="ghost"
           />
         )}
+        <ExchangeThreadButton rowId={row.id} />
       </div>
     </div>
   );
@@ -888,6 +887,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
           folded && expanded && "w-full",
         )}
         {...exchangeBubble}
+        onContextMenu={messageMenu.onContextMenu}
       >
         {/* Outside the fold so a collapsed message still has a heading to navigate to. */}
         {mediaAboveText ? null : (
@@ -1051,6 +1051,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
       </div>
       <UserMessageProjectedStatus row={row} />
       <ExchangeReplyLink row={row} />
+      {messageMenu.menu}
       {!folded || expanded ? (
         <div
           className={cn(

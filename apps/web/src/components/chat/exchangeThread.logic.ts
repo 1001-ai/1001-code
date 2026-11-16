@@ -300,8 +300,33 @@ export function sameExchangeStructure(
   return true;
 }
 
+const MATCH_IGNORED_CHARS = /[*_`~>#]/g;
+const ELLIPSIS = /^(?:\.{3}|…)+|(?:\.{3}|…)+$/g;
+
+/** Text a `Re:` excerpt is matched against: case, quote style, markdown marks and spacing dropped. */
+export function reLineMatchText(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[‘’‚‛′]/g, "'")
+    .replace(/[“”„‟″]/g, '"')
+    .replace(MATCH_IGNORED_CHARS, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Whether a `Re:` line quotes one of the exchange's messages, given each one's `reLineMatchText`. */
+export function reLineQuotesMessage(
+  excerpt: string | null,
+  messageMatchTexts: ReadonlyArray<string>,
+): boolean {
+  if (excerpt === null) return false;
+  const needle = reLineMatchText(excerpt).replace(ELLIPSIS, "").trim();
+  return needle !== "" && messageMatchTexts.some((text) => text.includes(needle));
+}
+
 // Stored in the free-form `threadDetailsItems` record, so no settings schema change.
 const REPLY_MARKERS_SETTING_KEY = "replyMarkers";
+const MESSAGE_CLICK_THREAD_SETTING_KEY = "messageClickOpensThread";
 
 export function replyMarkersEnabled(settings: Pick<ClientSettings, "threadDetailsItems">) {
   return settings.threadDetailsItems[REPLY_MARKERS_SETTING_KEY] ?? true;
@@ -313,4 +338,16 @@ export function setReplyMarkersEnabled(
 ): ClientSettings["threadDetailsItems"] {
   const { [REPLY_MARKERS_SETTING_KEY]: _previous, ...rest } = settings.threadDetailsItems;
   return enabled ? rest : { ...rest, [REPLY_MARKERS_SETTING_KEY]: false };
+}
+
+export function messageClickOpensThread(settings: Pick<ClientSettings, "threadDetailsItems">) {
+  return settings.threadDetailsItems[MESSAGE_CLICK_THREAD_SETTING_KEY] ?? false;
+}
+
+export function setMessageClickOpensThread(
+  settings: Pick<ClientSettings, "threadDetailsItems">,
+  enabled: boolean,
+): ClientSettings["threadDetailsItems"] {
+  const { [MESSAGE_CLICK_THREAD_SETTING_KEY]: _previous, ...rest } = settings.threadDetailsItems;
+  return enabled ? { ...rest, [MESSAGE_CLICK_THREAD_SETTING_KEY]: true } : rest;
 }

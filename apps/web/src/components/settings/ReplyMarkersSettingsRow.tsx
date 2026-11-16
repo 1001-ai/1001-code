@@ -1,5 +1,10 @@
 import { Switch } from "../ui/switch";
-import { replyMarkersEnabled, setReplyMarkersEnabled } from "../chat/exchangeThread.logic";
+import {
+  messageClickOpensThread,
+  replyMarkersEnabled,
+  setMessageClickOpensThread,
+  setReplyMarkersEnabled,
+} from "../chat/exchangeThread.logic";
 import { SettingResetButton, SettingsRow } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
@@ -24,6 +29,35 @@ export function ReplyMarkersSettingsRow() {
           checked={enabled}
           onCheckedChange={(checked) => setEnabled(Boolean(checked))}
           aria-label="Reply markers"
+        />
+      }
+    />
+  );
+}
+
+export function MessageClickThreadSettingsRow() {
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  const enabled = messageClickOpensThread(settings);
+  const setEnabled = (next: boolean) =>
+    updateSettings({ threadDetailsItems: setMessageClickOpensThread(settings, next) });
+  return (
+    <SettingsRow
+      {...searchableSetting("message-click-thread")}
+      description="Open a message’s thread when you click it. Without this, use View thread under the message, or right-click it."
+      resetAction={
+        enabled ? (
+          <SettingResetButton
+            label="open thread on message click"
+            onClick={() => setEnabled(false)}
+          />
+        ) : null
+      }
+      control={
+        <Switch
+          checked={enabled}
+          onCheckedChange={(checked) => setEnabled(Boolean(checked))}
+          aria-label="Open thread on message click"
         />
       }
     />

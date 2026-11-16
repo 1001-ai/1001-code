@@ -30,7 +30,13 @@ import { formatChatTimestampTooltip, formatDayAwareTimestamp } from "../../times
 import { useV2ItemSupport } from "../../state/v2ItemSupport";
 import { TimelineRowCtx, TimelineRowActivityCtx, type TimelineRow } from "./timelineRowContext";
 import { MESSAGE_HEADING_LEVEL, MessageAuthorHeading } from "./TimelineRowParts";
-import { ExchangeReLines, ExchangeReplyMarker, useExchangeBubble } from "./ExchangeThread";
+import {
+  ExchangeReLines,
+  ExchangeReplyMarker,
+  ExchangeThreadButton,
+  useExchangeBubble,
+} from "./ExchangeThread";
+import { useMessageContextMenu } from "./MessageContextMenu";
 import { splitReLines, textAfterReLines } from "@t3tools/shared/replyMarkers";
 
 export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
@@ -46,13 +52,28 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
   const reLines = splitReLines(messageText, Boolean(row.message.streaming));
   const bodyText = reLines?.body ?? messageText;
   const exchangeBubble = useExchangeBubble(row.id);
+  const copyState = resolveAssistantMessageCopyState({
+    text: row.message.text,
+    showCopyButton: true,
+    streaming: Boolean(row.message.streaming),
+  });
+  const reply = useAssistantReply(row.message, row.projectedItem?.sourceItemId);
+  const messageMenu = useMessageContextMenu({
+    rowId: row.id,
+    copy: copyState.visible && copyState.text ? { text: copyState.text } : null,
+    reply,
+  });
 
   return (
     <>
       <ExchangeReplyMarker row={row} />
       <div className="relative min-w-0 px-1 py-0.5">
         <MessageAuthorHeading>T3 Code</MessageAuthorHeading>
-        <div data-thread-find-text="true" {...exchangeBubble}>
+        <div
+          data-thread-find-text="true"
+          {...exchangeBubble}
+          onContextMenu={messageMenu.onContextMenu}
+        >
           {reLines ? <ExchangeReLines rowId={row.id} lines={reLines.lines} /> : null}
           <AssistantCitationSource
             messageId={row.message.id}
@@ -77,6 +98,7 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
             />
           </AssistantCitationSource>
         </div>
+        {messageMenu.menu}
         {ctx.onOpenTurnDiff ? (
           <AssistantChangedFilesSection
             turnSummary={row.assistantTurnDiffSummary}
@@ -93,6 +115,7 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
         {row.showAssistantMeta ? (
           <AssistantMessageMeta
             className="mt-1.5"
+            rowId={row.id}
             projectedItem={row.projectedItem}
             message={row.message}
             showCopyButton={row.showAssistantCopyButton}
@@ -160,6 +183,7 @@ export function AssistantMetaTimelineRow({
     <div className="px-1">
       <AssistantMessageMeta
         className="mt-0.5"
+        rowId={row.id}
         projectedItem={row.projectedItem}
         message={row.message}
         showCopyButton={row.showAssistantCopyButton}
@@ -172,6 +196,7 @@ export function AssistantMetaTimelineRow({
 
 function AssistantMessageMeta({
   className,
+  rowId,
   projectedItem,
   message,
   showCopyButton,
@@ -179,6 +204,7 @@ function AssistantMessageMeta({
   alwaysVisible = false,
 }: {
   className?: string;
+  rowId: string;
   projectedItem?: Extract<TimelineRow, { kind: "message" }>["projectedItem"];
   message: ChatMessage;
   showCopyButton: boolean;
@@ -211,6 +237,7 @@ function AssistantMessageMeta({
       {!message.streaming && projectedItem ? (
         <AssistantReplyButton message={message} itemId={projectedItem.sourceItemId} />
       ) : null}
+      <ExchangeThreadButton rowId={rowId} />
       {!message.streaming && (
         <Tooltip>
           <TooltipTrigger render={<p className="text-muted-foreground text-xs tabular-nums" />}>
@@ -225,12 +252,16 @@ function AssistantMessageMeta({
   );
 }
 
-function AssistantReplyButton({ message, itemId }: { message: ChatMessage; itemId: TurnItemId }) {
-  const ctx = use(TimelineRowCtx);
-  const { threadRef, onReplyToResponse } = ctx;
-  if (!threadRef || !onReplyToResponse || !message.text.trim()) return null;
-
-  const reply = () => {
+/** Attaches the message to the composer as the response the next message replies to. */
+function useAssistantReply(
+  message: ChatMessage,
+  itemId: TurnItemId | undefined,
+): (() => void) | null {
+  const { threadRef, onReplyToResponse } = use(TimelineRowCtx);
+  if (!threadRef || !onReplyToResponse || !itemId || message.streaming || !message.text.trim()) {
+    return null;
+  }
+  return () => {
     // The meta row can sit below trailing tool rows, so the message may be virtualized away.
     const source = [
       ...document.querySelectorAll<HTMLElement>("[data-assistant-citation-source]"),
@@ -250,6 +281,11 @@ function AssistantReplyButton({ message, itemId }: { message: ChatMessage; itemI
       }),
     );
   };
+}
+
+function AssistantReplyButton({ message, itemId }: { message: ChatMessage; itemId: TurnItemId }) {
+  const reply = useAssistantReply(message, itemId);
+  if (!reply) return null;
 
   return (
     <Tooltip>
