@@ -1,5 +1,5 @@
 import type { AgentsBoardData } from "@t3tools/contracts";
-import { expect, it } from "vitest";
+import { expect, it } from "@effect/vitest";
 
 import { buildAgentsBoard } from "../agentsBoard/agentsBoardFiles.ts";
 import {

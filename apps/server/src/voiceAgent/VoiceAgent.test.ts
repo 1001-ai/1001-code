@@ -16,6 +16,8 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
+import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 
@@ -52,6 +54,8 @@ const claude = (fields: Partial<ServerProvider> = {}) =>
     ...fields,
   }) as unknown as ServerProvider;
 
+type Services = FileSystem.FileSystem | Path.Path;
+
 interface Sent {
   readonly threadId: string;
   readonly text: string;
@@ -63,7 +67,7 @@ const withVoiceAgent = <A, E>(
   test: (fixture: {
     readonly service: VoiceAgent.VoiceAgent["Service"];
     /** A second server on the same state directory. */
-    readonly restart: Effect.Effect<VoiceAgent.VoiceAgent["Service"]>;
+    readonly restart: Effect.Effect<VoiceAgent.VoiceAgent["Service"], never, Services>;
     readonly created: () => ReadonlyArray<
       Extract<OrchestrationV2ServerCommand, { readonly type: "thread.create" }>
     >;
@@ -75,7 +79,7 @@ const withVoiceAgent = <A, E>(
     readonly setBoard: (files: Record<string, string> | null) => void;
     readonly setProviders: (providers: ReadonlyArray<ServerProvider>) => void;
     readonly state: Effect.Effect<VoiceAgentState>;
-  }) => Effect.Effect<A, E, FileSystem.FileSystem>,
+  }) => Effect.Effect<A, E, Services>,
 ) =>
   Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;
@@ -179,9 +183,10 @@ const withVoiceAgent = <A, E>(
         ),
       ),
     );
+    const scope = yield* Scope.Scope;
     const start = Layer.build(layer).pipe(
-      Effect.map((context) => VoiceAgent.VoiceAgent.pipe(Effect.provide(context))),
-      Effect.flatten,
+      Effect.flatMap((context) => VoiceAgent.VoiceAgent.pipe(Effect.provide(context))),
+      Effect.provideService(Scope.Scope, scope),
       Effect.orDie,
     );
     const service = yield* start;
@@ -208,58 +213,65 @@ const withVoiceAgent = <A, E>(
 it.effect(
   "makes one hidden Haiku thread for a chat, asks for the update, and shows a card after closing",
   () =>
-    withVoiceAgent(({ service, created, sent, interrupted, agentSays, setBoard, state }) =>
-      Effect.gen(function* () {
-        setBoard({ "reports/sam-2.md": REPORT });
-        const opened = yield* service.open(CHAT);
-        expect(opened).toMatchObject({ status: "ready", update: "requested" });
-        expect(created()).toMatchObject([
-          {
-            type: "thread.create",
-            voiceAgentOf: CHAT,
-            title: "Voice agent",
-            modelSelection: { instanceId: "claudeAgent", model: "claude-haiku-5-5" },
-            runtimeMode: "approval-required",
-            interactionMode: "default",
-            createdBy: "system",
-            creationSource: "server",
-          },
-        ]);
-        expect(sent()).toHaveLength(1);
-        expect(sent()[0]).toMatchObject({ threadId: created()[0]!.threadId, mode: "auto" });
-        expect(sent()[0]!.text).toMatch(/^<layer_opened>/);
-        expect(sent()[0]!.text).toContain("agent sam-2, owner Sam");
+    withVoiceAgent(
+      ({ service, created, sent, interrupted, agentSays, setBoard, setProviders, state }) =>
+        Effect.gen(function* () {
+          setBoard({ "reports/sam-2.md": REPORT });
+          const opened = yield* service.open(CHAT);
+          expect(opened).toMatchObject({ status: "ready", update: "requested" });
+          expect(created()).toMatchObject([
+            {
+              type: "thread.create",
+              voiceAgentOf: CHAT,
+              title: "Voice agent",
+              modelSelection: { instanceId: "claudeAgent", model: "claude-haiku-5-5" },
+              runtimeMode: "approval-required",
+              interactionMode: "default",
+              createdBy: "system",
+              creationSource: "server",
+            },
+          ]);
+          expect(sent()).toHaveLength(1);
+          expect(sent()[0]).toMatchObject({ threadId: created()[0]!.threadId, mode: "auto" });
+          expect(sent()[0]!.text).toMatch(/^<layer_opened>/);
+          expect(sent()[0]!.text).toContain("agent sam-2, owner Sam");
 
-        // While the layer is open the chat shows no card.
-        yield* TestClock.adjust("1 second");
-        yield* agentSays("Sam's agent two is blocked on a review.");
-        expect(yield* state).toEqual({ sessions: [], media: null });
+          // While the layer is open the chat shows no card.
+          yield* TestClock.adjust("1 second");
+          yield* agentSays("Sam's agent two is blocked on a review.");
+          expect(yield* state).toEqual({ sessions: [], media: null });
 
-        yield* TestClock.adjust("1 second");
-        if (opened.status !== "ready") return;
-        yield* service.close(opened.sessionId);
-        // The agent was still marked as running: it is stopped, since nobody listens.
-        expect(interrupted()).toEqual([created()[0]!.threadId]);
-        expect(yield* state).toMatchObject({ sessions: [{ id: opened.sessionId, turns: 1 }] });
-        expect(yield* service.transcript(opened.sessionId)).toMatchObject({
-          turns: [{ role: "agent", text: "Sam's agent two is blocked on a review." }],
-        });
-        // Closing twice is not an error and adds nothing.
-        yield* service.close(opened.sessionId);
+          yield* TestClock.adjust("1 second");
+          if (opened.status !== "ready") return;
+          yield* service.close(opened.sessionId);
+          // The agent was still marked as running: it is stopped, since nobody listens.
+          expect(interrupted()).toEqual([created()[0]!.threadId]);
+          expect(yield* state).toMatchObject({ sessions: [{ id: opened.sessionId, turns: 1 }] });
+          expect(yield* service.transcript(opened.sessionId)).toMatchObject({
+            turns: [{ role: "agent", text: "Sam's agent two is blocked on a review." }],
+          });
+          // Closing twice is not an error and adds nothing.
+          yield* service.close(opened.sessionId);
 
-        // The same board again: the same thread, no turn, and no card for saying nothing.
-        yield* TestClock.adjust("1 second");
-        const again = yield* service.open(CHAT);
-        expect(again).toMatchObject({
-          status: "ready",
-          update: "nothing-new",
-          voiceThreadId: created()[0]!.threadId,
-        });
-        expect(created()).toHaveLength(1);
-        expect(sent()).toHaveLength(1);
-        if (again.status === "ready") yield* service.close(again.sessionId);
-        expect((yield* state).sessions).toHaveLength(1);
-      }),
+          // The same board again: the same thread, no turn, and no card for saying nothing.
+          yield* TestClock.adjust("1 second");
+          const again = yield* service.open(CHAT);
+          expect(again).toMatchObject({
+            status: "ready",
+            update: "nothing-new",
+            voiceThreadId: created()[0]!.threadId,
+          });
+          expect(created()).toHaveLength(1);
+          expect(sent()).toHaveLength(1);
+          if (again.status === "ready") yield* service.close(again.sessionId);
+          expect((yield* state).sessions).toHaveLength(1);
+
+          // Another Claude instance is another thread: one thread never changes its provider.
+          setProviders([claude({ instanceId: ProviderInstanceId.make("claude-work") })]);
+          expect(yield* service.open(CHAT)).toMatchObject({ status: "ready" });
+          expect(created()).toHaveLength(2);
+          expect(created()[1]).toMatchObject({ modelSelection: { instanceId: "claude-work" } });
+        }),
     ),
 );
 

@@ -1,6 +1,6 @@
 import { ProviderInstanceId, ThreadId, VOICE_AGENT_TOOL_NAMES } from "@t3tools/contracts";
 import { VOICE_AGENT_INSTRUCTIONS } from "@t3tools/provider-core/server/runtimeInstructions";
-import { expect, it } from "vitest";
+import { expect, it } from "@effect/vitest";
 
 import { liveThreadShell } from "../mcp/McpToolAccess.testkit.ts";
 import { makeClaudeQueryOptions } from "../orchestration-v2/Adapters/ClaudeAdapterV2.ts";

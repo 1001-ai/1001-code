@@ -4,7 +4,7 @@ import {
   voiceAgentSaidMessage,
 } from "@t3tools/provider-core/server/runtimeInstructions";
 import * as DateTime from "effect/DateTime";
-import { expect, it } from "vitest";
+import { expect, it } from "@effect/vitest";
 
 import { withCreationProvenance } from "../orchestration-v2/ThreadManagementService.ts";
 import { liveThreadShell } from "../mcp/McpToolAccess.testkit.ts";

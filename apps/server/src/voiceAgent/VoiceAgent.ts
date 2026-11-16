@@ -27,6 +27,7 @@ import {
   voiceAgentOpenedMessage,
   voiceAgentSaidMessage,
 } from "@t3tools/provider-core/server/runtimeInstructions";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -43,6 +44,7 @@ import * as Stream from "effect/Stream";
 import * as AgentsBoard from "../agentsBoard/AgentsBoard.ts";
 import * as ServerConfig from "../config.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
+import { DEV_REPLAY_INSTANCE_ID } from "../provider/ProviderInstanceRegistryHydration.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import {
   type VoiceAgentBoardView,
@@ -165,6 +167,16 @@ function voiceAgentProvider(providers: ReadonlyArray<ServerProvider>): ServerPro
   return usable.find((provider) => provider.instanceId === preferred) ?? usable[0];
 }
 
+/**
+ * For trying the layer without a paid turn: a dev server started with `T3CODE_VOICE_AGENT_REPLAY=1`
+ * runs the voice thread on the free Replay provider, which plays a recording of two short
+ * answers. No model answers and no tool runs, so it shows the stream, the voice and the card only.
+ */
+const DEV_REPLAY_SELECTION: ModelSelection = {
+  instanceId: DEV_REPLAY_INSTANCE_ID,
+  model: "multi-turn",
+};
+
 const decodeState = Schema.decodeUnknownOption(Schema.fromJsonString(VoiceAgentStateFile));
 const encodeState = Schema.encodeSync(Schema.fromJsonString(VoiceAgentStateFile));
 
@@ -182,6 +194,10 @@ const make = Effect.gen(function* () {
   const registry = yield* ProviderRegistry.ProviderRegistry;
   const agentsBoard = yield* AgentsBoard.AgentsBoard;
 
+  // Only a server run from source has the Replay provider, so only there can the switch be on.
+  const replay =
+    config.devUrl !== undefined &&
+    (yield* HostProcess.Environment).T3CODE_VOICE_AGENT_REPLAY === "1";
   const root = path.join(config.stateDir, "voice-agent");
   const statePath = path.join(root, "state.json");
   const lock = yield* Semaphore.make(1);
@@ -318,8 +334,15 @@ const make = Effect.gen(function* () {
   ) {
     const known = state.threads[parent.id];
     const existing = known === undefined ? null : yield* shellOf(ThreadId.make(known));
-    // Only a thread that carries the marker is reused: the tool lock follows the marker.
-    if (existing !== null && isVoiceAgentThread(existing)) return existing.id;
+    // Only a thread that carries the marker is reused, since the tool lock follows the marker,
+    // and only one on the same provider: a thread never moves between Claude and the recording.
+    if (
+      existing !== null &&
+      isVoiceAgentThread(existing) &&
+      existing.modelSelection.instanceId === modelSelection.instanceId
+    ) {
+      return existing.id;
+    }
     const threadId = ThreadId.make(yield* nextId(`voice:${parent.id}`));
     yield* threads.dispatch({
       type: "thread.create",
@@ -361,7 +384,7 @@ const make = Effect.gen(function* () {
         // Steers a turn that is running, so the agent is nudged and never restarted.
         mode: "auto",
         // The constant is the setting: a thread made for another model follows it from here on.
-        ...(shell.modelSelection.model === VOICE_AGENT_DEFAULT_MODEL
+        ...(replay || shell.modelSelection.model === VOICE_AGENT_DEFAULT_MODEL
           ? {}
           : {
               modelSelection: {
@@ -385,14 +408,17 @@ const make = Effect.gen(function* () {
     if (parent === null || isVoiceAgentThread(parent)) {
       return yield* new VoiceAgentError({ reason: "thread-not-found" });
     }
-    const provider = voiceAgentProvider(yield* registry.getProviders);
+    const provider = replay ? undefined : voiceAgentProvider(yield* registry.getProviders);
+    const selection: ModelSelection | undefined = replay
+      ? DEV_REPLAY_SELECTION
+      : provider && { instanceId: provider.instanceId, model: VOICE_AGENT_DEFAULT_MODEL };
     const enabled =
-      provider !== undefined &&
+      selection !== undefined &&
       (yield* threads.isProviderInstanceEnabledForProject({
         projectId: parent.projectId,
-        instanceId: provider.instanceId,
+        instanceId: selection.instanceId,
       }));
-    if (provider === undefined || !enabled) {
+    if (selection === undefined || !enabled) {
       return { status: "unavailable", message: UNAVAILABLE_MESSAGE } as const;
     }
     return yield* lock.withPermits(1)(
@@ -403,10 +429,7 @@ const make = Effect.gen(function* () {
         )) {
           yield* finish(dangling);
         }
-        const voiceThreadId = yield* ensureThread(parent, {
-          instanceId: provider.instanceId,
-          model: VOICE_AGENT_DEFAULT_MODEL,
-        }).pipe(
+        const voiceThreadId = yield* ensureThread(parent, selection).pipe(
           Effect.tapError((cause) =>
             Effect.logWarning("The voice agent's thread could not be made.", cause),
           ),
@@ -442,12 +465,13 @@ const make = Effect.gen(function* () {
           voiceThreadId,
           openedAt,
         } as const;
-        // Nothing new costs no turn: the layer says its one line itself.
-        if (digest === null || digest.changes === null) {
+        const changes = digest?.changes ?? null;
+        // Nothing new costs no turn: the layer says its one line itself. The recording always plays.
+        if (changes === null && !replay) {
           yield* publish;
           return { ...ready, update: "nothing-new" } as const;
         }
-        yield* send(session, "open", voiceAgentOpenedMessage(digest.changes));
+        yield* send(session, "open", voiceAgentOpenedMessage(changes));
         yield* publish;
         return { ...ready, update: "requested" } as const;
       }),
