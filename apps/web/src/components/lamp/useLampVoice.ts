@@ -34,7 +34,7 @@ import {
   type LampSpeech,
   type LampVoiceReadiness,
 } from "./lampSpeech.logic";
-import { lampVoice, useLampVoiceSession } from "./lampVoice.state";
+import { lampVoice, useLampVoiceSession, useShareLampThinking } from "./lampVoice.state";
 import { useLampAgent } from "./useLampAgent";
 import { useLampSpeaker } from "./useLampSpeaker";
 
@@ -304,13 +304,16 @@ export function useLampVoice(input: {
               ? { text: "No dictation model is installed.", action: setUp }
               : { text: "Voice input is not available here.", action: voiceSettings };
 
+  const status = lampStatus({
+    speaking: session.speaking,
+    voicePhase: speech.state.phase,
+    thinking: agent.working || session.preparing !== null,
+  });
+  useShareLampThinking(status === "thinking");
+
   return {
     session,
-    status: lampStatus({
-      speaking: session.speaking,
-      voicePhase: speech.state.phase,
-      thinking: agent.working || session.preparing !== null,
-    }),
+    status,
     speech,
     notice,
     /** One line for the rest of a conversation in which the downloaded voice failed. */
