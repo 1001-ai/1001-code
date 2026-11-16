@@ -261,6 +261,11 @@ model through that sign-in. When it cannot start, it says why in one line.
   gave you, starting with what needs you. When nothing changed it says so in one line. It knows
   your name from the GitHub CLI, so it says whose answer an agent waits for: "for you" when a
   report names you or nobody, and the other person's name otherwise.
+- **Its voice.** It speaks with the voice you chose in **Settings → Voice → Speech output**
+  (see [Speech output](./voice-output.md)) when that voice's model is installed on the thread's
+  environment, and with your system's voice otherwise. While none is chosen, **Choose a voice**
+  at the top of the layer opens that section. If the chosen voice cannot speak, the system
+  voice takes over for the rest of the conversation and the layer says so in one line.
 - **Talking.** Hold **Space** and speak; release to send. You can cut in while it speaks: it
   finishes its word, answers you, and then picks its earlier point back up. Ask it about the
   agents, such as how many are running or who is blocked.
