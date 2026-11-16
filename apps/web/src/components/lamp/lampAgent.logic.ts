@@ -158,6 +158,56 @@ export function lampSpokenOver(
   };
 }
 
+/** The user's sends that are on their way, and the failed ones whose effect may still be undone. */
+export interface LampSays {
+  readonly started: number;
+  readonly inFlight: number;
+  /** Whether the send started last reached the agent; it decides for the ones before it. */
+  readonly latestDelivered: boolean;
+  readonly failed: ReadonlyArray<{
+    readonly order: number;
+    readonly undone: (now: LampAnswer) => LampAnswer;
+  }>;
+}
+
+export const NO_LAMP_SAYS: LampSays = {
+  started: 0,
+  inFlight: 0,
+  latestDelivered: true,
+  failed: [],
+};
+
+export function lampSayStarted(says: LampSays): {
+  readonly says: LampSays;
+  readonly order: number;
+} {
+  const order = says.started + 1;
+  return { says: { ...says, started: order, inFlight: says.inFlight + 1 }, order };
+}
+
+/**
+ * A send came back. Nothing is undone while another is on its way. Once none is, the failed ones
+ * are undone in the order they were sent, unless the last one sent reached the agent: it was
+ * steered then, and an older answer handed back would be spoken over its new one.
+ */
+export function lampSaySettled(
+  says: LampSays,
+  order: number,
+  delivered: boolean,
+  undone: (now: LampAnswer) => LampAnswer,
+): { readonly says: LampSays; readonly undo: ReadonlyArray<(now: LampAnswer) => LampAnswer> } {
+  const inFlight = Math.max(0, says.inFlight - 1);
+  const latestDelivered = order === says.started ? delivered : says.latestDelivered;
+  const failed = delivered ? says.failed : [...says.failed, { order, undone }];
+  if (inFlight > 0) return { says: { ...says, inFlight, latestDelivered, failed }, undo: [] };
+  return {
+    says: { ...says, inFlight, latestDelivered, failed: [] },
+    undo: latestDelivered
+      ? []
+      : failed.toSorted((left, right) => left.order - right.order).map((entry) => entry.undone),
+  };
+}
+
 /**
  * The project of the chat the layer covers. A new chat has no thread on the server until its
  * first message, so its project is its draft's.

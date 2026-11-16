@@ -14,7 +14,16 @@ import { useClientSettings } from "../../hooks/useSettings";
 import { useDictationShortcut } from "../../speech/useDictationShortcut";
 import { useEnvironmentSpeechInput } from "../../speech/useEnvironmentSpeechInput";
 import { primaryServerKeybindingsAtom } from "../../state/server";
-import { LAMP_AGENT_FEED_EMPTY, lampSpokenOver, nextLampSpeech } from "./lampAgent.logic";
+import {
+  LAMP_AGENT_FEED_EMPTY,
+  NO_LAMP_SAYS,
+  lampSaySettled,
+  lampSayStarted,
+  lampSpokenOver,
+  nextLampSpeech,
+  type LampAnswer,
+  type LampSays,
+} from "./lampAgent.logic";
 import { openLampAudio, suspendLampAudio } from "./lampAudio";
 import { closeLampLayer, lampLayerHoldsKeyboard } from "./lampLayer.state";
 import {
@@ -90,6 +99,8 @@ export function useLampVoice(input: {
   const open = useRef(false);
   // Counts the opens: words still on their way when the layer closes change nothing in the next.
   const opens = useRef(0);
+  // The user's sends on their way: a failed one is undone only once none is, and not over a later success.
+  const says = useRef<LampSays>(NO_LAMP_SAYS);
   // Counts the answers handed back to the voice, which then has something to say again.
   const [handedBack, setHandedBack] = useState(0);
 
@@ -107,10 +118,15 @@ export function useLampVoice(input: {
     feed.current = over.answer.feed;
     saidBefore.current = over.answer.saidBefore;
     setNotHeard(false);
+    const started = lampSayStarted(says.current);
+    says.current = started.says;
     const delivered = await agent.say(text, over.interruption);
-    if (delivered || !open.current || opening !== opens.current) return;
+    const settled = lampSaySettled(says.current, started.order, delivered, over.undone);
+    says.current = settled.says;
+    if (!open.current || opening !== opens.current || settled.undo.length === 0) return;
     // The agent was never steered and goes on with its answer, so the voice goes on with it.
-    const back = over.undone({ feed: feed.current, saidBefore: saidBefore.current });
+    let back: LampAnswer = { feed: feed.current, saidBefore: saidBefore.current };
+    for (const undone of settled.undo) back = undone(back);
     feed.current = back.feed;
     saidBefore.current = back.saidBefore;
     setNotHeard(true);
@@ -174,6 +190,7 @@ export function useLampVoice(input: {
     if (closing) return;
     open.current = true;
     opens.current += 1;
+    says.current = NO_LAMP_SAYS;
     feed.current = LAMP_AGENT_FEED_EMPTY;
     saidBefore.current = "";
     lineSaid.current = false;

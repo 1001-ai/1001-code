@@ -2,15 +2,19 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   LAMP_AGENT_FEED_EMPTY,
+  NO_LAMP_SAYS,
   lampAgentRunning,
   lampChatProjectId,
   lampInterruptionContext,
+  lampSaySettled,
+  lampSayStarted,
   lampSpeechDropped,
   lampSpokenOver,
   nextLampSpeech,
   speakable,
   unsaidLampSpeech,
   type LampAgentFeed,
+  type LampAnswer,
   type LampAgentMessage,
 } from "./lampAgent.logic";
 
@@ -188,4 +192,52 @@ it("is working while a run of the voice thread is under way", () => {
   expect(lampAgentRunning([{ status: "completed" }, { status: "running" }])).toBe(true);
   expect(lampAgentRunning([{ status: "completed" }, { status: "interrupted" }])).toBe(false);
   expect(lampAgentRunning([])).toBe(false);
+});
+
+describe("which failed sends are undone", () => {
+  const mark =
+    (name: string) =>
+    (now: LampAnswer): LampAnswer => ({
+      ...now,
+      saidBefore: `${now.saidBefore}${name}`,
+    });
+  const applied = (undo: ReadonlyArray<(now: LampAnswer) => LampAnswer>) =>
+    undo.reduce<LampAnswer>((now, undone) => undone(now), {
+      feed: LAMP_AGENT_FEED_EMPTY,
+      saidBefore: "",
+    }).saidBefore;
+
+  it("undoes a lone failed send, and nothing after a delivered one", () => {
+    const one = lampSayStarted(NO_LAMP_SAYS);
+    expect(applied(lampSaySettled(one.says, one.order, false, mark("a")).undo)).toBe("a");
+    expect(lampSaySettled(one.says, one.order, true, mark("a")).undo).toEqual([]);
+  });
+
+  it("never hands an old answer back over a later send that reached the agent", () => {
+    const first = lampSayStarted(NO_LAMP_SAYS);
+    const second = lampSayStarted(first.says);
+    // The second is delivered while the first is still on its way; then the first fails.
+    const afterSecond = lampSaySettled(second.says, second.order, true, mark("b"));
+    expect(afterSecond.undo).toEqual([]);
+    const afterFirst = lampSaySettled(afterSecond.says, first.order, false, mark("a"));
+    expect(afterFirst.undo).toEqual([]);
+    expect(afterFirst.says.failed).toEqual([]);
+    // The other way round: the first fails first, then the second is delivered.
+    const failedFirst = lampSaySettled(second.says, first.order, false, mark("a"));
+    expect(failedFirst.undo).toEqual([]);
+    expect(lampSaySettled(failedFirst.says, second.order, true, mark("b")).undo).toEqual([]);
+  });
+
+  it("undoes every failed send in the order sent, once none is on its way", () => {
+    const first = lampSayStarted(NO_LAMP_SAYS);
+    const second = lampSayStarted(first.says);
+    const failedSecond = lampSaySettled(second.says, second.order, false, mark("b"));
+    expect(failedSecond.undo).toEqual([]);
+    expect(applied(lampSaySettled(failedSecond.says, first.order, false, mark("a")).undo)).toBe(
+      "ab",
+    );
+    // An earlier send that was delivered does not excuse a later one that failed.
+    const delivered = lampSaySettled(second.says, first.order, true, mark("a"));
+    expect(applied(lampSaySettled(delivered.says, second.order, false, mark("b")).undo)).toBe("b");
+  });
 });

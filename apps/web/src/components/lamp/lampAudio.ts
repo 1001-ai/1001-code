@@ -30,8 +30,20 @@ export const lampAudioOutput: LampAudioOutput = {
     const source = context.createBufferSource();
     source.buffer = buffer;
     source.connect(context.destination);
+    let ended = false;
+    source.addEventListener("ended", () => {
+      ended = true;
+    });
     source.start(at);
-    return () => source.stop();
+    return () => {
+      // Some browsers throw on stopping a source that has finished, which would leave later ones playing.
+      if (ended) return;
+      try {
+        source.stop();
+      } catch {
+        ended = true;
+      }
+    };
   },
   at(at, run) {
     const timer = setTimeout(run, Math.max(0, (at - (context?.currentTime ?? 0)) * 1000));
