@@ -206,6 +206,7 @@ import * as LinearInbox from "./board/LinearInbox.ts";
 import * as LinearWriteWatch from "./board/LinearWriteWatch.ts";
 import * as LiveAppCheckout from "./liveAppCheckout.ts";
 import * as MemoryLayer from "./memory/layer.ts";
+import * as AgentsBoard from "./agentsBoard/AgentsBoard.ts";
 import * as BoardHttp from "./board/http.ts";
 import * as CodexUsageHistory from "./usage/CodexUsageHistory.ts";
 import * as RuntimeLayer from "./orchestration-v2/runtimeLayer.ts";
@@ -701,6 +702,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
     Layer.provideMerge(Board.layer),
     Layer.provide(TeamCatalog.layer),
   ),
+  AgentsBoard.layer.pipe(Layer.provide(TeamCatalog.layer)),
   LiveAppCheckout.layer,
   Layer.effectDiscard(ProjectSettingsOverrideSweep.sweep),
 ).pipe(
