@@ -56,6 +56,12 @@ describe("lamp layer", () => {
     expect(canToggleLampLayer(covered)).toBe(false);
     expect(lampThreadCovered(onThread("b"), "a")).toEqual(onThread("b"));
     expect(canToggleLampLayer(lampThreadShown(covered, "a"))).toBe(true);
+    // Switching to a thread whose panel is maximized closes a layer left open over the last one.
+    const switched = lampThreadCovered(lampThreadHidden(open, "a"), "b");
+    expect(switched).toEqual(LAMP_LAYER_CLOSED);
+    expect(isLampLayerOpenIn(lampThreadShown(switched, "a"), "a")).toBe(false);
+    const openElsewhere = lampLayerToggled(onThread("b"));
+    expect(lampThreadCovered(openElsewhere, "a")).toEqual(openElsewhere);
   });
 
   it("closes when a prompt is sent from its thread, not from another", () => {

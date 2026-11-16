@@ -237,7 +237,11 @@ function LampLayerView({
       promptBox?.classList.remove(...PROMPT_BOX_RECEDED_CLASSES);
       for (const animation of moves) animation.cancel();
       for (const { element, hidden } of covered) {
-        hidden?.cancel();
+        if (hidden) {
+          hidden.cancel();
+          // An empty keyframe is the element's own CSS opacity: it fades back in as the glass clears.
+          element.animate([{ opacity: 0 }, {}], timing);
+        }
         element.removeAttribute("inert");
       }
     };

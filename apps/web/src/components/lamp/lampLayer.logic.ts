@@ -36,10 +36,9 @@ export function lampThreadHidden(state: LampLayerState, threadKey: string): Lamp
 
 /** A maximized panel covers the thread's chat: its layer closes, and nothing opens one. */
 export function lampThreadCovered(state: LampLayerState, threadKey: string): LampLayerState {
-  return {
-    target: state.target === threadKey ? null : state.target,
-    openIn: state.openIn === threadKey ? null : state.openIn,
-  };
+  const target = state.target === threadKey ? null : state.target;
+  // A layer left open over a thread that is no longer on screen closes too, as when a thread is shown.
+  return { target, openIn: state.openIn !== null && state.openIn === target ? target : null };
 }
 
 /** A prompt was sent from a thread's prompt box: the layer over that thread closes. */
