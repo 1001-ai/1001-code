@@ -1,45 +1,97 @@
 {
-  "fill": {
-    "linear-gradient": [
-      "display-p3:0.12200,0.12200,0.12200,1.00000",
-      "display-p3:0.02700,0.02700,0.02700,1.00000"
-    ],
-    "orientation": {
-      "start": {
-        "x": 0.5,
-        "y": 0
-      },
-      "stop": {
-        "x": 0.5,
-        "y": 1
+  "fill-specializations": [
+    {
+      "value": {
+        "linear-gradient": [
+          "display-p3:1.00000,1.00000,1.00000,1.00000",
+          "display-p3:0.90000,0.90000,0.90000,1.00000"
+        ],
+        "orientation": {
+          "start": {
+            "x": 0.5,
+            "y": 0
+          },
+          "stop": {
+            "x": 0.5,
+            "y": 1
+          }
+        }
+      }
+    },
+    {
+      "appearance": "dark",
+      "value": {
+        "linear-gradient": [
+          "display-p3:0.12200,0.12200,0.12200,1.00000",
+          "display-p3:0.02700,0.02700,0.02700,1.00000"
+        ],
+        "orientation": {
+          "start": {
+            "x": 0.5,
+            "y": 0
+          },
+          "stop": {
+            "x": 0.5,
+            "y": 1
+          }
+        }
       }
     }
-  },
+  ],
   "groups": [
     {
       "layers": [
         {
+          "fill-specializations": [
+            {
+              "value": {
+                "solid": "display-p3:0.06000,0.06000,0.06000,1.00000"
+              }
+            },
+            {
+              "appearance": "dark",
+              "value": {
+                "solid": "display-p3:1.00000,1.00000,1.00000,1.00000"
+              }
+            },
+            {
+              "appearance": "tinted",
+              "value": {
+                "solid": "display-p3:1.00000,1.00000,1.00000,1.00000"
+              }
+            }
+          ],
           "glass": true,
-          "image-name": "chevron.svg",
-          "name": "Chevron",
+          "image-name": "stars.svg",
+          "name": "Stars",
           "position": {
             "scale": 8.5,
             "translation-in-points": [0, 0]
           }
         },
         {
+          "fill-specializations": [
+            {
+              "value": {
+                "solid": "display-p3:0.06000,0.06000,0.06000,1.00000"
+              }
+            },
+            {
+              "appearance": "dark",
+              "value": {
+                "solid": "display-p3:1.00000,1.00000,1.00000,1.00000"
+              }
+            },
+            {
+              "appearance": "tinted",
+              "value": {
+                "solid": "display-p3:1.00000,1.00000,1.00000,1.00000"
+              }
+            }
+          ],
           "glass": true,
-          "image-name": "text.svg",
-          "name": "Text",
-          "position": {
-            "scale": 8.5,
-            "translation-in-points": [0, 0]
-          }
-        },
-        {
-          "glass": true,
-          "image-name": "cursor.svg",
-          "name": "Cursor",
+          "image-name": "lamp.svg",
+          "name": "Lamp",
           "position": {
             "scale": 8.5,
             "translation-in-points": [0, 0]
