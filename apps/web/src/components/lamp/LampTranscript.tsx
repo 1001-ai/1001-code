@@ -1,3 +1,4 @@
+import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ThreadId, VoiceAgentSession } from "@t3tools/contracts";
 import { AsyncResult } from "effect/reactivity";
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from "react";
@@ -6,6 +7,7 @@ import { cn } from "~/lib/utils";
 import { useVoiceAgentState, useVoiceAgentTranscript } from "~/state/voiceAgent";
 
 import { agentsBoardTime } from "../agentsBoard/agentsBoard.logic";
+import type { MessagesTimelineRow } from "../chat/MessagesTimeline.logic";
 import {
   GLASS_CLASS,
   LIST_LANE_PADDING_CLASS,
@@ -13,39 +15,82 @@ import {
   MOTION_MS,
   VIEW_Z_INDEX,
 } from "../chat/ExchangeThread";
-import { Button } from "../ui/button";
 import { Kbd } from "../ui/kbd";
 import { Spinner } from "../ui/spinner";
 import { LampIcon } from "./LampIcon";
 import { LAMP_NAME, coverLampChat } from "./lampLayer.logic";
 import { closeLampTranscript, openLampTranscript } from "./lampLayer.state";
-import { lampTranscriptCards, lampTranscriptSummary } from "./lampTranscript.logic";
+import {
+  lampTranscriptSummary,
+  withLampTranscriptRows,
+  type LampTranscriptRow,
+} from "./lampTranscript.logic";
 
 /**
- * A chat's closed voice conversations, as cards at the end of its timeline. A conversation shows
- * here only once its layer has closed, and only if something was said: the server lists no other.
+ * The timeline's rows with the chat's closed voice conversations in their places among them. A
+ * conversation is listed only once its layer has closed, and only if something was said.
  */
+export function useLampTranscriptRows(
+  rows: MessagesTimelineRow[],
+  threadKey: string,
+): MessagesTimelineRow[] {
+  const thread = parseScopedThreadKey(threadKey);
+  const sessions =
+    useVoiceAgentState(thread?.environmentId ?? null, thread?.threadId ?? null)?.sessions ?? NONE;
+  // The subscription also carries the screenshots, so a new state can hold the same sessions.
+  const sessionsKey = sessions.map((session) => session.id).join(",");
+  const [state, setState] = useState<{
+    readonly rows: MessagesTimelineRow[];
+    readonly sessionsKey: string;
+    readonly threadKey: string;
+    readonly result: MessagesTimelineRow[];
+  } | null>(null);
+  if (sessions.length === 0) return rows;
+  if (state?.rows === rows && state.sessionsKey === sessionsKey && state.threadKey === threadKey) {
+    return state.result;
+  }
+  const previous = new Map<string, LampTranscriptRow>();
+  for (const row of state?.result ?? []) {
+    if (row.kind === "lamp-transcripts") previous.set(row.id, row);
+  }
+  const result = withLampTranscriptRows(rows, sessions, threadKey, previous);
+  setState({ rows, sessionsKey, threadKey, result });
+  return result;
+}
+
+const NONE: ReadonlyArray<VoiceAgentSession> = [];
+
+/** The cards of a chat with no messages, which draws no list for its rows. */
 export function LampTranscriptCards(props: {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
   readonly threadKey: string;
 }) {
-  const sessions = useVoiceAgentState(props.environmentId, props.threadId)?.sessions ?? [];
-  const [showAll, setShowAll] = useState(false);
-  const { shown, earlier } = lampTranscriptCards(sessions, showAll);
-  if (shown.length === 0) return null;
+  const sessions = useVoiceAgentState(props.environmentId, props.threadId)?.sessions ?? NONE;
+  if (sessions.length === 0) return null;
   return (
     <div className="messages-timeline-row-frame">
-      <div className="chat-content-lane flex flex-col items-start gap-1.5 py-2">
-        {earlier > 0 ? (
-          <Button variant="ghost" size="xs" onClick={() => setShowAll(true)}>
-            Show {earlier} earlier voice {earlier === 1 ? "conversation" : "conversations"}
-          </Button>
-        ) : null}
-        {shown.map((session) => (
-          <LampTranscriptCard key={session.id} session={session} threadKey={props.threadKey} />
-        ))}
+      <div className="chat-content-lane py-2">
+        <LampTranscriptCardList sessions={sessions} threadKey={props.threadKey} />
       </div>
+    </div>
+  );
+}
+
+/** One timeline row of voice conversation cards, at the time they happened. */
+export function LampTranscriptTimelineRow(props: { readonly row: LampTranscriptRow }) {
+  return <LampTranscriptCardList sessions={props.row.sessions} threadKey={props.row.threadKey} />;
+}
+
+function LampTranscriptCardList(props: {
+  readonly sessions: ReadonlyArray<VoiceAgentSession>;
+  readonly threadKey: string;
+}) {
+  return (
+    <div className="flex flex-col items-start gap-1.5">
+      {props.sessions.map((session) => (
+        <LampTranscriptCard key={session.id} session={session} threadKey={props.threadKey} />
+      ))}
     </div>
   );
 }
