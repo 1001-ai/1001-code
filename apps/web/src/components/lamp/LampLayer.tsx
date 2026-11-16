@@ -93,6 +93,7 @@ function LampLayerView({
   const overlayRef = useRef<HTMLDivElement>(null);
   const glassRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  const focusBeforeOpenRef = useRef<HTMLElement | null>(null);
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- frosts the chat under the layer and takes focus from it before the first paint, and again when a close is interrupted
   useLayoutEffect(() => {
@@ -102,11 +103,12 @@ function LampLayerView({
     const chat = overlay?.parentElement;
     if (closing || !overlay || !glass || !content || !chat) return;
     const timing = { duration: motionDuration(), easing: MOTION_EASING };
-    // Making the chat inert would drop focus from whatever in it had focus; move it first.
+    // The layer takes focus: the composer's editor consumes Escape, and would type a held Space.
     const active = document.activeElement;
-    if (active === document.body || (active !== null && chat.contains(active))) {
-      overlay.focus({ preventScroll: true });
+    if (active instanceof HTMLElement && active !== document.body && !overlay.contains(active)) {
+      focusBeforeOpenRef.current = active;
     }
+    overlay.focus({ preventScroll: true });
     const covered = [...chat.children].flatMap((child) => {
       if (child === overlay || child === glass || !(child instanceof HTMLElement)) return [];
       child.setAttribute("inert", "");
@@ -140,7 +142,11 @@ function LampLayerView({
     const focusInLayer =
       document.activeElement === document.body || overlay.contains(document.activeElement);
     if (focusInLayer) {
-      document.querySelector<HTMLElement>("[data-lamp-button]")?.focus({ preventScroll: true });
+      const before = focusBeforeOpenRef.current;
+      const target = before?.isConnected
+        ? before
+        : document.querySelector<HTMLElement>("[data-lamp-button]");
+      target?.focus({ preventScroll: true });
     }
     onClosed();
   });
