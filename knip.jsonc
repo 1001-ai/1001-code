@@ -75,6 +75,7 @@
         "@t3tools/web",
         "@napi-rs/keyring",
         "ffi-rs",
+        "koffi",
         "transcribe-cpp",
       ],
     },
