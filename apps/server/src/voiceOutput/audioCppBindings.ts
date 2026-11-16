@@ -187,9 +187,9 @@ export function bindAudioCpp(koffi: typeof Koffi, libraryPath: string) {
             );
             const length = Number(frames[0]) * channels[0];
             if (!length || !sampleRate[0]) throw new Error("audio.cpp produced no audio.");
-            // The view borrows the result's memory, so copy it before the result is freed.
+            // Copies before the result is freed. Not `koffi.view`: Electron forbids external buffers.
             return {
-              samples: new Float32Array(koffi.view(samples[0], length * 4)).slice(),
+              samples: koffi.decode(samples[0], "float", length) as Float32Array,
               sampleRate: sampleRate[0],
               channels: channels[0],
             };
