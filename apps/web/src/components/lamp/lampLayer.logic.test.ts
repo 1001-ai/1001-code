@@ -4,6 +4,8 @@ import {
   LAMP_LAYER_CLOSED,
   canToggleLampLayer,
   isLampLayerOpenIn,
+  isLampTalkKey,
+  lampHoldsKeyboard,
   lampLayerClosed,
   lampLayerSharesThreadWithFind,
   lampLayerToggled,
@@ -74,5 +76,34 @@ describe("lamp layer", () => {
     expect(lampLayerSharesThreadWithFind(open, "b")).toBe(false);
     expect(lampLayerSharesThreadWithFind(open, null)).toBe(false);
     expect(lampLayerSharesThreadWithFind(onThread("a"), "a")).toBe(false);
+  });
+
+  it("has the keyboard while it is open, except in a text field or under a popup", () => {
+    const layer = { open: true, inEditable: false, popupOpen: false };
+    expect(lampHoldsKeyboard(layer)).toBe(true);
+    expect(lampHoldsKeyboard({ ...layer, open: false })).toBe(false);
+    expect(lampHoldsKeyboard({ ...layer, inEditable: true })).toBe(false);
+    expect(lampHoldsKeyboard({ ...layer, popupOpen: true })).toBe(false);
+  });
+
+  it("takes Space on its own, and its repeats, as the key to talk", () => {
+    const space = {
+      key: " ",
+      metaKey: false,
+      ctrlKey: false,
+      altKey: false,
+      isComposing: false,
+      keyCode: 32,
+    };
+    expect(isLampTalkKey(space)).toBe(true);
+    // A held Space repeats: the layer keeps taking it, so none of them types a space.
+    const repeated = { ...space, repeat: true };
+    expect(isLampTalkKey(repeated)).toBe(true);
+    expect(isLampTalkKey({ ...space, key: "a", keyCode: 65 })).toBe(false);
+    expect(isLampTalkKey({ ...space, metaKey: true })).toBe(false);
+    expect(isLampTalkKey({ ...space, ctrlKey: true })).toBe(false);
+    expect(isLampTalkKey({ ...space, altKey: true })).toBe(false);
+    expect(isLampTalkKey({ ...space, isComposing: true })).toBe(false);
+    expect(isLampTalkKey({ ...space, keyCode: 229 })).toBe(false);
   });
 });

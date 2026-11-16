@@ -67,3 +67,20 @@ export function lampLayerSharesThreadWithFind(
 ): boolean {
   return isLampLayerOpenIn(state, findThreadKey);
 }
+
+/** The layer has the keyboard while it is open, unless a text field has focus or a popup is open. */
+export function lampHoldsKeyboard(where: {
+  readonly open: boolean;
+  readonly inEditable: boolean;
+  readonly popupOpen: boolean;
+}): boolean {
+  return where.open && !where.inEditable && !where.popupOpen;
+}
+
+/** Space on its own, held to talk. A repeat is the same key, so a held Space types nothing. */
+export function isLampTalkKey(
+  event: Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "altKey" | "isComposing" | "keyCode">,
+): boolean {
+  if (event.isComposing || event.keyCode === 229) return false;
+  return event.key === " " && !event.metaKey && !event.ctrlKey && !event.altKey;
+}

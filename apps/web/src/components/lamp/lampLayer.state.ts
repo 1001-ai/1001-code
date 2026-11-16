@@ -1,11 +1,15 @@
 import { useEffect } from "react";
 import { create } from "zustand";
 
+import { isEditableFocused } from "../../lib/editableFocus";
+import { TYPE_TO_FOCUS_FLOATING_LAYER_SELECTOR } from "../chat/composerFocusRedirect";
 import { closeThreadFind, useThreadFindStore } from "../chat/threadFindStore";
 import {
   LAMP_LAYER_CLOSED,
   canToggleLampLayer,
   isLampLayerOpenIn,
+  isLampTalkKey,
+  lampHoldsKeyboard,
   lampLayerClosed,
   lampLayerSharesThreadWithFind,
   lampLayerToggled,
@@ -43,6 +47,25 @@ export function closingLampLayerOnSend<Args extends readonly unknown[], Result>(
     useLampLayerStore.setState((state) => lampPromptSent(state, threadKey));
     return send(...args);
   };
+}
+
+/** Whether keys pressed at `target` go to the open layer and not to the prompt box. */
+export function lampLayerHoldsKeyboard(
+  target: EventTarget | null = document.activeElement,
+): boolean {
+  return lampHoldsKeyboard({
+    open: useLampLayerStore.getState().openIn !== null,
+    inEditable: isEditableFocused(target),
+    popupOpen: document.querySelector(TYPE_TO_FOCUS_FLOATING_LAYER_SELECTOR) !== null,
+  });
+}
+
+/**
+ * The chat's shortcut handler asks this first and leaves the key alone on true. It listens on
+ * the window before the layer exists, so no listener the layer adds could take the key first.
+ */
+export function lampLayerOwnsKey(event: KeyboardEvent): boolean {
+  return isLampTalkKey(event) && lampLayerHoldsKeyboard(event.target);
 }
 
 export function readCanToggleLampLayer(): boolean {

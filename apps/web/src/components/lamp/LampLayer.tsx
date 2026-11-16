@@ -1,3 +1,5 @@
+import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
+import type { EnvironmentId } from "@t3tools/contracts";
 import {
   useEffect,
   useEffectEvent,
@@ -17,10 +19,15 @@ import {
   MOTION_MS,
   VIEW_Z_INDEX,
 } from "../chat/ExchangeThread";
+import { VoiceWaveform } from "../chat/VoiceInputPill";
+import { VoiceInputSetup } from "../chat/VoiceInputSetup";
+import { Button } from "../ui/button";
 import { Kbd } from "../ui/kbd";
 import { LampIcon } from "./LampIcon";
 import { LAMP_NAME } from "./lampLayer.logic";
 import { closeLampLayer, useLampLayerOpen } from "./lampLayer.state";
+import { LAMP_STATUS_LABEL, captionParts, stoppedAfterLine } from "./lampSpeech.logic";
+import { useLampVoice } from "./useLampVoice";
 
 /** Clicks on these are not clicks on the backdrop. */
 const CONTENT_SELECTOR = "[data-lamp-layer-content]";
@@ -83,22 +90,28 @@ export function useLampLayer(input: {
   readonly topFadeEnabled: boolean;
 }): { readonly open: boolean; readonly element: ReactNode } {
   const open = useLampLayerOpen(input.threadKey);
+  // The thread's environment: dictation asks it for the user's vocabulary and transcript cleanup.
+  const environmentId = parseScopedThreadKey(input.threadKey)?.environmentId;
   return {
     open,
-    element: (
+    element: environmentId ? (
       // Keyed by thread, so a switch drops an open layer at once instead of playing its exit.
       <LampLayerPresence
         key={input.threadKey}
         open={open}
+        threadKey={input.threadKey}
+        environmentId={environmentId}
         bottomInset={input.bottomInset}
         topFadeEnabled={input.topFadeEnabled}
       />
-    ),
+    ) : null,
   };
 }
 
 function LampLayerPresence(props: {
   readonly open: boolean;
+  readonly threadKey: string;
+  readonly environmentId: EnvironmentId;
   readonly bottomInset: number;
   readonly topFadeEnabled: boolean;
 }) {
@@ -110,33 +123,72 @@ function LampLayerPresence(props: {
     <LampLayerView
       closing={!props.open}
       onClosed={() => setMounted(false)}
+      threadKey={props.threadKey}
+      environmentId={props.environmentId}
       bottomInset={props.bottomInset}
       topFadeEnabled={props.topFadeEnabled}
     />
   );
 }
 
+/** How far inside the layer's visible band the word being spoken stays. */
+const CAPTION_SCROLL_MARGIN = 48;
+
 /**
- * A frosted layer over the chat, where a voice agent that reports what other agents are doing
- * in the repository will speak and show its captions. For now it is the empty surface. Like the
- * thread view, it sits beside the message list, which stays mounted and untouched underneath,
- * and it moves only while it opens and closes.
+ * A frosted layer over the chat, where a voice agent speaks with live captions and listens
+ * while Space is held. No agent answers yet: it says one stub line and shows what it heard.
+ * Like the thread view, it sits beside the message list, which stays mounted and untouched
+ * underneath, and it moves only while it opens and closes.
  */
 function LampLayerView({
   closing,
   onClosed,
+  threadKey,
+  environmentId,
   bottomInset,
   topFadeEnabled,
 }: {
   readonly closing: boolean;
   readonly onClosed: () => void;
+  readonly threadKey: string;
+  readonly environmentId: EnvironmentId;
   readonly bottomInset: number;
   readonly topFadeEnabled: boolean;
 }) {
   const overlayRef = useRef<HTMLDivElement>(null);
   const glassRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  const spokenWordRef = useRef<HTMLSpanElement>(null);
   const focusBeforeOpenRef = useRef<HTMLElement | null>(null);
+  const voice = useLampVoice({ environmentId, threadKey, closing, openDurationMs: motionDuration });
+  const { said, interruption, heard } = voice.session;
+  const { speech } = voice;
+  const caption = said ? captionParts(said) : null;
+  const listening = voice.status === "listening";
+  const recording = speech.state.phase === "preparing" || speech.state.phase === "recording";
+  const spokenWordStart = caption && caption.current !== "" ? caption.spoken.length : null;
+  // A model that streams sends the user's words as they are said; others send them at the end.
+  const live =
+    speech.preview && speech.preview.committed + speech.preview.tentative !== ""
+      ? speech.preview
+      : null;
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- scrolls the layer so the word being spoken stays in view above the prompt box
+  useEffect(() => {
+    const overlay = overlayRef.current;
+    const word = spokenWordRef.current;
+    if (!overlay || !word || spokenWordStart === null) return;
+    const view = overlay.getBoundingClientRect();
+    const top = view.top + CAPTION_SCROLL_MARGIN;
+    const bottom = view.bottom - bottomInset - CAPTION_SCROLL_MARGIN;
+    const rect = word.getBoundingClientRect();
+    if (rect.top >= top && rect.bottom <= bottom) return;
+    // A third of the way down, so the rest of the sentence shows under the word.
+    overlay.scrollBy({
+      top: rect.top - (top + Math.max(0, bottom - top) / 3),
+      behavior: motionDuration() === 0 ? "auto" : "smooth",
+    });
+  }, [spokenWordStart, bottomInset]);
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- the prompt box is outside the layer, so its motion classes go on and come off with the layer
   useLayoutEffect(() => {
@@ -283,30 +335,108 @@ function LampLayerView({
             <LampIcon className="size-4 shrink-0 text-foreground" />
             <span className="font-medium text-foreground">{LAMP_NAME}</span>
             <span aria-hidden="true">·</span>
-            <span>Idle</span>
+            <span role="status">{LAMP_STATUS_LABEL[voice.status]}</span>
           </div>
-          {/* Where live captions of what the agent says will appear. */}
-          <div className="flex flex-1 items-center justify-center">
-            <p
-              data-lamp-layer-content=""
-              className="max-w-[24ch] text-balance text-center font-medium text-2xl text-foreground sm:text-3xl"
-            >
-              Nothing to report.
-            </p>
+          <div className="flex flex-1 flex-col items-center justify-center gap-8">
+            {caption ? (
+              <div data-lamp-layer-content="" className="flex flex-col items-center gap-3">
+                {/* Said, being said, still to come. Only the word's place changes as it speaks. */}
+                <p className="max-w-[28ch] whitespace-pre-line text-balance text-center font-medium text-2xl sm:text-3xl">
+                  <span className="text-foreground">{caption.spoken}</span>
+                  <span
+                    ref={spokenWordRef}
+                    className={cn(
+                      "text-foreground",
+                      // Padding and an equal negative margin: the highlight moves no text.
+                      spokenWordStart !== null &&
+                        "-mx-0.5 rounded-sm bg-primary/25 box-decoration-clone px-0.5",
+                    )}
+                  >
+                    {caption.current}
+                  </span>
+                  <span className="text-muted-foreground/60">{caption.upcoming}</span>
+                </p>
+                {interruption ? (
+                  <p className="text-muted-foreground text-xs">{stoppedAfterLine(interruption)}</p>
+                ) : null}
+              </div>
+            ) : null}
+            {listening || heard !== null ? (
+              <div
+                data-lamp-layer-content=""
+                className="flex max-w-[48ch] flex-col items-center gap-2 text-center"
+              >
+                <div className="flex items-center gap-2 font-medium text-muted-foreground text-xs">
+                  <span>You</span>
+                  {recording ? (
+                    <span className="flex w-16">
+                      <VoiceWaveform level={speech.level} />
+                    </span>
+                  ) : null}
+                </div>
+                {live ? (
+                  <p className="text-foreground text-lg">
+                    {live.committed}
+                    <span className="text-muted-foreground">{live.tentative}</span>
+                  </p>
+                ) : listening ? (
+                  <p className="text-lg text-muted-foreground">
+                    {recording ? "Listening…" : "Transcribing…"}
+                  </p>
+                ) : (
+                  <p className="text-foreground text-lg">{heard}</p>
+                )}
+                {heard !== null && !listening ? (
+                  <p className="text-muted-foreground text-xs">
+                    No agent is connected yet, so nothing answers.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
           </div>
           <div
             data-lamp-layer-content=""
             className="flex items-center justify-between gap-4 text-muted-foreground text-xs"
           >
-            <span className="flex items-center gap-1.5">
-              Hold <Kbd variant="outline">Space</Kbd> to talk
-            </span>
-            <span className="flex items-center gap-1.5">
-              <Kbd variant="outline">Esc</Kbd> to close
+            {voice.notice ? (
+              <span role="status" className="flex min-w-0 items-center gap-2">
+                <span className="min-w-0">{voice.notice.text}</span>
+                <span className="shrink-0">
+                  <Button variant="outline" size="compact" onClick={voice.notice.action.run}>
+                    {voice.notice.action.label}
+                  </Button>
+                </span>
+              </span>
+            ) : listening ? (
+              <span className="flex items-center gap-1.5">
+                <Kbd variant="outline">Space</Kbd> to finish
+              </span>
+            ) : (
+              <span className="flex items-center gap-1.5">
+                {voice.holdToTalk ? "Hold" : "Press"} <Kbd variant="outline">Space</Kbd> to talk
+              </span>
+            )}
+            <span className="flex shrink-0 items-center gap-1.5">
+              <Kbd variant="outline">Esc</Kbd> to {listening ? "cancel" : "close"}
             </span>
           </div>
         </div>
       </div>
+      <VoiceInputSetup
+        environmentId={speech.transcriptionEnvironmentId}
+        open={speech.setup.open}
+        step={speech.setup.step}
+        status={speech.status}
+        model={speech.setup.model}
+        language={speech.setup.language}
+        downloading={speech.setup.downloading}
+        error={speech.setup.error}
+        onOpenChange={speech.setup.setOpen}
+        onRetryCatalog={speech.setup.retryCatalog}
+        onDownload={() => void speech.setup.download()}
+        onCancelDownload={() => void speech.setup.cancelDownload()}
+        onStartRecording={() => void speech.setup.startRecording()}
+      />
     </>
   );
 }
