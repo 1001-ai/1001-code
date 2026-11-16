@@ -64,6 +64,27 @@ describe("withLampTranscriptRows", () => {
       withLampTranscriptRows(rows, [...sessions, session("b", "10:40")], "t", previous)[2],
     ).not.toBe(first[2]);
   });
+
+  it("parts the rows a card lands between", () => {
+    const merged = withLampTranscriptRows(
+      [
+        { ...row("w1", "10:00"), continuesWorkLog: true },
+        { ...row("w2", "10:01"), continuesWorkLog: true },
+        { ...row("u1", "10:02"), groupedWithNext: true },
+        { ...row("u2", "11:00"), groupedWithPrevious: true, continuesSteer: true },
+      ],
+      [session("a", "10:00"), session("b", "10:30")],
+      "t",
+    );
+    expect(merged).toMatchObject([
+      { id: "w1", continuesWorkLog: false },
+      { kind: "lamp-transcripts" },
+      { id: "w2", continuesWorkLog: true },
+      { id: "u1", groupedWithNext: false },
+      { kind: "lamp-transcripts" },
+      { id: "u2", groupedWithPrevious: false, continuesSteer: false },
+    ]);
+  });
 });
 
 it("summarises a card", () => {

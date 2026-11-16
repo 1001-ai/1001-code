@@ -11,12 +11,22 @@ export type LampTranscriptRow = {
 
 const ROW_ID_PREFIX = "lamp-transcripts:";
 
+/** Row flags that join a row to its neighbour; a card between two rows parts them. */
+type Adjacency = {
+  readonly continuesWorkLog?: boolean;
+  readonly groupedWithNext?: boolean;
+  readonly groupedWithPrevious?: boolean;
+  readonly continuesSteer?: boolean;
+};
+
 /**
  * Places each conversation's card right before the first row created after it opened, or at the
- * end. Rows without a time never bound a card; one gap's conversations share a row. A `previous`
- * row with the same conversations is reused; no rows or no conversations return `rows` itself.
+ * end, parting the rows around it. Rows without a time never bound a card; one gap's conversations
+ * share a row. A `previous` card row with the same conversations is reused.
  */
-export function withLampTranscriptRows<Row extends { readonly createdAt: string | null }>(
+export function withLampTranscriptRows<
+  Row extends { readonly createdAt: string | null } & Adjacency,
+>(
   rows: Array<Row>,
   sessions: ReadonlyArray<VoiceAgentSession>,
   threadKey: string,
@@ -43,7 +53,26 @@ export function withLampTranscriptRows<Row extends { readonly createdAt: string 
     result.push(lampTranscriptRow(gap, threadKey, previous));
   }
   for (; rowIndex < rows.length; rowIndex += 1) result.push(rows[rowIndex]!);
-  return result;
+  return result.map((row, index) => {
+    if (isCard(row)) return row;
+    return partedRow(row, isCard(result[index - 1]), isCard(result[index + 1]));
+  });
+}
+
+function isCard(row: { readonly createdAt: string | null } | undefined): row is LampTranscriptRow {
+  return row !== undefined && "kind" in row && row.kind === "lamp-transcripts";
+}
+
+function partedRow<Row extends Adjacency>(row: Row, cardBefore: boolean, cardAfter: boolean): Row {
+  const joinsNext = cardAfter && (row.continuesWorkLog === true || row.groupedWithNext === true);
+  const joinsPrevious =
+    cardBefore && (row.groupedWithPrevious === true || row.continuesSteer === true);
+  if (!joinsNext && !joinsPrevious) return row;
+  return {
+    ...row,
+    ...(joinsNext ? { continuesWorkLog: false, groupedWithNext: false } : {}),
+    ...(joinsPrevious ? { groupedWithPrevious: false, continuesSteer: false } : {}),
+  };
 }
 
 function rowTime(row: { readonly createdAt: string | null }): number {
