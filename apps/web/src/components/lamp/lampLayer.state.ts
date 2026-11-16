@@ -55,6 +55,7 @@ export function lampLayerHoldsKeyboard(
 ): boolean {
   return lampHoldsKeyboard({
     open: useLampLayerStore.getState().openIn !== null,
+    leaving: document.querySelector("[data-lamp-layer]") !== null,
     inEditable: isEditableFocused(target),
     popupOpen: document.querySelector(TYPE_TO_FOCUS_FLOATING_LAYER_SELECTOR) !== null,
   });

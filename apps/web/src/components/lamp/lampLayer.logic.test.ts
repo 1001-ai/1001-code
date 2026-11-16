@@ -85,9 +85,14 @@ describe("lamp layer", () => {
   });
 
   it("has the keyboard while it is open, except in a text field or under a popup", () => {
-    const layer = { open: true, inEditable: false, popupOpen: false };
+    const layer = { open: true, leaving: false, inEditable: false, popupOpen: false };
     expect(lampHoldsKeyboard(layer)).toBe(true);
     expect(lampHoldsKeyboard({ ...layer, open: false })).toBe(false);
+    // Closed in the store but still fading out on screen: a held Space still types nothing.
+    expect(lampHoldsKeyboard({ ...layer, open: false, leaving: true })).toBe(true);
+    expect(lampHoldsKeyboard({ ...layer, open: false, leaving: true, inEditable: true })).toBe(
+      false,
+    );
     expect(lampHoldsKeyboard({ ...layer, inEditable: true })).toBe(false);
     expect(lampHoldsKeyboard({ ...layer, popupOpen: true })).toBe(false);
   });

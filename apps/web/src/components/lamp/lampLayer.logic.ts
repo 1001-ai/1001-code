@@ -67,13 +67,17 @@ export function lampLayerSharesThreadWithFind(
   return isLampLayerOpenIn(state, findThreadKey);
 }
 
-/** The layer has the keyboard while it is open, unless a text field has focus or a popup is open. */
+/**
+ * The layer has the keyboard while it is open, unless a text field has focus or a popup is open.
+ * It keeps it while it leaves: it is still on screen and focused, so a held Space must not type.
+ */
 export function lampHoldsKeyboard(where: {
   readonly open: boolean;
+  readonly leaving: boolean;
   readonly inEditable: boolean;
   readonly popupOpen: boolean;
 }): boolean {
-  return where.open && !where.inEditable && !where.popupOpen;
+  return (where.open || where.leaving) && !where.inEditable && !where.popupOpen;
 }
 
 /** Space on its own, held to talk. A repeat is the same key, so a held Space types nothing. */
