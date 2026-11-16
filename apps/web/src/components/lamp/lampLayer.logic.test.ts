@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
   LAMP_LAYER_CLOSED,
+  afterLampMotion,
   canToggleLampLayer,
   isLampLayerOpenIn,
   isLampTalkKey,
@@ -116,5 +117,38 @@ describe("lamp layer", () => {
     expect(isLampTalkKey({ ...space, altKey: true })).toBe(false);
     expect(isLampTalkKey({ ...space, isComposing: true })).toBe(false);
     expect(isLampTalkKey({ ...space, keyCode: 229 })).toBe(false);
+  });
+});
+
+describe("lamp layer motion", () => {
+  const never = { finished: new Promise<never>(() => {}) };
+
+  it("leaves once: after the motion's time in a tab that never paints, or when it settles", async () => {
+    vi.useFakeTimers();
+    try {
+      const unpainted = vi.fn();
+      afterLampMotion([never, never], 240, unpainted);
+      await vi.advanceTimersByTimeAsync(239);
+      expect(unpainted).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(unpainted).toHaveBeenCalledTimes(1);
+
+      // Finished or cancelled, the animations settling is enough, and the timer adds nothing.
+      const painted = vi.fn();
+      const cancelled = { finished: Promise.reject(new Error("cancelled")) };
+      afterLampMotion([{ finished: Promise.resolve() }, cancelled], 240, painted);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(painted).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(240);
+      expect(painted).toHaveBeenCalledTimes(1);
+
+      // Cancelled, as when the layer opens again while it leaves.
+      const reopened = vi.fn();
+      afterLampMotion([{ finished: Promise.resolve() }, never], 240, reopened)();
+      await vi.advanceTimersByTimeAsync(240);
+      expect(reopened).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

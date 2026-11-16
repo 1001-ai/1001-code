@@ -24,7 +24,7 @@ import { VoiceInputSetup } from "../chat/VoiceInputSetup";
 import { Button } from "../ui/button";
 import { Kbd } from "../ui/kbd";
 import { LampIcon } from "./LampIcon";
-import { LAMP_NAME } from "./lampLayer.logic";
+import { LAMP_NAME, afterLampMotion } from "./lampLayer.logic";
 import { closeLampLayer, useLampLayerOpen, useLampTranscriptOpen } from "./lampLayer.state";
 import { LampMediaPlayer } from "./LampMediaPlayer";
 import { LAMP_STATUS_LABEL, captionParts, stoppedAfterLine } from "./lampSpeech.logic";
@@ -313,12 +313,9 @@ function LampLayerView({
         timing,
       ),
     ];
-    let cancelled = false;
-    void Promise.allSettled(moves.map((animation) => animation.finished)).then(() => {
-      if (!cancelled) finishClose(overlay);
-    });
+    const cancel = afterLampMotion(moves, timing.duration, () => finishClose(overlay));
     return () => {
-      cancelled = true;
+      cancel();
       for (const animation of moves) animation.cancel();
     };
   }, [closing]);

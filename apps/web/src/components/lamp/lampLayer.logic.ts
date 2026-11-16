@@ -87,3 +87,28 @@ export function isLampTalkKey(
   if (event.isComposing || event.keyCode === 229) return false;
   return event.key === " " && !event.metaKey && !event.ctrlKey && !event.altKey;
 }
+
+/**
+ * Runs `done` once: when the animations have settled, or after `durationMs`, whichever comes
+ * first. A tab that is not painted (in the background, or behind another window) never finishes
+ * an animation, so the timer is what lets the layer leave there. Returns a cancel.
+ */
+export function afterLampMotion(
+  animations: ReadonlyArray<{ readonly finished: Promise<unknown> }>,
+  durationMs: number,
+  done: () => void,
+): () => void {
+  let pending = true;
+  const finish = () => {
+    if (!pending) return;
+    pending = false;
+    clearTimeout(timer);
+    done();
+  };
+  const timer = setTimeout(finish, durationMs);
+  void Promise.allSettled(animations.map((animation) => animation.finished)).then(finish);
+  return () => {
+    pending = false;
+    clearTimeout(timer);
+  };
+}
