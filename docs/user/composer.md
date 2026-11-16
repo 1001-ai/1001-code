@@ -94,12 +94,16 @@ Steer when the running agent supports it.
 
 On web and desktop, a reply that answers more than the message right above it, such as
 after a steer, shows a faded quote of the earlier message it answers, and that message
-shows **1 reply**. A reply that opens with a `Re:` line shows that line small and grey.
-Click a message, its quote, **1 reply** or the `Re:` line to see just that exchange: your
-messages and the reply that answered them, together. Messages you send while it is open
-reply to that exchange and join it. Press `Esc` or click outside the
-messages to return to the full conversation where you left it. Turn the quotes off under
-**Settings → Chat → Reply markers**.
+shows **1 reply**. When a reply answers several of your messages, or you wrote while the
+agent worked, the agent opens it with `Re:` lines quoting the messages it answers, shown
+small and grey; a line whose words appear in one of those messages is a link. Click a
+message's **View thread** button, its quote, **1 reply** or a `Re:` link to see just that
+exchange: your messages and the reply that answered them, together. Right-click a message
+for **View thread**, **Copy message**, and **Copy prompt link** or **Reply to this
+response**. Messages you send while it is open reply to that exchange and join it. Press
+`Esc` or click outside the messages to return to the full conversation where you left it.
+Turn the quotes off under **Settings → Chat → Reply markers**. To open the exchange by
+clicking a message itself, turn on **Settings → Chat → Open thread on message click**.
 
 ## Queue messages offline on mobile
 
@@ -313,9 +317,8 @@ earlier messages, and the thread marks where it began with **New session**.
 Earlier messages and diffs stay in the thread. Dismiss the notice above the
 composer to keep the current session instead.
 
-On web and desktop, turn on **Context window** in **Settings → Appearance →
-Thread details** to see context usage in the thread details card. It appears
-once the provider reports usage.
+On web and desktop, the thread details card shows context usage (**Context window** in
+**Settings → Appearance → Thread details**). It appears once the provider reports usage.
 
 Claude instances can also compact idle threads for you. See
 [compact long conversations](./providers-claude.md#compact-long-conversations).

@@ -1,11 +1,13 @@
-import { ProviderInstanceId } from "@t3tools/contracts";
+import { ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 
 import * as ClaudeAdapterV2 from "../orchestration-v2/Adapters/ClaudeAdapterV2.ts";
 import * as CodexAdapterV2 from "../orchestration-v2/Adapters/CodexAdapterV2.ts";
 import { CODEX_ADDITIONAL_CONTEXT_VALUE_MAX_BYTES } from "../provider/CodexDeveloperInstructions.ts";
-import { codexMemoryContext } from "./memoryProviders.ts";
+import type { Memory } from "./Memory.ts";
+import { codexMemoryContext, memoryTurnInput } from "./memoryProviders.ts";
 
 const BLOCK = "<memory>\n- Prefer small pull requests.\n</memory>";
 const bytes = (text: string) => new TextEncoder().encode(text).length;
@@ -66,3 +68,27 @@ it("Claude gets the block at the end of its appended system prompt", () => {
   const append = (options.systemPrompt as { readonly append?: string }).append ?? "";
   expect(append.endsWith(`\n\n${BLOCK}`)).toBe(true);
 });
+
+it.effect("gives the voice agent's thread its own memories and no other thread's", () =>
+  Effect.gen(function* () {
+    const service = Option.some({
+      instructions: () => Effect.succeed("<memory>project</memory>"),
+      voiceAgentInstructions: () =>
+        Effect.succeed("<voice_agent_memories>brief</voice_agent_memories>"),
+    } as unknown as Memory["Service"]);
+    const projectId = ProjectId.make("project-1");
+    const threadId = ThreadId.make("thread-1");
+    const lineage = { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId };
+    expect(yield* memoryTurnInput(service, projectId, threadId, lineage)).toEqual({
+      memory: "<memory>project</memory>",
+    });
+    expect(
+      yield* memoryTurnInput(service, projectId, threadId, {
+        ...lineage,
+        sideChat: true,
+        voiceAgent: true,
+      }),
+    ).toEqual({ memory: "<voice_agent_memories>brief</voice_agent_memories>" });
+    expect(yield* memoryTurnInput(Option.none(), projectId, threadId, lineage)).toEqual({});
+  }),
+);

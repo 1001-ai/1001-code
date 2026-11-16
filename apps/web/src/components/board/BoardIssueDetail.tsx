@@ -28,6 +28,7 @@ import { PullRequestLabelChip } from "../pullRequest/pullRequestPresentation";
 import { Button } from "../ui/button";
 import { Spinner } from "../ui/spinner";
 import { BOARD_PRIORITY_LABELS } from "./board.logic";
+import { BoardConversation } from "./BoardConversation";
 import {
   LinkedBy,
   PriorityGlyph,
@@ -38,7 +39,7 @@ import {
   useBoardThread,
 } from "./boardParts";
 
-/** One issue in the board's place: what the card shows, every linked thread, the description. */
+/** One issue in the board's place: what the card shows, linked threads, the description, comments. */
 export function BoardIssueDetail(props: {
   readonly issue: BoardIssue;
   readonly state: BoardWorkflowState;
@@ -295,6 +296,15 @@ function Description(props: {
         {" · Updated "}
         <RelativeTime timestamp={issue.updatedAt} />
       </p>
+      {detail !== null ? (
+        <BoardConversation
+          environmentId={props.environmentId}
+          projectId={props.projectId}
+          issueId={issue.id}
+          threadRef={props.threadRef}
+          detail={detail}
+        />
+      ) : null}
     </>
   );
 }

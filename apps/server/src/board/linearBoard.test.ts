@@ -109,7 +109,7 @@ describe("boardColumns", () => {
       title: "Issue 7",
       url: "https://linear.app/acme/issue/ENG-7",
       stateId: "todo",
-      assignee: { id: "u1", name: "dana", avatarUrl: null, isMe: true },
+      assignee: { id: "u1", name: "Dana Kim", avatarUrl: null, isMe: true },
       labels: [{ id: "l1", name: "Bug", color: "#eb5757" }],
       priority: 2,
       createdAt: "2026-11-13T10:00:00.000Z",

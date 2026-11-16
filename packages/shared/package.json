@@ -295,6 +295,10 @@
       "types": "./src/questionCards.ts",
       "import": "./src/questionCards.ts"
     },
+    "./replyMarkers": {
+      "types": "./src/replyMarkers.ts",
+      "import": "./src/replyMarkers.ts"
+    },
     "./composerContextLegacy": {
       "types": "./src/composerContextLegacy.ts",
       "import": "./src/composerContextLegacy.ts"

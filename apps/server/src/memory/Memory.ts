@@ -1,5 +1,9 @@
 import {
+  BOARD_ADD_TOOL_NAME,
+  BOARD_LIST_TOOL_NAME,
+  BOARD_UPDATE_TOOL_NAME,
   buildMemoryBlock,
+  type MemoryCategory,
   type MemoryDecideInput,
   type MemoryDocument,
   type MemoryFileTarget,
@@ -13,12 +17,14 @@ import {
   type TeamCatalogProject,
   type TeamCatalogProposal,
   TeamCatalogError,
+  type TeamCatalogLinear,
   type TeamCatalogSnapshot,
   type TeamCatalogViewer,
   type ThreadId,
   teamCatalogRepositoryMatches,
+  type VoiceAgentMemoryLogEntry,
+  voiceAgentMemoryFile,
 } from "@t3tools/contracts";
-import { THREAD_LINK_PROTOCOL } from "@t3tools/shared/threadLinks";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -33,12 +39,19 @@ import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 
+import { threadLinkUrl } from "../board/linearBoard.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
 import * as TeamCatalog from "../teamCatalog/TeamCatalog.ts";
 import { hostedRepositoryOf } from "../teamCatalog/teamCatalogProposal.ts";
 import * as MemoryProposalStore from "./MemoryProposalStore.ts";
+import {
+  activeVoiceAgentMemory,
+  buildVoiceAgentMemoryBlock,
+  parseVoiceAgentMemories,
+  supersedeVoiceAgentMemory,
+} from "./voiceAgentMemories.ts";
 
 /**
  * Memory: markdown files in the team catalog repository that every agent turn gets as one
@@ -62,17 +75,31 @@ export class Memory extends Context.Service<
     readonly propose: (
       input: MemoryProposeInput,
     ) => Effect.Effect<TeamCatalogProposal, TeamCatalogError>;
-    /** Records an agent's proposal, or returns the pending one the thread already made with it. */
+    /**
+     * The signed-in person's active voice agent memories as the block the voice agent gets, or
+     * undefined without a catalog or a login. No other agent gets it, and it is never part of
+     * `instructions`. Never fails and never waits for git.
+     */
+    readonly voiceAgentInstructions: () => Effect.Effect<string | undefined>;
+    /** The memories that person's newer ones replaced, newest first: the log, read on request. */
+    readonly voiceAgentEarlier: () => Effect.Effect<ReadonlyArray<VoiceAgentMemoryLogEntry>>;
+    /**
+     * Records an agent's proposal, or returns the pending one the thread already made with it. With
+     * a category it is for that category's file, where `replaces` names the memory it supersedes.
+     */
     readonly proposeFromAgent: (input: {
       readonly projectId: ProjectId;
       readonly threadId: ThreadId;
       readonly threadTitle: string;
       readonly text: string;
       readonly reason: string;
+      readonly category?: MemoryCategory | undefined;
+      readonly replaces?: string | undefined;
     }) => Effect.Effect<MemoryProposal, TeamCatalogError>;
     /**
-     * A person's answer, from the client session that clicked. Accepting adds the line to the file
-     * and merges the pull request at once; a failed push leaves the proposal unanswered.
+     * A person's answer, from the client session that clicked. Accepting adds the line to the file,
+     * or in a category's file puts it in place of the one it replaces, and merges the pull request
+     * at once; a failed push leaves the proposal unanswered.
      */
     readonly decide: (
       input: MemoryDecideInput,
@@ -83,16 +110,31 @@ export class Memory extends Context.Service<
 
 const SIGNED_OUT = "Sign in to the GitHub CLI with gh auth login to have personal memory.";
 const NOT_IN_CATALOG = "This project is not in the team catalog.";
+const NO_CATALOG = "No team catalog is set.";
 /** Per project; the oldest answered ones go first, so the view stays small on the wire. */
 const MAX_PROPOSALS_PER_PROJECT = 200;
 
-/** The board reads a thread from an issue's link attachments, so a comment alone is not enough. */
-const threadLinkInstructions = (link: string): string =>
-  [
-    "<thread_link>",
-    `This thread's link is ${link}. When you work on an issue on this project's Linear board, add this link to that issue once, as a link attachment (not only in a comment), so the board and teammates' agents can find this thread. Include it in the "agent:" comments you write there too.`,
-    "</thread_link>",
+/**
+ * The board reads a thread from its task's link attachments, so a comment alone is not enough.
+ * The board tools attach this thread's link themselves.
+ */
+export const boardInstructions = (linear: TeamCatalogLinear, link: string): string => {
+  const board =
+    linear.project === undefined
+      ? `the ${linear.team} team in Linear`
+      : `the Linear project "${linear.project}" in the ${linear.team} team`;
+  return [
+    "<board>",
+    `This project's board is ${board}; its tasks are Linear issues. Use it for every task you read, file or update, unless the user names another board.`,
+    `Use ${BOARD_LIST_TOOL_NAME} to see its open tasks, ${BOARD_ADD_TOOL_NAME} to file a task and ${BOARD_UPDATE_TOOL_NAME} to change one (status, assignee, title or description). They act as the person you work for. Use the Linear connector only for what they do not cover, such as comments.`,
+    `Once the requirements are clear and you are about to make your first change (a file edit, a branch or a worktree), the work needs a task on this board. Look for one that covers it. If none does, file one before that first change. Assign it to the person you work for (assignee "me") and set its status to In Progress. Even a small fix gets a task. Answering questions, reading code and planning need none.`,
+    `This thread's link is ${link}. ${BOARD_ADD_TOOL_NAME} and ${BOARD_UPDATE_TOOL_NAME} attach it to the task, so the board and teammates' agents can find this thread; when you take over an existing task, update it with ${BOARD_UPDATE_TOOL_NAME}. Include the link in the "agent:" comments you write there too.`,
+    "</board>",
   ].join("\n");
+};
+
+/** What a turn reads. The voice agent's memories are left out: only the panel's view adds them. */
+type GeneralMemoryView = Omit<MemoryView, "voiceAgent">;
 
 /** Turns use the cached catalog; one older than this starts a background fetch. */
 const STALE_AFTER_MS = 10 * 60_000;
@@ -198,6 +240,17 @@ const make = Effect.gen(function* () {
     return { scope, file, label: target.label, text, unavailable: null };
   });
 
+  /** The viewer's own voice agent memories file, or why there is none. */
+  const voiceAgentFile = Effect.fn("Memory.voiceAgentFile")(function* (
+    source: string | null,
+    viewer: TeamCatalogViewer,
+  ) {
+    if (source === null) return NO_CATALOG;
+    if (viewer.login === null) return viewer.problem ?? SIGNED_OUT;
+    const file = voiceAgentMemoryFile(viewer.login);
+    return { file, login: viewer.login, text: (yield* teamCatalog.readFile(file)) ?? "" };
+  });
+
   const projectProposals = (projectId: ProjectId) =>
     SubscriptionRef.get(proposalsRef).pipe(
       Effect.map((proposals) =>
@@ -213,13 +266,14 @@ const make = Effect.gen(function* () {
     const base = {
       source: catalog.source,
       revision: catalog.revision,
+      fetchedAt: catalog.fetchedAt,
       refreshing: catalog.refreshing,
       error: catalog.error,
       viewer: catalog.viewer,
       proposals: yield* projectProposals(projectId),
     };
     if (catalog.source === null) {
-      const view: MemoryView = { ...base, documents: [], block: null, truncated: false };
+      const view: GeneralMemoryView = { ...base, documents: [], block: null, truncated: false };
       return { view, project: null };
     }
     const project = yield* catalogProject(catalog, projectId);
@@ -234,7 +288,7 @@ const make = Effect.gen(function* () {
       repository: hostedRepositoryOf(catalog.source),
       proposable: project !== null,
     });
-    const view: MemoryView = {
+    const view: GeneralMemoryView = {
       ...base,
       documents,
       block: block?.text ?? null,
@@ -243,8 +297,15 @@ const make = Effect.gen(function* () {
     return { view, project };
   });
 
-  const read: Memory["Service"]["read"] = (projectId) =>
-    readWithProject(projectId).pipe(Effect.map(({ view }) => view));
+  const read: Memory["Service"]["read"] = Effect.fn("Memory.readView")(function* (projectId) {
+    const { view } = yield* readWithProject(projectId);
+    const own = yield* voiceAgentFile(view.source, view.viewer);
+    const voiceAgent: MemoryView["voiceAgent"] =
+      typeof own === "string"
+        ? { file: null, unavailable: own, active: [], earlier: [] }
+        : { file: own.file, unavailable: null, ...parseVoiceAgentMemories(own.text) };
+    return { ...view, voiceAgent };
+  });
 
   const changes: Memory["Service"]["changes"] = (projectId) =>
     Stream.merge(teamCatalog.changes, SubscriptionRef.changes(proposalsRef)).pipe(
@@ -268,9 +329,8 @@ const make = Effect.gen(function* () {
       yield* refreshWhenStale(yield* teamCatalog.snapshot);
       const { view, project } = yield* readWithProject(projectId);
       if (project?.linear === undefined) return view.block ?? undefined;
-      const link = `${THREAD_LINK_PROTOCOL}://v2/${environmentId}/${threadId}`;
-      const threadLink = threadLinkInstructions(link);
-      return view.block === null ? threadLink : `${view.block}\n\n${threadLink}`;
+      const board = boardInstructions(project.linear, threadLinkUrl(environmentId, threadId));
+      return view.block === null ? board : `${view.block}\n\n${board}`;
     },
     // A cancelled run must stay cancelled; only a failed read degrades to no memory.
     Effect.catchCauseIf(
@@ -280,10 +340,37 @@ const make = Effect.gen(function* () {
     ),
   );
 
+  const voiceAgentMemories = Effect.fn("Memory.voiceAgentMemories")(
+    function* () {
+      const catalog = yield* teamCatalog.snapshot;
+      yield* refreshWhenStale(catalog);
+      const own = yield* voiceAgentFile(catalog.source, catalog.viewer);
+      return typeof own === "string" ? undefined : parseVoiceAgentMemories(own.text);
+    },
+    // As for `instructions`: a failed read degrades to nothing, a cancelled one stays cancelled.
+    Effect.catchCauseIf(
+      (cause) => !Cause.hasInterrupts(cause),
+      (cause) =>
+        Effect.logWarning("Voice agent memories could not be read.", { cause }).pipe(
+          Effect.as(undefined),
+        ),
+    ),
+  );
+
+  const voiceAgentInstructions: Memory["Service"]["voiceAgentInstructions"] = () =>
+    voiceAgentMemories().pipe(
+      Effect.map((file) =>
+        file === undefined ? undefined : buildVoiceAgentMemoryBlock(file.active).text,
+      ),
+    );
+
+  const voiceAgentEarlier: Memory["Service"]["voiceAgentEarlier"] = () =>
+    voiceAgentMemories().pipe(Effect.map((file) => file?.earlier ?? []));
+
   // A personal file is the live login's: after a GitHub CLI account switch the cached one would
   // edit the previous person's file under the new author.
   const writableDocument = Effect.fn("Memory.writableDocument")(function* (
-    view: MemoryView,
+    view: GeneralMemoryView,
     project: TeamCatalogProject | null,
     scope: MemoryScope,
   ) {
@@ -298,7 +385,7 @@ const make = Effect.gen(function* () {
     const { view, project } = yield* readWithProject(input.projectId);
     const target = yield* writableDocument(view, project, input.scope);
     if (view.source === null || target === undefined) {
-      return yield* new TeamCatalogError({ detail: "No team catalog is set." });
+      return yield* new TeamCatalogError({ detail: NO_CATALOG });
     }
     if (target.file === null) {
       return yield* new TeamCatalogError({
@@ -336,6 +423,26 @@ const make = Effect.gen(function* () {
         detail: "No team catalog is set, so there is nowhere to save memory.",
       });
     }
+    if (input.category !== undefined) {
+      // The category's file is the person's own, so the project need not be in the catalog.
+      // The live login, as accepting uses: a cached one would check `replaces` against another person's file.
+      const own = yield* voiceAgentFile(catalog.source, yield* teamCatalog.liveViewer);
+      if (typeof own === "string") return yield* new TeamCatalogError({ detail: own });
+      const file = parseVoiceAgentMemories(own.text);
+      if (input.replaces !== undefined && activeVoiceAgentMemory(file, input.replaces) === null) {
+        const active = file.active.map((memory) => JSON.stringify(memory.text)).join(", ");
+        return yield* new TeamCatalogError({
+          detail: `No voice agent memory has the text given as replaces. ${active === "" ? "None is active, so leave replaces out." : `Give the exact text of one of the active ones: ${active}. Leave replaces out for a new subject.`}`,
+        });
+      }
+      return yield* addProposal(input);
+    }
+    if (input.replaces !== undefined) {
+      return yield* new TeamCatalogError({
+        detail:
+          "Only a voice agent memory replaces another one. Leave replaces out; other memories are added.",
+      });
+    }
     if ((yield* catalogProject(catalog, input.projectId)) === null) {
       return yield* new TeamCatalogError({
         detail: `${NOT_IN_CATALOG} There is nowhere to save memory for it.`,
@@ -350,12 +457,15 @@ const make = Effect.gen(function* () {
     readonly threadTitle: string;
     readonly text: string;
     readonly reason: string;
+    readonly category?: MemoryCategory | undefined;
+    readonly replaces?: string | undefined;
   }) {
     const text = input.text.trim();
     const existing = (yield* SubscriptionRef.get(proposalsRef)).find(
       (proposal) =>
         proposal.threadId === input.threadId &&
         proposal.text === text &&
+        proposal.category === input.category &&
         proposal.decision === null,
     );
     if (existing !== undefined) return onWire(existing);
@@ -369,6 +479,8 @@ const make = Effect.gen(function* () {
       createdAt: DateTime.formatIso(yield* DateTime.now),
       decision: null,
       decidedBySession: null,
+      ...(input.category === undefined ? {} : { category: input.category }),
+      ...(input.replaces === undefined ? {} : { replaces: input.replaces.trim() }),
     };
     const next = yield* SubscriptionRef.updateAndGet(proposalsRef, (proposals) =>
       pruned([...proposals, proposal], input.projectId),
@@ -396,6 +508,77 @@ const make = Effect.gen(function* () {
     }
     return onWire(decided);
   }, writeLock.withPermits(1));
+
+  /** Accept for me or for the team: the line joins the end of that file. */
+  const appendedLine = Effect.fn("Memory.appendedLine")(function* (
+    input: MemoryDecideInput,
+    line: string,
+  ) {
+    const { view, project } = yield* readWithProject(input.projectId);
+    const scope: MemoryScope = input.choice === "me" ? "personal-project" : "project";
+    const target = yield* writableDocument(view, project, scope);
+    if (view.revision === null || target === undefined) {
+      return yield* new TeamCatalogError({ detail: NO_CATALOG });
+    }
+    if (target.file === null) {
+      return yield* new TeamCatalogError({
+        detail: target.unavailable ?? "This scope has no memory file here.",
+      });
+    }
+    return {
+      baseRevision: view.revision,
+      file: target.file,
+      text: appendMemoryLine(target.text, line),
+      title: `${input.choice === "me" ? "Remember for me" : "Remember for the team"}: ${line}`,
+      body: [`Adds to \`${target.file}\`:`, `> ${line}`],
+      branchStem: `memory/${scope}-${target.file
+        .slice(target.file.lastIndexOf("/") + 1)
+        .replace(/\.md$/, "")}`,
+    };
+  });
+
+  /** A voice agent memory goes to the live login's own file, in place of the one it replaces. */
+  const supersededVoiceAgentMemory = Effect.fn("Memory.supersededVoiceAgentMemory")(function* (
+    input: MemoryDecideInput,
+    proposal: MemoryProposal,
+    line: string,
+    today: string,
+  ) {
+    if (input.choice === "team") {
+      return yield* new TeamCatalogError({
+        detail: "A voice agent memory is yours alone: accept it for yourself or reject it.",
+      });
+    }
+    const catalog = yield* teamCatalog.snapshot;
+    const own = yield* voiceAgentFile(catalog.source, yield* teamCatalog.liveViewer);
+    if (catalog.revision === null || typeof own === "string") {
+      return yield* new TeamCatalogError({ detail: typeof own === "string" ? own : NO_CATALOG });
+    }
+    const next = supersedeVoiceAgentMemory(own.text, {
+      text: line,
+      replaces: proposal.replaces ?? null,
+      today,
+    });
+    if (!next.changed) {
+      return yield* new TeamCatalogError({
+        detail: "Nothing to save: this voice agent memory is already active.",
+      });
+    }
+    return {
+      baseRevision: catalog.revision,
+      file: own.file,
+      text: next.text,
+      title: `Remember for the voice agent: ${line}`,
+      body: [
+        `Adds to \`${own.file}\`:`,
+        `> ${line}`,
+        ...(next.replaced === null
+          ? []
+          : ["It replaces this memory, which moves to the file's log:", `> ${next.replaced}`]),
+      ],
+      branchStem: `memory/voice-agent-${own.login.toLowerCase()}`,
+    };
+  });
 
   const decide: Memory["Service"]["decide"] = Effect.fn("Memory.decide")(function* (
     input,
@@ -429,36 +612,22 @@ const make = Effect.gen(function* () {
 
     // Start from the newest catalog, so the pull request rarely meets a moved file.
     yield* teamCatalog.refresh({ force: true });
-    const { view, project } = yield* readWithProject(input.projectId);
-    const scope: MemoryScope = input.choice === "me" ? "personal-project" : "project";
-    const target = yield* writableDocument(view, project, scope);
-    if (view.revision === null || target === undefined) {
-      return yield* new TeamCatalogError({ detail: "No team catalog is set." });
-    }
-    if (target.file === null) {
-      return yield* new TeamCatalogError({
-        detail: target.unavailable ?? "This scope has no memory file here.",
-      });
-    }
     const line = input.text.trim();
+    const origin = [
+      `Proposed by an agent in the thread "${proposal.threadTitle}".`,
+      ...(proposal.reason === "" ? [] : [`Its reason: ${proposal.reason}`]),
+      "Accepted in 1001 Code, which merges it at once.",
+    ];
+    const change =
+      proposal.category === undefined
+        ? yield* appendedLine(input, line)
+        : yield* supersededVoiceAgentMemory(input, proposal, line, decidedAt.slice(0, 10));
     const pullRequest = yield* teamCatalog.proposeFiles({
-      baseRevision: view.revision,
-      files: [{ file: target.file, text: appendMemoryLine(target.text, line) }],
-      title:
-        `${input.choice === "me" ? "Remember for me" : "Remember for the team"}: ${line}`.slice(
-          0,
-          200,
-        ),
-      body: [
-        `Adds to \`${target.file}\`:`,
-        `> ${line}`,
-        `Proposed by an agent in the thread "${proposal.threadTitle}".`,
-        ...(proposal.reason === "" ? [] : [`Its reason: ${proposal.reason}`]),
-        "Accepted in 1001 Code, which merges it at once.",
-      ].join("\n\n"),
-      branchStem: `memory/${scope}-${target.file
-        .slice(target.file.lastIndexOf("/") + 1)
-        .replace(/\.md$/, "")}`.slice(0, 80),
+      baseRevision: change.baseRevision,
+      files: [{ file: change.file, text: change.text }],
+      title: change.title.slice(0, 200),
+      body: [...change.body, ...origin].join("\n\n"),
+      branchStem: change.branchStem.slice(0, 80),
     });
     const merge =
       pullRequest.pullRequestUrl === null
@@ -475,7 +644,7 @@ const make = Effect.gen(function* () {
       {
         choice: input.choice,
         text: line,
-        file: target.file,
+        file: change.file,
         decidedAt,
         pullRequestUrl: pullRequest.pullRequestUrl,
         ...merge,
@@ -484,7 +653,16 @@ const make = Effect.gen(function* () {
     );
   }, decideLock.withPermits(1));
 
-  return Memory.of({ read, changes, instructions, propose, proposeFromAgent, decide });
+  return Memory.of({
+    read,
+    changes,
+    instructions,
+    voiceAgentInstructions,
+    voiceAgentEarlier,
+    propose,
+    proposeFromAgent,
+    decide,
+  });
 });
 
 export const layer = Layer.effect(Memory, make);

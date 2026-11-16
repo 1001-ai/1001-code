@@ -5,6 +5,7 @@ import { historyResponseItems } from "@t3tools/provider-core/server/handoffBudge
 import {
   liveAppCheckoutCodexContext,
   QUESTION_CARD_INSTRUCTIONS,
+  replyMarkerCodexContext,
 } from "@t3tools/provider-core/server/runtimeInstructions";
 import { makeProviderTextDeltaCoalescer } from "./ProviderTextDeltaCoalescer.ts";
 import {
@@ -830,6 +831,7 @@ export const buildCodexTurnStartParams = Effect.fn("CodexAdapterV2.buildCodexTur
               kind: "application" as const,
               value: QUESTION_CARD_INSTRUCTIONS,
             },
+            ...replyMarkerCodexContext(),
             ...liveAppCheckoutCodexContext(),
           };
     const teamContext = codexMemoryContext(input.memory);

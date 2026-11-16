@@ -41,7 +41,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPreferences";
 import { isSidebarUtilityPage, useNavigateToMainApp } from "./mainAppLocation";
 import { useTeamProjectsDrawerToggle } from "../teamProjects/teamProjectsDrawerState";
-import { QuestionsIcon } from "../questions/questionsEntryPoints";
+import { QuestionsButtonIcon, useQuestionsButtonLabel } from "../questions/questionsEntryPoints";
 import { SidebarThreadUndoNotice } from "./SidebarThreadUndoNotice";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
@@ -235,6 +235,7 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
     select: (location) => isSidebarUtilityPage(location.pathname),
   });
   const pullRequestsSupported = usePullRequestsSupported();
+  const questionsLabel = useQuestionsButtonLabel();
   const closeMobileSidebar = () => {
     if (isMobile) {
       setOpenMobile(false);
@@ -288,8 +289,8 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
             />
           ) : null}
           <SidebarUtilityItem
-            icon={<QuestionsIcon />}
-            label="Questions"
+            icon={<QuestionsButtonIcon />}
+            label={questionsLabel}
             onClick={() => {
               closeMobileSidebar();
               void navigate({ to: "/questions" });

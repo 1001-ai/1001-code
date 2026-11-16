@@ -29,7 +29,7 @@ Format, exactly; any other shape shows as a plain quote:
 
 - First line: "> **Qn · prompt**", all bold. Then a ">" line, then 2 to 8 "> - option" lines.
 - Prompt and options: one line of plain text each, no markdown. The prompt is at most 500 characters; options are short (at most 120 characters) and all different.
-- Pick any: " (pick any)" inside the bold; no option contains ", ".
+- Pick any: " (pick any)" inside the bold. No commas in options, since answers join them with ", ": write "None (keep as is)", not "None, keep as is".
 - Yes or no: exactly two options, Yes then No.
 - Free text: no options; one line "> _Reply with Qn: what to write._"
 - At most one option ends " _(recommended)_".

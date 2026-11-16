@@ -202,12 +202,53 @@ export const BoardIssueDetailInput = Schema.Struct({
 });
 export type BoardIssueDetailInput = typeof BoardIssueDetailInput.Type;
 
+export const BoardComment = Schema.Struct({
+  id: TrimmedNonEmptyString,
+  /** Markdown. */
+  body: Schema.String,
+  author: Schema.String,
+  createdAt: IsoDateTime,
+  /** Written by a teammate's agent: the body starts with "agent:". */
+  agent: Schema.Boolean,
+});
+export type BoardComment = typeof BoardComment.Type;
+
+/** A top-level comment and its replies. */
+export const BoardCommentThread = Schema.Struct({
+  ...BoardComment.fields,
+  /** Oldest first. */
+  replies: Schema.Array(BoardComment),
+});
+export type BoardCommentThread = typeof BoardCommentThread.Type;
+
 /** What a card leaves out, read from Linear when the issue is opened. */
 export const BoardIssueDetail = Schema.Struct({
   description: Schema.NullOr(Schema.String),
   creator: Schema.NullOr(BoardUser),
+  /** Oldest first. */
+  comments: Schema.Array(BoardCommentThread),
+  /**
+   * The local thread a comment posted from the board also goes to: the newest link to a thread on
+   * this environment that the signed-in person attached, as the comment inbox picks it.
+   */
+  linkedThreadId: Schema.NullOr(ThreadId),
 });
 export type BoardIssueDetail = typeof BoardIssueDetail.Type;
+
+export const BoardCommentInput = Schema.Struct({
+  projectId: ProjectId,
+  issueId: TrimmedNonEmptyString,
+  body: TrimmedNonEmptyString,
+  /** The top-level comment this replies to. */
+  parentId: Schema.optionalKey(TrimmedNonEmptyString),
+});
+export type BoardCommentInput = typeof BoardCommentInput.Type;
+
+export const BoardCommentResult = Schema.Struct({
+  /** The local thread the comment was queued in; null when none is linked or queueing failed. */
+  threadId: Schema.NullOr(ThreadId),
+});
+export type BoardCommentResult = typeof BoardCommentResult.Type;
 
 export const BoardConnectionSubscribeInput = Schema.Struct({});
 
@@ -222,3 +263,62 @@ export const BoardSignIn = Schema.Struct({ authorizeUrl: TrimmedNonEmptyString }
 export type BoardSignIn = typeof BoardSignIn.Type;
 
 export const BoardDisconnectInput = Schema.Struct({});
+
+/** Fork: agents' tools for the thread's project board; see fork/README.md. */
+export const BOARD_ADD_TOOL_NAME = "board_add";
+export const BOARD_UPDATE_TOOL_NAME = "board_update";
+export const BOARD_LIST_TOOL_NAME = "board_list";
+
+/** A task as an agent's board tools return it, and as a chat card shows it. */
+export const BoardTask = Schema.Struct({
+  /** Such as ENG-12. */
+  identifier: TrimmedNonEmptyString,
+  title: Schema.String,
+  url: TrimmedNonEmptyString,
+  status: Schema.Struct({
+    name: Schema.String,
+    /** One of BOARD_STATE_TYPES; kept open because Linear may add types. */
+    type: Schema.String,
+  }),
+  /** The assignee's name; null when nobody is assigned. */
+  assignee: Schema.NullOr(Schema.String),
+  /** The Linear project's name; null when the task is in none. */
+  project: Schema.NullOr(Schema.String),
+});
+export type BoardTask = typeof BoardTask.Type;
+
+export const BoardTaskWriteResult = Schema.Struct({
+  task: BoardTask,
+  /** The task carries a link to the calling thread, so the board and teammates' agents find it. */
+  threadLinked: Schema.Boolean,
+});
+export type BoardTaskWriteResult = typeof BoardTaskWriteResult.Type;
+
+export const BoardTaskList = Schema.Struct({
+  /** The board's open tasks, column by column in board order. */
+  tasks: Schema.Array(BoardTask),
+  /** The board has more tasks than one read fetches; these are the first ones. */
+  truncated: Schema.Boolean,
+});
+export type BoardTaskList = typeof BoardTaskList.Type;
+
+/**
+ * What an agent's Linear `save_issue`, or T3 `board_add` or `board_update`, call did to a task:
+ * filed it, picked it up (set its assignee) or moved it (set its status). The server reads it from
+ * the call's input and result and sends it as `output.boardTask` on the wire tool item, so the
+ * chat shows a card.
+ */
+export const BoardTaskChange = Schema.Struct({
+  kind: Schema.Literals(["created", "picked_up", "status"]),
+  /** Linear's issue identifier, such as `ENG-106`. */
+  identifier: TrimmedNonEmptyString,
+  title: Schema.String,
+  url: Schema.String,
+  status: Schema.String,
+  /** One of BOARD_STATE_TYPES when Linear sends it. */
+  statusType: Schema.optionalKey(Schema.String),
+  assignee: Schema.optionalKey(Schema.String),
+  assigneeId: Schema.optionalKey(Schema.String),
+  project: Schema.optionalKey(Schema.String),
+});
+export type BoardTaskChange = typeof BoardTaskChange.Type;

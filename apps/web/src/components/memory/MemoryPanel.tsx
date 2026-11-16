@@ -26,6 +26,7 @@ import { teamCatalogRefresh } from "~/state/teamCatalog";
 import { memoryPropose, useMemory } from "~/state/memory";
 import { useAtomCommand } from "~/state/use-atom-command";
 import ChatMarkdown from "../ChatMarkdown";
+import { RelativeTime } from "../RelativeTime";
 import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
@@ -35,18 +36,21 @@ import { Spinner } from "../ui/spinner";
 import { Textarea } from "../ui/textarea";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { MemoryDecisionButtons, useMemoryDecision } from "./MemoryProposalCard";
+import { MemoryDecisionButtons, MemoryReplaces, useMemoryDecision } from "./MemoryProposalCard";
+import { VoiceAgentMemories } from "./VoiceAgentMemories";
 
-type Tab = "team" | "project" | "personal" | "proposals";
+const TABS = ["team", "project", "personal", "voice", "proposals"] as const;
+type Tab = (typeof TABS)[number];
 
 const TAB_LABEL: Record<Tab, string> = {
   team: "Team",
   project: "Project",
   personal: "Personal",
+  voice: "Voice agent",
   proposals: "Proposals",
 };
 
-const TAB_SCOPES: Record<Exclude<Tab, "proposals">, ReadonlyArray<MemoryScope>> = {
+const TAB_SCOPES: Record<Exclude<Tab, "voice" | "proposals">, ReadonlyArray<MemoryScope>> = {
   team: ["team"],
   project: ["project"],
   personal: ["personal-project", "personal"],
@@ -59,8 +63,7 @@ const SCOPE_LABEL: Record<MemoryScope, string> = {
   "personal-project": "Yours, in this project",
 };
 
-const isTab = (value: unknown): value is Tab =>
-  value === "team" || value === "project" || value === "personal" || value === "proposals";
+const isTab = (value: unknown): value is Tab => TABS.some((tab) => tab === value);
 
 /** Revision, size and an approximate token count, at about four bytes a token. */
 function blockStatus(view: MemoryView): string {
@@ -150,7 +153,7 @@ function MemoryDocuments(props: {
 
   const waiting = view.proposals.filter((proposal) => proposal.decision === null);
   const documents =
-    tab === "proposals"
+    tab === "proposals" || tab === "voice"
       ? []
       : TAB_SCOPES[tab].flatMap((scope) => {
           const document = view.documents.find((candidate) => candidate.scope === scope);
@@ -200,7 +203,7 @@ function MemoryDocuments(props: {
             }
           }}
         >
-          {(["team", "project", "personal", "proposals"] as const).map((candidate) => (
+          {TABS.map((candidate) => (
             <Toggle key={candidate} value={candidate}>
               {TAB_LABEL[candidate]}
               {candidate === "proposals" && waiting.length > 0 ? (
@@ -209,7 +212,17 @@ function MemoryDocuments(props: {
             </Toggle>
           ))}
         </ToggleGroup>
-        <div className="min-w-0 flex-1" />
+        <span className="min-w-0 flex-1 truncate whitespace-nowrap text-end text-xs text-muted-foreground">
+          {view.refreshing ? (
+            "Fetching…"
+          ) : view.fetchedAt === null ? (
+            "Not fetched yet"
+          ) : (
+            <>
+              Updated <RelativeTime timestamp={view.fetchedAt} />
+            </>
+          )}
+        </span>
         <Tooltip>
           <TooltipTrigger
             render={
@@ -270,6 +283,7 @@ function MemoryDocuments(props: {
                 onSubmit={() => void submit()}
               />
             ))}
+            {tab === "voice" ? <VoiceAgentMemories document={view.voiceAgent} /> : null}
           </div>
         )}
       </div>
@@ -424,6 +438,10 @@ function MemoryProposals(props: {
           className="flex min-w-0 flex-col gap-1.5 rounded-lg border border-border/70 bg-card px-3 py-2.5"
         >
           <p className="text-sm [overflow-wrap:anywhere]">{proposal.text}</p>
+          {proposal.category === undefined ? null : (
+            <p className="text-xs text-muted-foreground">For the voice agent</p>
+          )}
+          <MemoryReplaces replaces={proposal.replaces ?? null} />
           {proposal.reason !== "" ? (
             <p className="text-xs text-muted-foreground">{proposal.reason}</p>
           ) : null}
@@ -446,6 +464,7 @@ function MemoryProposals(props: {
             <MemoryDecisionButtons
               busy={decision.busy}
               canDecide={decision.canDecide}
+              personalOnly={proposal.category !== undefined}
               onChoose={(choice) => void decision.submit(proposal, choice, proposal.text)}
             />
           </div>

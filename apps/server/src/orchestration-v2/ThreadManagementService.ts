@@ -84,7 +84,9 @@ export function withCreationProvenance(
   switch (command.type) {
     case "thread.create": {
       // Only the server stamps a link's origin, so a client cannot set one.
-      const { linkOrigin: _linkOrigin, delegatedFrom: _delegatedFrom, ...rest } = command;
+      const { linkOrigin: _linkOrigin, delegatedFrom: _delegatedFrom, ...stamped } = command;
+      // Fork: only the voice agent service names a chat as its thread's parent.
+      const { voiceAgentOf: _voiceAgentOf, ...rest } = stamped;
       return { ...rest, ...provenance };
     }
     case "message.dispatch":

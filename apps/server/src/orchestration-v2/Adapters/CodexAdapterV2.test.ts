@@ -194,6 +194,12 @@ describe("CodexAdapterV2 runtime policy", () => {
               params.additionalContext?.["t3_code_question_cards"] !== undefined,
               hasT3Mcp !== true,
             );
+            // Codex's runtime entry is near its cap, so Re: lines always get their own entry.
+            assert.isDefined(params.additionalContext?.["t3_code_reply_markers"]);
+            assert.notInclude(
+              params.additionalContext?.["t3_code_runtime"]?.value ?? "",
+              "<reply_markers>",
+            );
           }
         }
       }),

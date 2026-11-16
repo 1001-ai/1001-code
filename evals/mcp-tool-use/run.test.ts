@@ -42,6 +42,11 @@ import {
   withDevices,
 } from "./run.ts";
 import { briefRoute, gradeDevice, shellInvocations } from "./device-grading.ts";
+import { boardMemory } from "./board.ts";
+import {
+  VOICE_AGENT_INSTRUCTIONS,
+  parseVoiceAgentUserMessage,
+} from "@t3tools/provider-core/server/runtimeInstructions";
 import { taskPrompt } from "../../apps/server/src/mcp/delegatedTaskModes.ts";
 
 it("grades Codex shell and subagent calls with the shared rules", () => {
@@ -51,6 +56,7 @@ it("grades Codex shell and subagent calls with the shared rules", () => {
     { name: "mcp__t3_code__delegate_task", input: {} },
     { name: "request_user_input", input: { questions: [{ question: "What's the PIN?" }] } },
     { name: "request_user_input_async", input: { questions: [] } },
+    { name: "mcp__linear__save_issue", input: {} },
   ].map(({ name, input }) => ({
     step: 0,
     tool: normalizeToolName(name),
@@ -58,7 +64,7 @@ it("grades Codex shell and subagent calls with the shared rules", () => {
   }));
   assert.deepEqual(
     calls.map((c) => c.tool),
-    ["Bash", "Agent", "delegate_task", "AskUserQuestion", "AskUserQuestion"],
+    ["Bash", "Agent", "delegate_task", "AskUserQuestion", "AskUserQuestion", "save_issue"],
   );
   // Codex's question tools are graded as AskUserQuestion, so secret asks in them count.
   assert.deepEqual(
@@ -702,6 +708,137 @@ it("lists link tools only while a case turns the beta on, and sends chips as T3 
     projectComposerContextForProvider({ text: testCase.prompt, ...testCase.promptContext! }),
   );
   assert.include(prompt?.text, "environmentId: environment-vps");
+});
+
+it("gives a board case T3's board text, its board tools and Linear's, and grades the task before the edit", () => {
+  const cases = NodeFS.readFileSync(new URL("./cases/board.ndjson", import.meta.url), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => decodeDeviceCase(line));
+  const fix = cases.find((c) => c.id === "board-small-fix-files-issue")!;
+  const question = cases.find((c) => c.id === "board-question-files-nothing")!;
+  const base = buildBase(template, {
+    model: "claude-haiku-5-5",
+    keepUserInstructions: false,
+    board: fix.setup.board,
+  });
+  const system = base.system.map((block) => String(block.text)).join("\n");
+  const environment = EnvironmentId.make("eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee");
+  assert.include(system, boardMemory({ team: "ENG" }, environment));
+  assert.include(system, "mcp__linear__save_issue");
+  assert.includeMembers(
+    base.deferred.map((tool) => tool.name),
+    ["mcp__linear__save_issue", "mcp__t3-code__board_add", "mcp__t3-code__board_update"],
+  );
+  assert.equal(normalizeToolName("mcp__t3-code__board_add"), "board_add");
+  const plain = buildBase(template, { model: "claude-haiku-5-5", keepUserInstructions: false });
+  assert.notInclude(plain.system.map((block) => String(block.text)).join("\n"), "<board>");
+
+  const run = (...tools: ReadonlyArray<[string, unknown]>): SampleRun => ({
+    calls: tools.map(([tool, input], step) => ({ step, tool, input })),
+    text: "",
+    stopReason: "end_turn",
+  });
+  const filed: [string, unknown] = ["board_add", { title: "Fix 1 minutes", assignee: "me" }];
+  const linearFiled: [string, unknown] = ["save_issue", { team: "ENG", title: "Fix 1 minutes" }];
+  const edit: [string, unknown] = ["Edit", { file_path: "src/format.ts" }];
+  assert.deepEqual(failed(fix.expect, run(["board_list", {}], filed, edit)), []);
+  assert.deepEqual(failed(fix.expect, run(edit, filed)), ["order board_add > Edit"]);
+  assert.deepEqual(failed(fix.expect, run(linearFiled, edit)), [
+    "calls board_add",
+    "notCalls save_issue",
+    "order board_add > Edit",
+  ]);
+  assert.deepEqual(failed(question.expect, run(["Read", { file_path: "src/format.ts" }])), []);
+  assert.deepEqual(failed(question.expect, run(filed)), ["notCalls board_add"]);
+});
+
+it("gives a voice agent case its memories and memory_propose, and grades a replacement", () => {
+  const cases = NodeFS.readFileSync(
+    new URL("./cases/voice-agent-memories.ndjson", import.meta.url),
+    "utf8",
+  )
+    .trim()
+    .split("\n")
+    .map((line) => decodeDeviceCase(line));
+  const replace = cases.find((c) => c.id === "voice-memory-detail-contradiction-replaces")!;
+  const ordinary = cases.find((c) => c.id === "memory-ordinary-thread-leaves-category-out")!;
+  const threadOf = (memory: (typeof replace)["setup"]["memory"]) => {
+    const base = buildBase(template, {
+      model: "claude-haiku-5-5",
+      keepUserInstructions: false,
+      memory,
+    });
+    return {
+      system: base.system.map((block) => String(block.text)).join("\n"),
+      loaded: base.nativeTools.map((tool) => tool.name),
+      deferred: base.deferred.map((tool) => tool.name),
+    };
+  };
+  // The voice agent's thread: its instructions, its memories and its own tools from the start.
+  const voice = threadOf(replace.setup.memory);
+  assert.include(voice.system, VOICE_AGENT_INSTRUCTIONS);
+  assert.include(
+    voice.system,
+    "- Keep updates to one sentence per agent.\n- Leave out dependency updates.",
+  );
+  assert.isBelow(
+    voice.system.indexOf(VOICE_AGENT_INSTRUCTIONS),
+    voice.system.indexOf("<voice_agent_memories>"),
+  );
+  assert.notInclude(voice.system, "<memory>");
+  assert.includeMembers(voice.loaded, [
+    "mcp__t3-code__voice_board",
+    "mcp__t3-code__voice_send_message",
+    "mcp__t3-code__voice_show_media",
+    "mcp__t3-code__memory_propose",
+  ]);
+  // Every other thread: the project's memory block, `memory_propose` behind tool search, and
+  // nothing of the voice agent's.
+  const other = threadOf(ordinary.setup.memory);
+  assert.include(other.system, "call memory_propose");
+  assert.notInclude(other.system, "<voice_agent_memories>");
+  assert.include(other.deferred, "mcp__t3-code__memory_propose");
+  assert.isEmpty([...other.loaded, ...other.deferred].filter((tool) => tool.includes("voice_")));
+
+  // The voice agent's cases speak to it the way the server does: in its own envelopes.
+  const spoken = NodeFS.readFileSync(new URL("./cases/voice-agent.ndjson", import.meta.url), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => decodeDeviceCase(line));
+  assert.isAtLeast(spoken.length, 6);
+  for (const testCase of spoken) {
+    assert.isDefined(testCase.setup.memory?.voiceAgent, testCase.id);
+    const said = [
+      testCase.prompt,
+      ...(testCase.setup.priorTurns ?? []).flatMap((turn) =>
+        turn.role === "user" && turn.text !== undefined ? [turn.text] : [],
+      ),
+    ];
+    for (const text of said) {
+      assert.notEqual(parseVoiceAgentUserMessage(text).kind, "other", testCase.id);
+    }
+  }
+
+  const run = (...inputs: ReadonlyArray<Record<string, string>>): SampleRun => ({
+    calls: inputs.map((input, step) => ({ step, tool: "memory_propose", input })),
+    text: "",
+    stopReason: "end_turn",
+  });
+  const category = "voice-agent-memories";
+  const text = "Give a short paragraph per agent.";
+  const replaces = "Keep updates to one sentence per agent.";
+  assert.deepEqual(failed(replace.expect, run({ text, category, replaces })), []);
+  // A second memory on the subject, with nothing named to replace, fails both checks.
+  assert.deepEqual(failed(replace.expect, run({ text, category })), [
+    'calls memory_propose {"category":"voice-agent-memories","replaces":"~keep updates to one sentence per agent"}',
+    'callsMustNot memory_propose {"replaces":null}',
+  ]);
+  assert.deepEqual(failed(ordinary.expect, run({ text: "Keep replies short." })), []);
+  assert.deepEqual(failed(ordinary.expect, run({ text: "Keep replies short.", category })), [
+    'calls memory_propose {"category":null,"replaces":null}',
+    'callsMustNot memory_propose {"category":"voice-agent-memories"}',
+  ]);
 });
 
 it("replays earlier capability results with the model under test as the caller", () => {

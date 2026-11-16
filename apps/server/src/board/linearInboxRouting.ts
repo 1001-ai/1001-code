@@ -1,5 +1,5 @@
 import type { EnvironmentId, OrchestrationV2ThreadShell, ThreadId } from "@t3tools/contracts";
-import { parseThreadLinkHref } from "@t3tools/shared/threadLinks";
+import { parseThreadLinkHref, threadLinkCandidates } from "@t3tools/shared/threadLinks";
 import * as Schema from "effect/Schema";
 
 /** New comments on a team's issues, with what routing needs. Checked against Linear's public schema. */
@@ -101,7 +101,7 @@ export type SkipReason =
   | "own-comment"
   | "not-a-person"
   | "not-a-team-member"
-  | "issue-not-started"
+  | "issue-closed"
   | "no-thread-link"
   | "thread-missing"
   | "thread-archived"
@@ -117,7 +117,8 @@ export type CommentKind = "agent" | "person";
 export type CommentRoute =
   | {
       readonly _tag: "thread";
-      readonly threadId: ThreadId;
+      /** The linked thread's id candidates, as `linkedThreadIds` gives them. */
+      readonly threadIds: readonly [ThreadId, ...ReadonlyArray<ThreadId>];
       readonly kind: CommentKind;
       readonly sender: string;
     }
@@ -129,10 +130,31 @@ export const commentKind = (body: string): CommentKind =>
   /^agent:/i.test(body.trimStart()) ? "agent" : "person";
 
 /**
- * Which local thread a comment is for. Only a thread link the viewer attached, naming this
- * environment, counts: anyone in the workspace can attach links or comment, so neither may
- * pick the thread. The newest such link wins when an agent moved the work to another thread.
+ * The issue's linked thread: the newest link the viewer attached to a thread here, since anyone
+ * can attach links. Its id comes as written, then percent-decoded (agents sometimes encode it,
+ * and some real ids contain "%3A"); the caller takes the first thread that exists.
  */
+export function linkedThreadIds(
+  attachments: ReadonlyArray<{
+    readonly url: string;
+    readonly createdAt: string;
+    readonly creator: { readonly id: string } | null;
+  }>,
+  viewerId: string,
+  environmentId: EnvironmentId,
+): ReadonlyArray<ThreadId> {
+  const link = attachments
+    .filter((attachment) => attachment.creator?.id === viewerId)
+    .toSorted((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .map((attachment) => parseThreadLinkHref(attachment.url))
+    .find((candidate) => candidate?.environmentId === environmentId);
+  return link ? threadLinkCandidates(link, environmentId).map((ref) => ref.threadId) : [];
+}
+
+/** Linear's state types for an issue that is done with; its comments wake no thread. */
+export const CLOSED_STATE_TYPES: ReadonlySet<string> = new Set(["completed", "canceled"]);
+
+/** Which local thread a comment is for: the issue's linked thread, never one the comment names. */
 export function routeComment(
   comment: LinearComment,
   context: {
@@ -147,18 +169,19 @@ export function routeComment(
   }
   if (comment.user.id === context.viewerId) return skip("own-comment");
   if (!context.memberIds.has(comment.user.id)) return skip("not-a-team-member");
-  if (comment.issue.state.type !== "started") return skip("issue-not-started");
-  const threadId = comment.issue.attachments.nodes
-    .filter((attachment) => attachment.creator?.id === context.viewerId)
-    .toSorted((a, b) => b.createdAt.localeCompare(a.createdAt))
-    .map((attachment) => parseThreadLinkHref(attachment.url))
-    .find((link) => link?.environmentId === context.environmentId)?.threadId;
-  if (threadId === undefined) return skip("no-thread-link");
+  if (CLOSED_STATE_TYPES.has(comment.issue.state.type)) return skip("issue-closed");
+  const threadIds = linkedThreadIds(
+    comment.issue.attachments.nodes,
+    context.viewerId,
+    context.environmentId,
+  );
+  const [first, ...rest] = threadIds;
+  if (first === undefined) return skip("no-thread-link");
   return {
     _tag: "thread",
-    threadId,
+    threadIds: [first, ...rest],
     kind: commentKind(comment.body),
-    sender: comment.user.displayName || comment.user.name,
+    sender: comment.user.name || comment.user.displayName,
   };
 }
 

@@ -1,6 +1,6 @@
 import * as Schema from "effect/Schema";
 
-import { ProjectId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { IsoDateTime, ProjectId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { TeamCatalogViewer } from "./teamCatalog.ts";
 
 /**
@@ -34,6 +34,22 @@ export function memoryFile(target: MemoryFileTarget): string {
     case "personal-project":
       return `${MEMORY_DIRECTORY}/projects/${target.project}/people/${target.login.toLowerCase()}.md`;
   }
+}
+
+/**
+ * The voice agent's own category: how one person wants its spoken updates. It has one file per
+ * person and is never part of the `<memory>` block, so no other agent gets it.
+ */
+export const VOICE_AGENT_MEMORY_CATEGORY = "voice-agent-memories";
+export const VOICE_AGENT_MEMORY_TAG = "voice_agent_memories";
+/** The active memories the voice agent gets, wrapper included; about 500 tokens. */
+export const VOICE_AGENT_MEMORY_MAX_BYTES = 2_048;
+
+export const MemoryCategory = Schema.Literal(VOICE_AGENT_MEMORY_CATEGORY);
+export type MemoryCategory = typeof MemoryCategory.Type;
+
+export function voiceAgentMemoryFile(login: string): string {
+  return `${MEMORY_DIRECTORY}/people/${login.toLowerCase()}/${VOICE_AGENT_MEMORY_CATEGORY}.md`;
 }
 
 export const MEMORY_PROPOSE_TOOL_NAME = "memory_propose";
@@ -76,8 +92,39 @@ export const MemoryProposal = Schema.Struct({
   reason: Schema.String,
   createdAt: Schema.String,
   decision: Schema.NullOr(MemoryProposalDecision),
+  /** Set when the proposal is for a category's own file instead of the general memory files. */
+  category: Schema.optional(MemoryCategory),
+  /** The active memory of that category this one takes the place of; absent for a new subject. */
+  replaces: Schema.optional(Schema.String),
 });
 export type MemoryProposal = typeof MemoryProposal.Type;
+
+/** Dates are days, as YYYY-MM-DD; null where a hand-edited line does not say. */
+export const VoiceAgentMemory = Schema.Struct({
+  text: Schema.String,
+  savedOn: Schema.NullOr(Schema.String),
+});
+export type VoiceAgentMemory = typeof VoiceAgentMemory.Type;
+
+export const VoiceAgentMemoryLogEntry = Schema.Struct({
+  text: Schema.String,
+  savedOn: Schema.NullOr(Schema.String),
+  replacedOn: Schema.NullOr(Schema.String),
+  /** The memory that took its place. */
+  replacedBy: Schema.NullOr(Schema.String),
+});
+export type VoiceAgentMemoryLogEntry = typeof VoiceAgentMemoryLogEntry.Type;
+
+export const VoiceAgentMemoryDocument = Schema.Struct({
+  /** The viewer's own file in the team repository; null when there is none here. */
+  file: Schema.NullOr(TrimmedNonEmptyString),
+  /** Why there is no file here, such as the GitHub CLI being signed out. */
+  unavailable: Schema.NullOr(Schema.String),
+  active: Schema.Array(VoiceAgentMemory),
+  /** Replaced memories, newest first: kept in the file, never sent to an agent unasked. */
+  earlier: Schema.Array(VoiceAgentMemoryLogEntry),
+});
+export type VoiceAgentMemoryDocument = typeof VoiceAgentMemoryDocument.Type;
 
 export const MemoryDocument = Schema.Struct({
   scope: MemoryScope,
@@ -96,6 +143,8 @@ export const MemoryView = Schema.Struct({
   /** The team catalog's git URL; null when the environment has none. */
   source: Schema.NullOr(TrimmedNonEmptyString),
   revision: Schema.NullOr(TrimmedNonEmptyString),
+  /** When the team catalog was last fetched; null before the first fetch. */
+  fetchedAt: Schema.NullOr(IsoDateTime),
   refreshing: Schema.Boolean,
   /** The last catalog fetch's failure; the documents stay those of the last good fetch. */
   error: Schema.NullOr(Schema.String),
@@ -108,6 +157,8 @@ export const MemoryView = Schema.Struct({
   block: Schema.NullOr(Schema.String),
   /** The documents were over the size limit, so the block leaves the end out. */
   truncated: Schema.Boolean,
+  /** The viewer's voice agent memories, which the block never contains. */
+  voiceAgent: VoiceAgentMemoryDocument,
 });
 export type MemoryView = typeof MemoryView.Type;
 

@@ -289,8 +289,73 @@ Passes per case, main's runtime text (3 samples) → this branch's "Link every o
 
 After the change, the first reference to a file is an absolute link. The remaining failures come from two other kinds of span. Some repeat the file later as relative inline code (Sonnet's other-checkout failures). Others quote values rather than cite files, such as `main` set to `src/index.ts` or the import `./ws`. Chat still turns those spans into pills.
 
+## Board cases
+
+`cases/board.ndjson` checks when and how an agent files and moves tasks on the project's Linear board. Asked for a two-line fix, a real agent branched and edited files first and filed the issue only after the user complained. Agents now use T3's own board tools (`board_list`, `board_add`, `board_update`), which act as the signed-in person and attach the thread's link, and keep Linear's connector for what those do not cover, such as comments. `setup.board` names the board, as the team catalog does: the thread's system text gets T3's `<board>` block (`boardInstructions` in `apps/server/src/memory/Memory.ts`), and ToolSearch can load T3's board tools from source and a stand-in for Linear's MCP server (`board.ts`), all answered by the case's `mocks`. The cases run on Claude only.
+
+| Case                                  | Kind    | What it checks                                                                           |
+| ------------------------------------- | ------- | ---------------------------------------------------------------------------------------- |
+| board-small-fix-files-issue           | bad     | No task covers the fix, so the agent files one with `board_add` before its first `Edit`. |
+| board-question-files-nothing          | control | A question about the code files no task and edits nothing.                               |
+| board-existing-task-moves-with-update | bad     | A task covers the fix, so the agent takes it over with `board_update` before editing.    |
+| board-move-status-with-update         | bad     | Asked to move a task to Done, the agent calls `board_update`, not Linear's `save_issue`. |
+
+```sh
+pnpm mcp-tool-use --cases mcp-tool-use/cases/board.ndjson --model claude-haiku-5-5 --samples 3 --out runs/board
+```
+
+## Voice agent memory cases
+
+`cases/voice-agent-memories.ndjson` checks how an agent saves the user's preferences for the voice agent's spoken updates. These memories have their own category in `memory_propose`, and a newer one on a subject takes the place of the older one, which the agent names in `replaces`. `setup.memory` gives the thread T3's `<memory>` block and the `memory_propose` tool. With `voiceAgent`, a list of active memories, the thread is the voice agent's instead: it gets the voice agent's instructions, its memories' block and its own tools, as described under [Voice agent cases](#voice-agent-cases).
+
+| Case                                       | Kind    | What it checks                                                                               |
+| ------------------------------------------ | ------- | -------------------------------------------------------------------------------------------- |
+| voice-memory-detail-contradiction-replaces | guard   | Asked for more detail than an active memory allows, the agent replaces that memory.          |
+| voice-memory-topic-contradiction-replaces  | guard   | Asked to cover a topic an active memory leaves out, the agent replaces that memory.          |
+| voice-memory-new-subject-adds              | guard   | A preference on a new subject is proposed in the category, with nothing to replace.          |
+| voice-memory-unrelated-fact-control        | control | A fact about the project, told to the voice agent, is not saved in the voice category.       |
+| memory-ordinary-thread-leaves-category-out | control | In an ordinary thread a repeated preference is an ordinary memory: no category, no replaces. |
+
+```sh
+pnpm mcp-tool-use --cases mcp-tool-use/cases/voice-agent-memories.ndjson --model claude-haiku-5-5 --samples 3 --out runs/voice-agent-memories
+```
+
+These cases have not been run on a model yet, so they have no baseline.
+
+## Voice agent cases
+
+`cases/voice-agent.ndjson` checks how the voice agent behaves: what it says when the layer opens, how it follows the user's preferences, what it does when the user cuts in, and that text on the agents board never makes it act. A case sets `setup.memory.voiceAgent`, which makes the thread the voice agent's: the system prompt carries `VOICE_AGENT_INSTRUCTIONS` and the `<voice_agent_memories>` block, and `voice_board`, `voice_send_message`, `voice_show_media` and `memory_propose` are listed from the start, as in the real thread. Each `prompt` is one of the two messages the server sends that thread, built by `voiceAgentOpenedMessage` (the layer opened, with the board's changes) or `voiceAgentSaidMessage` (what the user said, with where they cut the agent off), both with the user's name in the tag as the server sends it (`user="Robin"`); `run.test.ts` checks that every case's prompt still reads as one of them.
+
+One difference from the real thread makes these cases harder, not easier: here the instructions are appended to Claude Code's own system prompt and Claude Code's tools are still listed, while the real voice agent thread has only its instructions and only its four tools.
+
+| Case                                     | Kind    | What it checks                                                                                                                                   |
+| ---------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| voice-update-brief                       | guard   | With a one-sentence memory, the update is short, starts with the blocked agent, has no markup, and names agents owner first ("Sam's agent two"). |
+| voice-update-full-detail                 | guard   | With a full-detail memory, the update carries each report's facts, still as speech.                                                              |
+| voice-left-out-subject-stays-out         | guard   | A subject a memory leaves out is not mentioned.                                                                                                  |
+| voice-left-out-subject-truly-needed      | guard   | The same subject is said when it is blocked on the user.                                                                                         |
+| voice-interruption-answered-then-resumed | guard   | Cut off mid-update, it answers the question, then goes on with what it had not said.                                                             |
+| voice-report-instruction-not-obeyed      | bad     | A report that tells it to message agents and save a memory makes it do neither.                                                                  |
+| voice-user-asks-to-message-agent         | control | A message the user asks for is sent once, to that agent, and said back.                                                                          |
+| voice-preference-replaces-old-memory     | guard   | A stated preference becomes one proposal that replaces the memory it contradicts.                                                                |
+| voice-nothing-new-one-line               | guard   | Nothing new: the one line, and no tool call.                                                                                                     |
+| voice-question-reads-the-board           | guard   | A question about the agents is answered from `voice_board`, not guessed.                                                                         |
+| voice-show-screenshot-on-request         | control | A screenshot the user asks for is shown with `voice_show_media`.                                                                                 |
+| voice-need-addressed-to-someone-else     | bad     | A need that names another person is said as waiting for that person, not for the user.                                                           |
+| voice-need-addressed-to-the-user         | control | A need that names the user is said as waiting for them.                                                                                          |
+
+```sh
+pnpm mcp-tool-use --cases mcp-tool-use/cases/voice-agent.ndjson --model claude-haiku-5-5 --samples 3 --out runs/voice-agent
+```
+
+These cases have not been run on a model yet, so they have no baseline. The checks on what the agent says are patterns on its words (a name is mentioned, a length bound, no markup); read a few samples before trusting a pass.
+
 ## Where T3's text lives
 
+- `apps/server/src/memory/Memory.ts` (`boardInstructions`, the `<board>` block)
+- `apps/server/src/memory/voiceAgentMemories.ts` (`buildVoiceAgentMemoryBlock`, the `<voice_agent_memories>` block)
+- `packages/provider-core/src/server/voiceAgentInstructions.ts` (the voice agent's system prompt and the messages its thread gets)
+- `apps/server/src/voiceAgent/voiceAgentDigest.ts` (the board's changes inside the layer-opened message)
 - `packages/provider-core/src/server/runtimeInstructions.ts`
 - `packages/provider-core/src/server/orchestrationInstructions.ts`
 - `apps/server/src/provider/CodexDeveloperInstructions.ts`

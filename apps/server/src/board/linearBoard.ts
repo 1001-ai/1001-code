@@ -4,18 +4,27 @@ import {
   EnvironmentId,
   ThreadId,
   type BoardColumn,
+  type BoardComment,
+  type BoardCommentThread,
   type BoardData,
   type BoardIssue,
   type BoardIssueDetail,
   type BoardPriority,
   type BoardPullRequest,
+  type BoardTask,
   type BoardThreadLink,
   type BoardUser,
   type BoardWorkflowState,
 } from "@t3tools/contracts";
 import { DEFAULT_HOSTED_APP_URL } from "@t3tools/shared/connectAuth";
-import { parseThreadLinkHref } from "@t3tools/shared/threadLinks";
+import {
+  THREAD_LINK_PROTOCOL,
+  parseThreadLinkHref,
+  threadLinkCandidates,
+} from "@t3tools/shared/threadLinks";
 import * as Schema from "effect/Schema";
+
+import { CLOSED_STATE_TYPES, commentKind } from "./linearInboxRouting.ts";
 
 /** Linear's GraphQL API, read with an OAuth access token. Queries checked against Linear's public schema. */
 export const LINEAR_API_URL = "https://api.linear.app/graphql";
@@ -51,6 +60,7 @@ export const TEAM_QUERY = `query BoardTeam($key: String!, $project: String!, $wi
 const USER_FIELDS = "id name displayName avatarUrl isMe";
 
 const HOSTED_THREAD_LINK = JSON.stringify(`${DEFAULT_HOSTED_APP_URL}/threads/`);
+const THREAD_LINK_FILTER = `{ or: [{ url: { startsWith: "t3-thread://v2/" } }, { url: { startsWith: ${HOSTED_THREAD_LINK} } }] }`;
 
 export const ISSUES_QUERY = `query BoardIssues($filter: IssueFilter!, $first: Int!, $after: String) {
   issues(filter: $filter, first: $first, after: $after) {
@@ -67,10 +77,7 @@ export const ISSUES_QUERY = `query BoardIssues($filter: IssueFilter!, $first: In
       state { id }
       assignee { ${USER_FIELDS} }
       labels(first: 10) { nodes { id name color } }
-      threadLinks: attachments(
-        first: 10
-        filter: { or: [{ url: { startsWith: "t3-thread://v2/" } }, { url: { startsWith: ${HOSTED_THREAD_LINK} } }] }
-      ) {
+      threadLinks: attachments(first: 10, filter: ${THREAD_LINK_FILTER}) {
         nodes { url createdAt creator { ${USER_FIELDS} } }
       }
       attachments(
@@ -84,14 +91,68 @@ export const ISSUES_QUERY = `query BoardIssues($filter: IssueFilter!, $first: In
   }
 }`;
 
+/** Comments come flat, replies included; the newest ones when there are more. */
+const COMMENT_PAGE_SIZE = 100;
+
 export const ISSUE_DETAIL_QUERY = `query BoardIssueDetail($id: String!) {
   issue(id: $id) {
     id
+    identifier
     team { id }
     project { id }
     description
     creator { ${USER_FIELDS} }
+    threadLinks: attachments(first: 50, filter: ${THREAD_LINK_FILTER}) {
+      nodes { url createdAt creator { id } }
+    }
+    comments(first: ${COMMENT_PAGE_SIZE}, orderBy: createdAt) {
+      nodes {
+        id
+        body
+        createdAt
+        parent { id }
+        user { name displayName }
+        botActor { name }
+        externalUser { name }
+      }
+    }
   }
+}`;
+
+export const COMMENT_CREATE_MUTATION = `mutation BoardComment($input: CommentCreateInput!) {
+  commentCreate(input: $input) { success comment { id } }
+}`;
+
+const TASK_FIELDS =
+  "id identifier title url state { name type } assignee { name displayName } project { name }";
+
+export const ISSUE_CREATE_MUTATION = `mutation BoardIssueCreate($input: IssueCreateInput!) {
+  issueCreate(input: $input) { success issue { ${TASK_FIELDS} } }
+}`;
+
+export const ISSUE_UPDATE_MUTATION = `mutation BoardIssueUpdate($id: String!, $input: IssueUpdateInput!) {
+  issueUpdate(id: $id, input: $input) { success issue { ${TASK_FIELDS} } }
+}`;
+
+/** Linear keeps one attachment per issue and URL: a second create with the same URL updates it. */
+export const THREAD_LINK_MUTATION = `mutation BoardThreadLink($input: AttachmentCreateInput!) {
+  attachmentCreate(input: $input) { success }
+}`;
+
+/** An issue an agent updates: what it returns, and what decides whether it is on the board. */
+export const TASK_QUERY = `query BoardTask($id: String!) {
+  issue(id: $id) {
+    ${TASK_FIELDS}
+    team { id }
+    project { id name }
+    threadLinks: attachments(first: 50, filter: ${THREAD_LINK_FILTER}) {
+      nodes { url creator { id } }
+    }
+  }
+}`;
+
+export const TEAM_MEMBERS_QUERY = `query BoardTeamMembers($id: String!) {
+  team(id: $id) { members(first: 250) { nodes { id name displayName email } } }
 }`;
 
 /** Open issues of the team (and project), plus those closed within RECENTLY_CLOSED. */
@@ -208,18 +269,92 @@ export const IssuesData = Schema.Struct({
 });
 export type IssuesData = typeof IssuesData.Type;
 
+const LinearIssueComment = Schema.Struct({
+  id: Schema.String,
+  body: Schema.String,
+  createdAt: Schema.String,
+  parent: Schema.NullOr(Schema.Struct({ id: Schema.String })),
+  user: Schema.NullOr(Schema.Struct({ name: Schema.String, displayName: Schema.String })),
+  botActor: Schema.NullOr(Schema.Struct({ name: Schema.NullOr(Schema.String) })),
+  externalUser: Schema.NullOr(Schema.Struct({ name: Schema.String })),
+});
+type LinearIssueComment = typeof LinearIssueComment.Type;
+
 export const IssueDetailData = Schema.Struct({
   issue: Schema.NullOr(
     Schema.Struct({
       id: Schema.String,
+      identifier: Schema.String,
       team: Schema.Struct({ id: Schema.String }),
       project: Schema.NullOr(Schema.Struct({ id: Schema.String })),
       description: Schema.NullOr(Schema.String),
       creator: Schema.NullOr(LinearUser),
+      threadLinks: Nodes(
+        Schema.Struct({
+          url: Schema.String,
+          createdAt: Schema.String,
+          creator: Schema.NullOr(Schema.Struct({ id: Schema.String })),
+        }),
+      ),
+      comments: Nodes(LinearIssueComment),
     }),
   ),
 });
 export type IssueDetailData = typeof IssueDetailData.Type;
+export type LinearIssueDetail = NonNullable<IssueDetailData["issue"]>;
+
+export const CommentCreateData = Schema.Struct({
+  commentCreate: Schema.Struct({
+    success: Schema.Boolean,
+    comment: Schema.Struct({ id: Schema.String }),
+  }),
+});
+
+const LinearTask = Schema.Struct({
+  id: Schema.String,
+  identifier: Schema.String,
+  title: Schema.String,
+  url: Schema.String,
+  state: Schema.Struct({ name: Schema.String, type: Schema.String }),
+  assignee: Schema.NullOr(Schema.Struct({ name: Schema.String, displayName: Schema.String })),
+  project: Schema.NullOr(Schema.Struct({ name: Schema.String })),
+});
+type LinearTask = typeof LinearTask.Type;
+
+const IssuePayload = Schema.Struct({ success: Schema.Boolean, issue: Schema.NullOr(LinearTask) });
+export const IssueCreateData = Schema.Struct({ issueCreate: IssuePayload });
+export const IssueUpdateData = Schema.Struct({ issueUpdate: IssuePayload });
+export const ThreadLinkData = Schema.Struct({
+  attachmentCreate: Schema.Struct({ success: Schema.Boolean }),
+});
+
+export const TaskData = Schema.Struct({
+  issue: Schema.NullOr(
+    Schema.Struct({
+      ...LinearTask.fields,
+      team: Schema.Struct({ id: Schema.String }),
+      project: Schema.NullOr(Schema.Struct({ id: Schema.String, name: Schema.String })),
+      threadLinks: Nodes(
+        Schema.Struct({
+          url: Schema.String,
+          creator: Schema.NullOr(Schema.Struct({ id: Schema.String })),
+        }),
+      ),
+    }),
+  ),
+});
+
+const LinearMember = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  displayName: Schema.String,
+  email: Schema.String,
+});
+type LinearMember = typeof LinearMember.Type;
+
+export const TeamMembersData = Schema.Struct({
+  team: Schema.Struct({ members: Nodes(LinearMember) }),
+});
 
 const GraphqlErrors = Schema.Struct({
   errors: Schema.Array(
@@ -330,7 +465,7 @@ const boardUser = (user: LinearUser | null): BoardUser | null =>
     ? null
     : {
         id: user.id,
-        name: user.displayName || user.name,
+        name: user.name || user.displayName,
         avatarUrl: user.avatarUrl,
         isMe: user.isMe,
       };
@@ -390,8 +525,77 @@ function boardIssue(issue: LinearIssue): BoardIssue {
   };
 }
 
-export function boardIssueDetail(issue: NonNullable<IssueDetailData["issue"]>): BoardIssueDetail {
-  return { description: issue.description, creator: boardUser(issue.creator) };
+export const commentAuthor = (comment: LinearIssueComment): string =>
+  (comment.user === null
+    ? (comment.botActor?.name ?? comment.externalUser?.name)
+    : comment.user.name || comment.user.displayName) || "Someone";
+
+const boardComment = (comment: LinearIssueComment): BoardComment => ({
+  id: comment.id,
+  body: comment.body,
+  author: commentAuthor(comment),
+  createdAt: comment.createdAt,
+  agent: commentKind(comment.body) === "agent",
+});
+
+/** Top-level comments with their replies, oldest first; a reply whose comment was not read stands alone. */
+function boardCommentThreads(
+  comments: ReadonlyArray<LinearIssueComment>,
+): ReadonlyArray<BoardCommentThread> {
+  const sorted = comments.toSorted((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const parents = new Map(sorted.map((comment) => [comment.id, comment.parent?.id ?? null]));
+  // Linear's own UI nests one level, but its API lets a reply answer a reply: file it under the root.
+  const rootOf = (id: string): string => {
+    const seen = new Set<string>();
+    let current = id;
+    for (let parent = parents.get(current); parent != null && parents.has(parent);) {
+      if (seen.has(parent)) break;
+      seen.add(parent);
+      current = parent;
+      parent = parents.get(current);
+    }
+    return current;
+  };
+  const replies = new Map<string, Array<BoardComment>>();
+  for (const comment of sorted) {
+    const root = rootOf(comment.id);
+    if (root === comment.id) continue;
+    const list = replies.get(root) ?? [];
+    list.push(boardComment(comment));
+    replies.set(root, list);
+  }
+  return sorted
+    .filter((comment) => rootOf(comment.id) === comment.id)
+    .map((comment) => ({ ...boardComment(comment), replies: replies.get(comment.id) ?? [] }));
+}
+
+export function boardIssueDetail(
+  issue: LinearIssueDetail,
+  linkedThreadId: ThreadId | null,
+): BoardIssueDetail {
+  return {
+    description: issue.description,
+    creator: boardUser(issue.creator),
+    comments: boardCommentThreads(issue.comments.nodes),
+    linkedThreadId,
+  };
+}
+
+/**
+ * What the linked thread's agent gets when the user comments from the board. It is the user's own
+ * message, so it needs no framing, only where it was posted and whom it answers.
+ */
+export function postedCommentText(input: {
+  readonly issue: string;
+  readonly body: string;
+  /** The author of the comment this replies to; null for a top-level comment. */
+  readonly replyTo: string | null;
+}): string {
+  const where =
+    input.replyTo === null
+      ? `I commented on ${input.issue} in Linear:`
+      : `I replied to ${input.replyTo}'s comment on ${input.issue} in Linear:`;
+  return `${where}\n\n${input.body.trim()}`;
 }
 
 /** One column per state, in board order, each with its issues in Linear's manual order. */
@@ -411,4 +615,76 @@ export function boardColumns(
       .sort((a, b) => a.sortOrder - b.sortOrder)
       .map(boardIssue),
   }));
+}
+
+/** The link an agent attaches to a task so the board, and teammates' agents, find its thread. */
+export const threadLinkUrl = (environmentId: EnvironmentId, threadId: ThreadId) =>
+  `${THREAD_LINK_PROTOCOL}://v2/${environmentId}/${threadId}`;
+
+/**
+ * Whether the viewer already linked the task to this thread here. Only the viewer's links route
+ * comments, so a link someone else attached does not count.
+ */
+export function hasThreadLink(
+  links: ReadonlyArray<{ readonly url: string; readonly creator: { readonly id: string } | null }>,
+  viewerId: string,
+  environmentId: EnvironmentId,
+  threadId: ThreadId,
+): boolean {
+  return links.some((link) => {
+    if (link.creator?.id !== viewerId) return false;
+    const parsed = parseThreadLinkHref(link.url);
+    return (
+      parsed?.environmentId === environmentId &&
+      threadLinkCandidates(parsed, environmentId).some((ref) => ref.threadId === threadId)
+    );
+  });
+}
+
+/** The team's workflow state an agent names, ignoring case and surrounding space. */
+export function workflowStateNamed(
+  states: ReadonlyArray<LinearState>,
+  name: string,
+): LinearState | null {
+  const wanted = name.trim().toLowerCase();
+  return states.find((state) => state.name.trim().toLowerCase() === wanted) ?? null;
+}
+
+/** The team member an agent names by name, display name or email, ignoring case. */
+export function teamMemberNamed(
+  members: ReadonlyArray<LinearMember>,
+  name: string,
+): LinearMember | "ambiguous" | null {
+  const wanted = name.trim().toLowerCase();
+  const byEmail = members.find((member) => member.email.toLowerCase() === wanted);
+  if (byEmail !== undefined) return byEmail;
+  const matches = members.filter(
+    (member) => member.name.toLowerCase() === wanted || member.displayName.toLowerCase() === wanted,
+  );
+  return matches.length > 1 ? "ambiguous" : (matches[0] ?? null);
+}
+
+export const boardTask = (task: LinearTask): BoardTask => ({
+  identifier: task.identifier,
+  title: task.title,
+  url: task.url,
+  status: { name: task.state.name, type: task.state.type },
+  assignee: task.assignee === null ? null : task.assignee.name || task.assignee.displayName,
+  project: task.project?.name ?? null,
+});
+
+/** The board's open tasks, column by column, as an agent lists them. */
+export function openBoardTasks(board: BoardData): ReadonlyArray<BoardTask> {
+  return board.columns
+    .filter((column) => !CLOSED_STATE_TYPES.has(column.state.type))
+    .flatMap((column) =>
+      column.issues.map((issue) => ({
+        identifier: issue.identifier,
+        title: issue.title,
+        url: issue.url,
+        status: { name: column.state.name, type: column.state.type },
+        assignee: issue.assignee?.name ?? null,
+        project: board.project?.name ?? null,
+      })),
+    );
 }

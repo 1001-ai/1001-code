@@ -84,8 +84,12 @@ import {
 } from "./toolkits/device/tools.ts";
 import * as HtmlHandlers from "./toolkits/html/handlers.ts";
 import { HtmlPreviewTool, HtmlPreviewToolkit, HtmlRenderToolkit } from "./toolkits/html/tools.ts";
+import * as BoardHandlers from "./toolkits/board/handlers.ts";
+import { BoardToolkit } from "./toolkits/board/tools.ts";
 import * as MemoryHandlers from "./toolkits/memory/handlers.ts";
 import { MemoryToolkit } from "./toolkits/memory/tools.ts";
+import * as VoiceAgentHandlers from "./toolkits/voiceAgent/handlers.ts";
+import { VoiceAgentToolkit } from "./toolkits/voiceAgent/tools.ts";
 import { requestUrl } from "../requestUrl.ts";
 
 const mcpResourceMetadataUrl = (request: HttpServerRequest.HttpServerRequest) =>
@@ -1369,11 +1373,21 @@ export const layerToolSearch = Layer.mergeAll(
   layerDeferredListing,
 ).pipe(Layer.provide(layerToolExposure));
 
+/** Fork: applies to every tool of the server, whichever toolkit registered it. */
+export const layerVoiceAgentToolGate = McpServer.visibility(VoiceAgentHandlers.makeToolGate, {
+  global: true,
+});
+
 export const layer = layerMcpTransport(
   Layer.mergeAll(
     layerTools,
     layerToolSearch,
     // Fork: memory proposals; see fork/README.md.
     toolkitRegistration(MemoryToolkit, MemoryHandlers.layer),
+    // Fork: Board tasks; see fork/README.md.
+    toolkitRegistration(BoardToolkit, BoardHandlers.layer),
+    // Fork: the voice agent's tools, and the gate that keeps it to them; see fork/README.md.
+    toolkitRegistration(VoiceAgentToolkit, VoiceAgentHandlers.layer),
+    layerVoiceAgentToolGate,
   ),
 );

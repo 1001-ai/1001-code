@@ -1,17 +1,20 @@
 import {
   type EnvironmentId,
+  type ProjectId,
   type RepositoryIdentity,
   teamCatalogRepositoryMatches,
 } from "@t3tools/contracts";
 
 import { usePrimaryEnvironmentId } from "../../state/environments";
 import { useTeamCatalog } from "../../state/teamCatalog";
+import { AgentsBoardBranchSetting } from "../agentsBoard/AgentsBoardBranchSetting";
 import { SettingsSection } from "../settings/settingsLayout";
 import { TeamProjectLinksEditor } from "./TeamProjectLinksEditor";
 
 /** The project's team catalog entry, when the catalog lists its repository. */
 export function TeamProjectSettings(props: {
   readonly members: ReadonlyArray<{
+    readonly id: ProjectId;
     readonly environmentId: EnvironmentId;
     readonly repositoryIdentity?: RepositoryIdentity | null | undefined;
   }>;
@@ -30,6 +33,11 @@ export function TeamProjectSettings(props: {
     ),
   );
   if (environmentId === null || catalog === null || entry === undefined) return null;
+  const local = props.members.find(
+    (project) =>
+      project.environmentId === environmentId &&
+      teamCatalogRepositoryMatches(entry.project.repo, project.repositoryIdentity),
+  );
   return (
     <SettingsSection
       id="team-project"
@@ -44,6 +52,13 @@ export function TeamProjectSettings(props: {
         snapshot={catalog}
         projectKey={entry.project.key}
       />
+      {local === undefined ? null : (
+        <AgentsBoardBranchSetting
+          key={`${environmentId}:${local.id}`}
+          environmentId={environmentId}
+          projectId={local.id}
+        />
+      )}
     </SettingsSection>
   );
 }

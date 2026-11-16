@@ -496,10 +496,24 @@ export const SETTINGS_SEARCH_ITEMS = [
     ],
   },
   {
+    id: "screen-reader-window-title",
+    title: "Screen reader window title",
+    to: "/settings/chat",
+    searchTerms: [
+      "accessibility a11y screen reader nvda jaws voiceover orca narrator window title tab title alt tab taskbar thread status order working approval",
+    ],
+  },
+  {
     id: "reply-markers",
     title: "Reply markers",
     to: "/settings/chat",
     searchTerms: ["reply quote thread exchange which message answers steer queued view thread"],
+  },
+  {
+    id: "message-click-thread",
+    title: "Open thread on message click",
+    to: "/settings/chat",
+    searchTerms: ["click bubble message view thread exchange reply"],
   },
   {
     id: "guest-links",

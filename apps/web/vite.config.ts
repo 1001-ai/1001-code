@@ -18,6 +18,7 @@ import {
   DEV_PROXIED_PATH_PREFIXES,
 } from "@t3tools/shared/devProxy";
 
+import { privateLampPlugin } from "../../scripts/lib/private-lamp";
 import { loadRepoEnv } from "../../scripts/lib/public-config";
 import { thirdPartyLicensesPlugin } from "../../scripts/lib/third-party-licenses";
 import { productNamePlugin } from "./vite/productName";
@@ -292,6 +293,7 @@ export default defineConfig(() => {
     plugins: [
       bootstrapTitlePlugin(),
       productNamePlugin(),
+      privateLampPlugin(),
       devCompressionPlugin(),
       chunkCycleGuardPlugin(),
       builtDev

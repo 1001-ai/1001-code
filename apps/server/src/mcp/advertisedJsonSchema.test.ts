@@ -3,6 +3,8 @@ import * as Schema from "effect/Schema";
 import { Tool } from "effect/ai";
 
 import { advertisedJsonSchema } from "./advertisedJsonSchema.ts";
+import { BoardToolkit } from "./toolkits/board/tools.ts";
+import { MemoryToolkit } from "./toolkits/memory/tools.ts";
 
 it("drops JSON noise, merges tagged unions, and keeps null where it is required", () => {
   const Every = Schema.Struct({ ms: Schema.Int });
@@ -42,4 +44,12 @@ it("drops JSON noise, merges tagged unions, and keeps null where it is required"
     },
     required: ["beforeRunId", "every"],
   });
+});
+
+// MCP clients reject a whole server when one tool's input schema is not a top-level object.
+it("advertises an object input schema for every fork tool", () => {
+  const tools: Record<string, Tool.Any> = { ...BoardToolkit.tools, ...MemoryToolkit.tools };
+  for (const [name, tool] of Object.entries(tools)) {
+    expect(advertisedJsonSchema(tool), name).toMatchObject({ type: "object" });
+  }
 });

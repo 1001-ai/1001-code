@@ -1,14 +1,21 @@
 import {
   BoardError,
   BoardViewer,
+  CommandId,
+  MessageId,
+  type BoardCommentInput,
+  type BoardCommentResult,
   type BoardConnection,
   type BoardData,
   type BoardIssueDetail,
   type BoardIssueDetailInput,
   type BoardSignIn,
   type BoardSnapshot,
+  type BoardTaskList,
+  type BoardTaskWriteResult,
   type ProjectId,
   type TeamCatalogLinear,
+  type ThreadId,
   teamCatalogRepositoryMatches,
 } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -33,27 +40,50 @@ import { HttpClient, HttpClientRequest } from "effect/http";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../config.ts";
+import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
+import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
 import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
 import * as TeamCatalog from "../teamCatalog/TeamCatalog.ts";
+import { linkedThreadIds } from "./linearInboxRouting.ts";
 import {
+  COMMENT_CREATE_MUTATION,
+  CommentCreateData,
+  ISSUE_CREATE_MUTATION,
   ISSUE_DETAIL_QUERY,
   ISSUE_PAGE_SIZE,
+  ISSUE_UPDATE_MUTATION,
   ISSUES_QUERY,
+  IssueCreateData,
   IssueDetailData,
+  IssueUpdateData,
   IssuesData,
   LINEAR_API_URL,
   type LinearIssue,
   MAX_ISSUE_PAGES,
+  TASK_QUERY,
+  TEAM_MEMBERS_QUERY,
   TEAM_QUERY,
+  THREAD_LINK_MUTATION,
+  TaskData,
   TeamData,
+  TeamMembersData,
+  ThreadLinkData,
   VIEWER_QUERY,
   ViewerData,
   boardColumns,
   boardIssueDetail,
+  boardTask,
+  commentAuthor,
+  hasThreadLink,
   issuesFilter,
   linearFailure,
   linearProject,
+  openBoardTasks,
+  postedCommentText,
+  teamMemberNamed,
+  threadLinkUrl,
+  workflowStateNamed,
 } from "./linearBoard.ts";
 import {
   LINEAR_OAUTH_ENDPOINTS,
@@ -66,9 +96,9 @@ import {
 
 /**
  * A team project's Linear board, read as the person who signed in to Linear on this environment.
- * The OAuth tokens live in the server secret store and never reach clients. Reads happen when a
- * client opens or refreshes a board and every 30 seconds while one is open. `LinearInbox` reads
- * new comments through `session` while someone is signed in.
+ * The OAuth tokens live in the server secret store and never reach clients. Open boards are read
+ * every 30 seconds and soon after an agent changes Linear. `LinearInbox` reads comments through
+ * `session`.
  */
 export class Board extends Context.Service<
   Board,
@@ -94,14 +124,97 @@ export class Board extends Context.Service<
     /** The board now, then again when it is refreshed, changes in Linear, or the sign-in changes. */
     readonly changes: (projectId: ProjectId) => Stream.Stream<BoardSnapshot>;
     readonly refresh: (projectId: ProjectId) => Effect.Effect<BoardSnapshot>;
+    /**
+     * Reads every open board from Linear again in a second, as its poll would; calls in that
+     * second share the read.
+     */
+    readonly refreshOpen: Effect.Effect<void>;
     /** What a card leaves out of an issue on the project's board, read from Linear now. */
     readonly issueDetail: (
       input: BoardIssueDetailInput,
     ) => Effect.Effect<BoardIssueDetail, BoardError>;
+    /**
+     * Posts a comment on an issue on the project's board as the signed-in person, then queues it
+     * in the issue's linked thread, if any, as the user's message.
+     */
+    readonly comment: (input: BoardCommentInput) => Effect.Effect<BoardCommentResult, BoardError>;
     /** Linear as whoever is signed in now, or null while nobody is. */
     readonly session: Effect.Effect<BoardLinearSession | null>;
+    /**
+     * Files a task on the project's board as the signed-in person, with a link to the agent's
+     * thread, then refreshes open boards.
+     */
+    readonly addTask: (
+      input: BoardAddTaskInput,
+    ) => Effect.Effect<BoardTaskWriteResult, BoardError | BoardInputError>;
+    /**
+     * Changes the given fields of a task on the project's board, links the agent's thread if it
+     * is not yet, then refreshes open boards.
+     */
+    readonly updateTask: (
+      input: BoardUpdateTaskInput,
+    ) => Effect.Effect<BoardTaskWriteResult, BoardError | BoardInputError>;
+    /** The project board's open tasks, from a read in the last few seconds. */
+    readonly listTasks: (
+      projectId: ProjectId,
+    ) => Effect.Effect<BoardTaskList, BoardError | BoardInputError>;
   }
 >()("t3/board/Board") {}
+
+/** What an agent sets on a task; only the given fields change. */
+interface BoardTaskFields {
+  readonly title?: string | undefined;
+  readonly description?: string | undefined;
+  /** A workflow state of the board's team, by name. */
+  readonly status?: string | undefined;
+  /** "me" for the signed-in person, or a team member's name or email. */
+  readonly assignee?: string | undefined;
+}
+
+interface BoardTaskThread {
+  readonly id: ThreadId;
+  /** The link's title in Linear. */
+  readonly title: string;
+}
+
+export interface BoardAddTaskInput extends BoardTaskFields {
+  readonly projectId: ProjectId;
+  /** The agent's thread, which the task links to. */
+  readonly thread: BoardTaskThread;
+  readonly title: string;
+}
+
+export interface BoardUpdateTaskInput extends BoardTaskFields {
+  readonly projectId: ProjectId;
+  readonly thread: BoardTaskThread;
+  /** The task's identifier, such as ENG-12. */
+  readonly identifier: string;
+}
+
+/** An agent asked for something the board cannot do, such as a status its team does not have. */
+export class BoardInputError extends Schema.TaggedError<BoardInputError>()("BoardInputError", {
+  detail: Schema.String,
+}) {
+  override get message(): string {
+    return this.detail;
+  }
+}
+
+const noBoard = (snapshot: Extract<BoardSnapshot, { status: "unconfigured" }>) =>
+  new BoardInputError({
+    detail:
+      snapshot.reason === "no-catalog"
+        ? "This environment has no team catalog, so this project has no board."
+        : snapshot.reason === "not-in-catalog"
+          ? "This project is not in the team catalog, so it has no board."
+          : `This project's catalog entry (${snapshot.catalogFile}) names no Linear team, so it has no board.`,
+  });
+
+const signInFirst = (action: string) =>
+  new BoardError({
+    reason: "unauthorized",
+    detail: `Nobody is signed in to Linear here. Ask the user to sign in in Settings → Board, then ${action}.`,
+  });
 
 /** Queries as one sign-in; they fail as unauthorized once it is replaced or disconnected. */
 export interface BoardLinearSession {
@@ -127,6 +240,8 @@ const DEV_LINEAR_API_URL_ENV = "T3CODE_DEV_LINEAR_API_URL";
 const FRESH_FOR_MS = 30_000;
 /** How often an open board is read again from Linear. */
 const POLL_INTERVAL = Duration.seconds(30);
+/** How long `refreshOpen` waits, so a burst of agent writes costs one read per open board. */
+const OPEN_REFRESH_DELAY = Duration.seconds(1);
 /** How long polling waits after a rate limit that names no retry time. */
 const RATE_LIMIT_BACKOFF = Duration.minutes(5);
 const REQUEST_TIMEOUT = "20 seconds";
@@ -151,7 +266,10 @@ const decodeTokenResponse = Schema.decodeUnknownEffect(TokenResponse);
 
 type Target =
   | { readonly _tag: "linear"; readonly linear: TeamCatalogLinear }
-  | { readonly _tag: "unconfigured"; readonly snapshot: BoardSnapshot };
+  | {
+      readonly _tag: "unconfigured";
+      readonly snapshot: Extract<BoardSnapshot, { status: "unconfigured" }>;
+    };
 
 const unconfigured = (
   reason: Extract<BoardSnapshot, { status: "unconfigured" }>["reason"],
@@ -216,6 +334,8 @@ const make = Effect.gen(function* () {
   const identities = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
   const random = yield* SecureRandom.SecureRandom;
   const digest = yield* Digest.Digest;
+  const threads = yield* ThreadManagement.ThreadManagementService;
+  const environmentId = yield* (yield* ServerEnvironment.ServerEnvironment).getEnvironmentId;
 
   const clientId = environment[CLIENT_ID_ENV]?.trim() || null;
   const devEndpoint = environment[DEV_LINEAR_API_URL_ENV]?.trim();
@@ -255,6 +375,8 @@ const make = Effect.gen(function* () {
   const boardSignals = yield* PubSub.unbounded<BoardSignal>();
   const cache = new Map<string, CachedBoard>();
   const readLock = yield* Semaphore.make(1);
+  /** Counts task writes, so a read that fetched before one does not cache over it. */
+  let taskWrites = 0;
   // Bumped on every sign-in change; a refresh publishes only if no change happened while it read.
   let credentialGeneration = 0;
   // Every read or write of the stored sign-in, including a refresh, happens under this lock.
@@ -509,12 +631,13 @@ const make = Effect.gen(function* () {
         if (options?.refresh !== true && cached && now - cached.readAtMs < FRESH_FOR_MS) {
           return { status: "ready", board: cached.board, failure: null } satisfies BoardSnapshot;
         }
+        const writesBefore = taskWrites;
         const outcome = yield* fetchBoard(generation, target.linear).pipe(
           Effect.map((board) => ({ board, error: null })),
           Effect.catch((error) => Effect.succeed({ board: null, error })),
         );
         if (outcome.board !== null) {
-          cache.set(key, { board: outcome.board, readAtMs: now });
+          if (writesBefore === taskWrites) cache.set(key, { board: outcome.board, readAtMs: now });
           return { status: "ready", board: outcome.board, failure: null } satisfies BoardSnapshot;
         }
         const { error } = outcome;
@@ -535,39 +658,132 @@ const make = Effect.gen(function* () {
     );
   });
 
+  /** An issue on the project's board, read from Linear now as the signed-in person. */
+  const readIssue = Effect.fn("Board.readIssue")(function* (input: BoardIssueDetailInput) {
+    const generation = credentialGeneration;
+    const credential = yield* readCredential;
+    if (credential === null) {
+      return yield* new BoardError({
+        reason: "unauthorized",
+        detail: "Sign in to Linear in Settings → Board to read this issue.",
+      });
+    }
+    const notOnBoard = new BoardError({
+      reason: "issue-not-found",
+      detail: "This issue is not on the project's board.",
+    });
+    const target = yield* resolveTarget(input.projectId);
+    if (target._tag === "unconfigured") return yield* notOnBoard;
+    const cached = cache.get(cacheKey(generation, target.linear))?.board;
+    const scope = cached ?? (yield* findTeam(generation, target.linear));
+    const { issue } = yield* linear(
+      generation,
+      ISSUE_DETAIL_QUERY,
+      { id: input.issueId },
+      IssueDetailData,
+    );
+    if (
+      issue === null ||
+      issue.team.id !== scope.team.id ||
+      (scope.project !== null && issue.project?.id !== scope.project.id)
+    ) {
+      return yield* notOnBoard;
+    }
+    const threadIds = linkedThreadIds(issue.threadLinks.nodes, credential.viewer.id, environmentId);
+    return { generation, issue, threadIds };
+  });
+
+  /** The first of a link's id candidates that names a thread here, or null. */
+  const findLinkedThread = Effect.fn("Board.findLinkedThread")(function* (
+    threadIds: ReadonlyArray<ThreadId>,
+  ) {
+    for (const threadId of threadIds) {
+      const thread = yield* threads.getThreadShell(threadId);
+      if (thread !== null) return { threadId, thread };
+    }
+    return null;
+  });
+
   const issueDetail: Board["Service"]["issueDetail"] = Effect.fn("Board.issueDetail")(
     function* (input) {
-      const generation = credentialGeneration;
-      if ((yield* readCredential) === null) {
-        return yield* new BoardError({
-          reason: "unauthorized",
-          detail: "Sign in to Linear in Settings → Board to read this issue.",
-        });
-      }
-      const notOnBoard = new BoardError({
-        reason: "issue-not-found",
-        detail: "This issue is not on the project's board.",
-      });
-      const target = yield* resolveTarget(input.projectId);
-      if (target._tag === "unconfigured") return yield* notOnBoard;
-      const cached = cache.get(cacheKey(generation, target.linear))?.board;
-      const scope = cached ?? (yield* findTeam(generation, target.linear));
-      const { issue } = yield* linear(
-        generation,
-        ISSUE_DETAIL_QUERY,
-        { id: input.issueId },
-        IssueDetailData,
-      );
-      if (
-        issue === null ||
-        issue.team.id !== scope.team.id ||
-        (scope.project !== null && issue.project?.id !== scope.project.id)
-      ) {
-        return yield* notOnBoard;
-      }
-      return boardIssueDetail(issue);
+      const { issue, threadIds } = yield* readIssue(input);
+      // A failed lookup only hides the link; the issue still reads.
+      const linked = yield* findLinkedThread(threadIds).pipe(Effect.orElseSucceed(() => null));
+      return boardIssueDetail(issue, linked?.threadId ?? null);
     },
   );
+
+  /** Queues the user's comment in the linked thread; Linear has it already, so failing here only logs. */
+  const queueComment = Effect.fn("Board.queueComment")(function* (
+    threadIds: ReadonlyArray<ThreadId>,
+    commentId: string,
+    text: string,
+  ) {
+    const linked = yield* findLinkedThread(threadIds);
+    if (linked === null) return null;
+    const { threadId, thread } = linked;
+    const key = `board-comment:${threadId}:${commentId}`;
+    yield* threads.sendToThread({
+      projectId: thread.projectId,
+      commandId: CommandId.make(key),
+      threadId,
+      messageId: MessageId.make(key),
+      text,
+      attachments: [],
+      mode: "queue",
+      createdBy: "user",
+      creationSource: "web",
+    });
+    return threadId;
+  });
+
+  const comment: Board["Service"]["comment"] = Effect.fn("Board.comment")(function* (input) {
+    const { generation, issue, threadIds } = yield* readIssue(input);
+    const { commentCreate } = yield* linear(
+      generation,
+      COMMENT_CREATE_MUTATION,
+      {
+        input: {
+          issueId: issue.id,
+          body: input.body,
+          ...(input.parentId === undefined ? {} : { parentId: input.parentId }),
+        },
+      },
+      CommentCreateData,
+    );
+    if (!commentCreate.success) {
+      return yield* new BoardError({
+        reason: "invalid-response",
+        detail: "Linear did not accept the comment.",
+      });
+    }
+    if (threadIds.length === 0) return { threadId: null };
+    const parent =
+      input.parentId === undefined
+        ? undefined
+        : issue.comments.nodes.find((candidate) => candidate.id === input.parentId);
+    const text = postedCommentText({
+      issue: issue.identifier,
+      body: input.body,
+      replyTo:
+        input.parentId === undefined
+          ? null
+          : parent === undefined
+            ? "someone"
+            : commentAuthor(parent),
+    });
+    // Linear has the comment, so a failed lookup or send only logs; the panel says it did not reach the thread.
+    const queued = yield* queueComment(threadIds, commentCreate.comment.id, text).pipe(
+      Effect.catch((error) =>
+        Effect.logWarning("Board could not send a comment to its thread.", {
+          comment: commentCreate.comment.id,
+          threadIds,
+          error,
+        }).pipe(Effect.as(null)),
+      ),
+    );
+    return { threadId: queued };
+  });
 
   // One poll per project however many clients have its board open; the last to leave stops it.
   const polls = new Map<ProjectId, Poll>();
@@ -615,20 +831,21 @@ const make = Effect.gen(function* () {
    * served, normally from the cache; later ones skip it, so a poll never republishes a cached read
    * over a newer warning. Unlike `refresh`, a poll does not fetch the team catalog.
    */
-  const poll = (projectId: ProjectId, state: Poll) => {
-    const step = Effect.fn("Board.poll")(function* () {
-      if ((yield* Clock.currentTimeMillis) < state.quietUntilMs) return;
-      const generation = credentialGeneration;
-      const snapshot = yield* read(projectId, { refresh: state.shown !== null });
-      const fingerprint = pollFingerprint(snapshot);
-      if (state.shown !== null && fingerprint !== state.shown) {
-        yield* publish(projectId, snapshot, generation, state);
-        return;
-      }
-      state.shown = fingerprint;
-      state.quietUntilMs = quietUntil(snapshot, yield* Clock.currentTimeMillis);
-    });
-    return step().pipe(
+  const pollStep = Effect.fn("Board.poll")(function* (projectId: ProjectId, state: Poll) {
+    if ((yield* Clock.currentTimeMillis) < state.quietUntilMs) return;
+    const generation = credentialGeneration;
+    const snapshot = yield* read(projectId, { refresh: state.shown !== null });
+    const fingerprint = pollFingerprint(snapshot);
+    if (state.shown !== null && fingerprint !== state.shown) {
+      yield* publish(projectId, snapshot, generation, state);
+      return;
+    }
+    state.shown = fingerprint;
+    state.quietUntilMs = quietUntil(snapshot, yield* Clock.currentTimeMillis);
+  });
+
+  const poll = (projectId: ProjectId, state: Poll) =>
+    pollStep(projectId, state).pipe(
       Effect.repeat(
         Schedule.spaced(POLL_INTERVAL).pipe(
           Schedule.modifyDelay(({ duration }) =>
@@ -640,7 +857,28 @@ const make = Effect.gen(function* () {
       ),
       Effect.asVoid,
     );
-  };
+
+  // Cleared before the reads, so a write made while they run gets a read after it.
+  let openRefreshQueued = false;
+  const refreshOpen: Board["Service"]["refreshOpen"] = Effect.suspend(() => {
+    if (openRefreshQueued) return Effect.void;
+    openRefreshQueued = true;
+    return Effect.sleep(OPEN_REFRESH_DELAY).pipe(
+      Effect.andThen(
+        Effect.suspend(() => {
+          openRefreshQueued = false;
+          return Effect.forEach(
+            [...polls],
+            ([projectId, state]) =>
+              polls.get(projectId) === state ? pollStep(projectId, state) : Effect.void,
+            { discard: true },
+          );
+        }),
+      ),
+      Effect.forkIn(layerScope),
+      Effect.asVoid,
+    );
+  }).pipe(Effect.withSpan("Board.refreshOpen"));
 
   const openPoll = (projectId: ProjectId) =>
     pollsLock.withPermits(1)(
@@ -877,6 +1115,183 @@ const make = Effect.gen(function* () {
     return connection;
   }).pipe(Effect.withSpan("Board.disconnect"));
 
+  /** The sign-in and board a task write runs against. */
+  const taskBoard = Effect.fn("Board.taskBoard")(function* (projectId: ProjectId, action: string) {
+    const generation = credentialGeneration;
+    const credential = yield* readCredential;
+    if (credential === null) return yield* signInFirst(action);
+    const target = yield* resolveTarget(projectId);
+    if (target._tag === "unconfigured") return yield* noBoard(target.snapshot);
+    const { team, project } = yield* findTeam(generation, target.linear);
+    return { generation, viewerId: credential.viewer.id, linear: target.linear, team, project };
+  });
+  type TaskBoard = Effect.Success<ReturnType<typeof taskBoard>>;
+
+  const assigneeId = Effect.fn("Board.assigneeId")(function* (scope: TaskBoard, name: string) {
+    if (name.trim().toLowerCase() === "me") return scope.viewerId;
+    const { team } = yield* linear(
+      scope.generation,
+      TEAM_MEMBERS_QUERY,
+      { id: scope.team.id },
+      TeamMembersData,
+    );
+    const member = teamMemberNamed(team.members.nodes, name);
+    if (member === "ambiguous") {
+      return yield* new BoardInputError({
+        detail: `More than one member of the ${scope.team.key} team is named "${name}". Name them by email.`,
+      });
+    }
+    if (member === null) {
+      return yield* new BoardInputError({
+        detail: `No member of the ${scope.team.key} team is named "${name}". Use "me", or a member's name or email.`,
+      });
+    }
+    return member.id;
+  });
+
+  /** The given fields as Linear's issue input, with the status and assignee resolved to ids. */
+  const taskFields = Effect.fn("Board.taskFields")(function* (
+    scope: TaskBoard,
+    fields: BoardTaskFields,
+  ) {
+    let stateId: string | undefined;
+    if (fields.status !== undefined) {
+      const states = scope.team.states.nodes;
+      const state = workflowStateNamed(states, fields.status);
+      if (state === null) {
+        return yield* new BoardInputError({
+          detail: `The ${scope.team.key} board has no status named "${fields.status}". Its statuses are ${states.map((candidate) => candidate.name).join(", ")}.`,
+        });
+      }
+      stateId = state.id;
+    }
+    const assignee =
+      fields.assignee === undefined ? undefined : yield* assigneeId(scope, fields.assignee);
+    return {
+      ...(fields.title === undefined ? {} : { title: fields.title }),
+      ...(fields.description === undefined ? {} : { description: fields.description }),
+      ...(stateId === undefined ? {} : { stateId }),
+      ...(assignee === undefined ? {} : { assigneeId: assignee }),
+    };
+  });
+
+  /** Links the task to the thread; the task is written already, so a failure only logs. */
+  const linkThread = Effect.fn("Board.linkThread")(function* (
+    scope: TaskBoard,
+    issueId: string,
+    thread: BoardTaskThread,
+  ) {
+    const input = {
+      issueId,
+      url: threadLinkUrl(environmentId, thread.id),
+      title: thread.title.trim() || "Agent thread",
+    };
+    return yield* linear(scope.generation, THREAD_LINK_MUTATION, { input }, ThreadLinkData).pipe(
+      Effect.map(({ attachmentCreate }) => attachmentCreate.success),
+      Effect.catch((error) =>
+        Effect.logWarning("Board could not link a task to its thread.", {
+          issueId,
+          threadId: thread.id,
+          error,
+        }).pipe(Effect.as(false)),
+      ),
+    );
+  });
+
+  /** Drops the cached read a later `board_list` would see, then reads open boards again. */
+  const afterWrite = (scope: TaskBoard) =>
+    Effect.suspend(() => {
+      taskWrites += 1;
+      cache.delete(cacheKey(scope.generation, scope.linear));
+      return refreshOpen;
+    });
+
+  const notAccepted = new BoardError({
+    reason: "invalid-response",
+    detail: "Linear did not accept the change to the task.",
+  });
+
+  const addTask: Board["Service"]["addTask"] = Effect.fn("Board.addTask")(function* (input) {
+    const scope = yield* taskBoard(input.projectId, "add the task");
+    const fields = yield* taskFields(scope, input);
+    const { issueCreate } = yield* linear(
+      scope.generation,
+      ISSUE_CREATE_MUTATION,
+      {
+        input: {
+          teamId: scope.team.id,
+          ...(scope.project === null ? {} : { projectId: scope.project.id }),
+          ...fields,
+        },
+      },
+      IssueCreateData,
+    );
+    if (!issueCreate.success || issueCreate.issue === null) return yield* notAccepted;
+    const threadLinked = yield* linkThread(scope, issueCreate.issue.id, input.thread);
+    yield* afterWrite(scope);
+    return { task: boardTask(issueCreate.issue), threadLinked };
+  });
+
+  const updateTask: Board["Service"]["updateTask"] = Effect.fn("Board.updateTask")(
+    function* (input) {
+      const scope = yield* taskBoard(input.projectId, "update the task");
+      const { issue } = yield* linear(
+        scope.generation,
+        TASK_QUERY,
+        { id: input.identifier },
+        TaskData,
+      );
+      if (
+        issue === null ||
+        issue.team.id !== scope.team.id ||
+        (scope.project !== null && issue.project?.id !== scope.project.id)
+      ) {
+        return yield* new BoardError({
+          reason: "issue-not-found",
+          detail: `${input.identifier} is not on this project's board.`,
+        });
+      }
+      const fields = yield* taskFields(scope, input);
+      const changes = Object.keys(fields).length > 0;
+      let task = boardTask(issue);
+      if (changes) {
+        const { issueUpdate } = yield* linear(
+          scope.generation,
+          ISSUE_UPDATE_MUTATION,
+          { id: issue.id, input: fields },
+          IssueUpdateData,
+        );
+        if (!issueUpdate.success || issueUpdate.issue === null) return yield* notAccepted;
+        task = boardTask(issueUpdate.issue);
+      }
+      const linked = hasThreadLink(
+        issue.threadLinks.nodes,
+        scope.viewerId,
+        environmentId,
+        input.thread.id,
+      );
+      const threadLinked = linked || (yield* linkThread(scope, issue.id, input.thread));
+      if (changes || !linked) yield* afterWrite(scope);
+      return { task, threadLinked };
+    },
+  );
+
+  const listTasks: Board["Service"]["listTasks"] = Effect.fn("Board.listTasks")(
+    function* (projectId) {
+      const snapshot = yield* read(projectId);
+      switch (snapshot.status) {
+        case "not-connected":
+          return yield* signInFirst("list the tasks");
+        case "unconfigured":
+          return yield* noBoard(snapshot);
+        case "failed":
+          return yield* new BoardError(snapshot.failure);
+        case "ready":
+          return { tasks: openBoardTasks(snapshot.board), truncated: snapshot.board.truncated };
+      }
+    },
+  );
+
   return Board.of({
     connection: SubscriptionRef.get(connectionState),
     connectionChanges: SubscriptionRef.changes(connectionState),
@@ -886,7 +1301,12 @@ const make = Effect.gen(function* () {
     read,
     changes,
     refresh,
+    refreshOpen,
     issueDetail,
+    comment,
+    addTask,
+    updateTask,
+    listTasks,
     session: Effect.gen(function* () {
       // Taken before the read, so a sign-in change in between fails the session's queries.
       const generation = credentialGeneration;

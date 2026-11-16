@@ -304,9 +304,9 @@ describe("resolveIdleCompaction", () => {
 });
 
 describe("ClientSettings notifications", () => {
-  it("requires opt-in when existing settings omit notification preferences", () => {
+  it("defaults notification preferences when existing settings omit them", () => {
     expect(decodeClientSettings({}).notificationMode).toBe("off");
-    expect(decodeClientSettings({}).inAppNotificationsEnabled).toBe(false);
+    expect(decodeClientSettings({}).inAppNotificationsEnabled).toBe(true);
     expect(decodeClientSettingsPatch({})).not.toHaveProperty("inAppNotificationsEnabled");
     expect(decodeClientSettingsPatch({})).not.toHaveProperty("notificationMode");
   });
