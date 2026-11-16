@@ -24,6 +24,8 @@ const handlers = {
           threadTitle: caller.title,
           text: input.text,
           reason: input.reason,
+          category: input.category,
+          replaces: input.replaces,
         })
         .pipe(
           Effect.mapError(
