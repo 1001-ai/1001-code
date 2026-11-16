@@ -424,7 +424,8 @@ const make = Effect.gen(function* () {
     }
     if (input.category !== undefined) {
       // The category's file is the person's own, so the project need not be in the catalog.
-      const own = yield* voiceAgentFile(catalog.source, catalog.viewer);
+      // The live login, as accepting uses: a cached one would check `replaces` against another person's file.
+      const own = yield* voiceAgentFile(catalog.source, yield* teamCatalog.liveViewer);
       if (typeof own === "string") return yield* new TeamCatalogError({ detail: own });
       const file = parseVoiceAgentMemories(own.text);
       if (input.replaces !== undefined && activeVoiceAgentMemory(file, input.replaces) === null) {

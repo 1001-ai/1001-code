@@ -1,4 +1,4 @@
-import type { MemoryProposal } from "@t3tools/contracts";
+import { type MemoryProposal, VOICE_AGENT_MEMORY_CATEGORY } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { memoryProposalInput, proposalForCall, proposalTarget } from "./memoryProposal.logic";
@@ -21,7 +21,12 @@ describe("proposalForCall", () => {
   const all = [second, other, first];
 
   it("matches each call to the proposal it made when the same line was proposed twice", () => {
-    const call = (startedAt: string) => ({ threadId: "thread-1", text: "Use tabs.", startedAt });
+    const call = (startedAt: string) => ({
+      threadId: "thread-1",
+      text: "Use tabs.",
+      startedAt,
+      voiceAgent: false,
+    });
     expect(proposalForCall(all, call("2026-11-15T10:00:00.000Z"))?.id).toBe("first");
     expect(proposalForCall(all, call("2026-11-15T11:00:00.000Z"))?.id).toBe("second");
     // A repeat while the first was still pending got the first back.
@@ -29,6 +34,12 @@ describe("proposalForCall", () => {
     expect(proposalForCall(all, { ...call("2026-11-15T10:00:00.000Z"), threadId: "x" })).toBe(
       undefined,
     );
+    // A voice agent call never takes a general proposal with the same text, nor the reverse.
+    const voice: MemoryProposal = { ...first, id: "voice", category: VOICE_AGENT_MEMORY_CATEGORY };
+    const voiceCall = { ...call("2026-11-15T10:00:00.000Z"), voiceAgent: true };
+    expect(proposalForCall(all, voiceCall)).toBe(undefined);
+    expect(proposalForCall([first, voice], voiceCall)?.id).toBe("voice");
+    expect(proposalForCall([voice], call("2026-11-15T10:00:00.000Z"))).toBe(undefined);
   });
 });
 

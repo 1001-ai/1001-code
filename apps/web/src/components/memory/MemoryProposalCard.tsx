@@ -166,6 +166,7 @@ export function MemoryProposalCard(props: {
           threadId: item.threadId,
           text: call.text,
           startedAt: DateTime.formatIso(item.startedAt ?? item.updatedAt),
+          voiceAgent: call.voiceAgent,
         });
   const projectName = view?.documents.find((document) => document.scope === "project")?.label;
   const decision = useMemoryDecision(props.environmentId, projectId);

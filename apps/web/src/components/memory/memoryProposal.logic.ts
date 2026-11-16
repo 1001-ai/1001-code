@@ -59,10 +59,21 @@ export function isMemoryProposalItem(item: OrchestrationV2TurnItem): item is Dyn
  */
 export function proposalForCall(
   proposals: ReadonlyArray<MemoryProposal>,
-  call: { readonly threadId: string; readonly text: string; readonly startedAt: string },
+  call: {
+    readonly threadId: string;
+    readonly text: string;
+    readonly startedAt: string;
+    /** The call was for the voice agent's memories; it never matches a general proposal. */
+    readonly voiceAgent: boolean;
+  },
 ): MemoryProposal | undefined {
   const matches = proposals
-    .filter((proposal) => proposal.threadId === call.threadId && proposal.text === call.text)
+    .filter(
+      (proposal) =>
+        proposal.threadId === call.threadId &&
+        proposal.text === call.text &&
+        (proposal.category !== undefined) === call.voiceAgent,
+    )
     .toSorted((left, right) => left.createdAt.localeCompare(right.createdAt));
   return matches.find((proposal) => proposal.createdAt >= call.startedAt) ?? matches.at(-1);
 }
