@@ -271,7 +271,7 @@ export const BOARD_LIST_TOOL_NAME = "board_list";
 
 /** A task as an agent's board tools return it, and as a chat card shows it. */
 export const BoardTask = Schema.Struct({
-  /** Such as COD-12. */
+  /** Such as ENG-12. */
   identifier: TrimmedNonEmptyString,
   title: Schema.String,
   url: TrimmedNonEmptyString,
@@ -310,7 +310,7 @@ export type BoardTaskList = typeof BoardTaskList.Type;
  */
 export const BoardTaskChange = Schema.Struct({
   kind: Schema.Literals(["created", "picked_up", "status"]),
-  /** Linear's issue identifier, such as `COD-106`. */
+  /** Linear's issue identifier, such as `ENG-106`. */
   identifier: TrimmedNonEmptyString,
   title: Schema.String,
   url: Schema.String,

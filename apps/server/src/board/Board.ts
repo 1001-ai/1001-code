@@ -187,7 +187,7 @@ export interface BoardAddTaskInput extends BoardTaskFields {
 export interface BoardUpdateTaskInput extends BoardTaskFields {
   readonly projectId: ProjectId;
   readonly thread: BoardTaskThread;
-  /** The task's identifier, such as COD-12. */
+  /** The task's identifier, such as ENG-12. */
   readonly identifier: string;
 }
 

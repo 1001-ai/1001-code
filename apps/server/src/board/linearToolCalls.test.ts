@@ -64,25 +64,25 @@ const threadId = ThreadId.make("thread-1");
 const at = DateTime.makeUnsafe("2026-11-15T10:00:00.000Z");
 
 const createdResult = {
-  id: "COD-106",
+  id: "ENG-106",
   uuid: "4981c0de",
-  title: "The Board shows people's full names",
-  url: "https://linear.app/1001ai/issue/COD-106/the-board-shows-peoples-full-names",
+  title: "Search results keep their scroll position",
+  url: "https://linear.app/acme/issue/ENG-106/search-results-keep-their-scroll-position",
   status: "In Progress",
   statusType: "started",
-  assignee: "Mohammed Fituri",
+  assignee: "Alex Kim",
   assigneeId: "a575",
   project: "Code",
   team: "Code",
-  createdBy: "Mohammed Fituri",
+  createdBy: "Alex Kim",
   labels: [],
 };
 
 const boardResult = {
   task: {
-    identifier: "COD-115",
-    title: "The Board task card also shows for board_add",
-    url: "https://linear.app/1001ai/issue/COD-115/the-board-task-card",
+    identifier: "ENG-115",
+    title: "Settings show the current version",
+    url: "https://linear.app/acme/issue/ENG-115/settings-show-the-current-version",
     status: { name: "Todo", type: "unstarted" },
     assignee: null,
     project: "Code",
@@ -124,26 +124,26 @@ describe("boardTaskChange", () => {
       boardTaskChange(toolItem({ team: "Code", title: "A" }, textBlocks(createdResult))),
     ).toEqual({
       kind: "created",
-      identifier: "COD-106",
-      title: "The Board shows people's full names",
-      url: "https://linear.app/1001ai/issue/COD-106/the-board-shows-peoples-full-names",
+      identifier: "ENG-106",
+      title: "Search results keep their scroll position",
+      url: "https://linear.app/acme/issue/ENG-106/search-results-keep-their-scroll-position",
       status: "In Progress",
       statusType: "started",
-      assignee: "Mohammed Fituri",
+      assignee: "Alex Kim",
       assigneeId: "a575",
       project: "Code",
     });
   });
 
   it.each([
-    ["picked_up", { id: "COD-106", assignee: "me" }],
-    ["picked_up", { id: "COD-106", assignee: "me", state: "In Progress" }],
-    ["status", { id: "COD-106", state: "In Review" }],
-    ["status", { id: "COD-106", assignee: null, state: "Todo" }],
-    ["status", { server: "linear", tool: "save_issue", arguments: { id: "COD-1", state: "Done" } }],
+    ["picked_up", { id: "ENG-106", assignee: "me" }],
+    ["picked_up", { id: "ENG-106", assignee: "me", state: "In Progress" }],
+    ["status", { id: "ENG-106", state: "In Review" }],
+    ["status", { id: "ENG-106", assignee: null, state: "Todo" }],
+    ["status", { server: "linear", tool: "save_issue", arguments: { id: "ENG-1", state: "Done" } }],
     ["created", { tool_id: "linear::save_issue", arguments: { team: "Code", title: "A" } }],
-    [undefined, { id: "COD-106", description: "New text" }],
-    [undefined, { id: "COD-106", labels: ["Bug"] }],
+    [undefined, { id: "ENG-106", description: "New text" }],
+    [undefined, { id: "ENG-106", labels: ["Bug"] }],
   ])("classifies an update as %s", (kind, input) => {
     expect(boardTaskChange(toolItem(input, textBlocks(createdResult)))?.kind).toBe(kind);
   });
@@ -158,9 +158,9 @@ describe("boardTaskChange", () => {
     ]) {
       expect(
         boardTaskChange(
-          toolItem({ id: "COD-106", state: "Done" }, output, { toolName: "linear.save_issue" }),
+          toolItem({ id: "ENG-106", state: "Done" }, output, { toolName: "linear.save_issue" }),
         ),
-      ).toMatchObject({ kind: "status", identifier: "COD-106", status: "In Progress" });
+      ).toMatchObject({ kind: "status", identifier: "ENG-106", status: "In Progress" });
     }
   });
 
@@ -189,7 +189,7 @@ describe("boardTaskChange", () => {
     ],
     [
       "a Linear read",
-      toolItem({ id: "COD-106" }, textBlocks(createdResult), {
+      toolItem({ id: "ENG-106" }, textBlocks(createdResult), {
         toolName: "mcp__claude_ai_Linear__get_issue",
       }),
     ],
@@ -217,9 +217,9 @@ describe("boardTaskChange", () => {
       boardTaskChange(toolItem({ title: "A" }, textBlocks(boardResult), { toolName })),
     ).toEqual({
       kind: "created",
-      identifier: "COD-115",
-      title: "The Board task card also shows for board_add",
-      url: "https://linear.app/1001ai/issue/COD-115/the-board-task-card",
+      identifier: "ENG-115",
+      title: "Settings show the current version",
+      url: "https://linear.app/acme/issue/ENG-115/settings-show-the-current-version",
       status: "Todo",
       statusType: "unstarted",
       project: "Code",
@@ -227,16 +227,16 @@ describe("boardTaskChange", () => {
   });
 
   it.each([
-    ["picked_up", { task: "COD-115", assignee: "me" }],
-    ["picked_up", { task: "COD-115", assignee: "me", status: "In Progress" }],
-    ["status", { task: "COD-115", status: "In Review" }],
+    ["picked_up", { task: "ENG-115", assignee: "me" }],
+    ["picked_up", { task: "ENG-115", assignee: "me", status: "In Progress" }],
+    ["status", { task: "ENG-115", status: "In Review" }],
     [
       "status",
-      { server: "t3-code", tool: "board_update", arguments: { task: "COD-1", status: "Done" } },
+      { server: "t3-code", tool: "board_update", arguments: { task: "ENG-1", status: "Done" } },
     ],
-    [undefined, { task: "COD-115", title: "New title" }],
+    [undefined, { task: "ENG-115", title: "New title" }],
   ])("classifies a board_update as %s", (kind, input) => {
-    const assigned = { ...boardResult, task: { ...boardResult.task, assignee: "Mohammed Fituri" } };
+    const assigned = { ...boardResult, task: { ...boardResult.task, assignee: "Alex Kim" } };
     // Codex keeps T3's whole result: `structuredContent` beside the text block.
     const output = { isError: false, structuredContent: assigned, content: textBlocks(assigned) };
     expect(
@@ -253,7 +253,7 @@ describe("boardTaskChange", () => {
     ],
     [
       "a failed board_update",
-      toolItem({ task: "COD-115", status: "Done" }, textBlocks(boardResult), {
+      toolItem({ task: "ENG-115", status: "Done" }, textBlocks(boardResult), {
         toolName: "mcp__t3-code__board_update",
         status: "failed",
       }),
@@ -261,7 +261,7 @@ describe("boardTaskChange", () => {
     [
       "a board_update error result",
       toolItem(
-        { task: "COD-115", status: "Done" },
+        { task: "ENG-115", status: "Done" },
         { isError: true, content: [{ type: "text", text: "Unknown status Done" }] },
         { toolName: "t3-code.board_update" },
       ),
@@ -281,10 +281,10 @@ describe("boardTaskChange", () => {
   it("rides the wire output beside the compact fields", () => {
     const projected = projectTurnItemForWire(toolItem({ title: "A" }, textBlocks(createdResult)));
     expect(projected.type === "dynamic_tool" && projected.output).toMatchObject({
-      boardTask: { kind: "created", identifier: "COD-106" },
+      boardTask: { kind: "created", identifier: "ENG-106" },
     });
     const other = projectTurnItemForWire(
-      toolItem({ id: "COD-106", description: "x" }, textBlocks(createdResult)),
+      toolItem({ id: "ENG-106", description: "x" }, textBlocks(createdResult)),
     );
     expect(other.type === "dynamic_tool" && other.output).toBeUndefined();
   });

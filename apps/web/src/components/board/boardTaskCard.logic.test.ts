@@ -5,9 +5,9 @@ import { boardStatusGlyph, boardTaskChangeOf } from "./boardTaskCard.logic";
 
 const boardTask = {
   kind: "created",
-  identifier: "COD-106",
+  identifier: "ENG-106",
   title: "The Board shows people's full names",
-  url: "https://linear.app/1001ai/issue/COD-106/slug",
+  url: "https://linear.app/acme/issue/ENG-106/slug",
   status: "In Progress",
   statusType: "started",
 };
