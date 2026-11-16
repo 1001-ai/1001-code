@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { create } from "zustand";
 
 import {
@@ -39,4 +40,19 @@ export const lampVoice = {
 
 export function useLampVoiceSession(): LampVoiceSession {
   return useLampVoiceStore();
+}
+
+/** Whether the open layer's agent is thinking, for the lamps outside the layer, such as the button. */
+const useLampThinkingStore = create<{ readonly thinking: boolean }>(() => ({ thinking: false }));
+
+export function useLampThinking(): boolean {
+  return useLampThinkingStore((state) => state.thinking);
+}
+
+export function useShareLampThinking(thinking: boolean): void {
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- the button sits outside the layer, so it reads the layer's status from the store
+  useEffect(() => {
+    useLampThinkingStore.setState({ thinking });
+    return () => useLampThinkingStore.setState({ thinking: false });
+  }, [thinking]);
 }
