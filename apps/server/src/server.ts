@@ -208,6 +208,8 @@ import * as LiveAppCheckout from "./liveAppCheckout.ts";
 import * as MemoryLayer from "./memory/layer.ts";
 import * as AgentsBoard from "./agentsBoard/AgentsBoard.ts";
 import * as BoardHttp from "./board/http.ts";
+import * as VoiceOutput from "./voiceOutput/VoiceOutput.ts";
+import * as VoiceOutputHttp from "./voiceOutput/http.ts";
 import * as CodexUsageHistory from "./usage/CodexUsageHistory.ts";
 import * as RuntimeLayer from "./orchestration-v2/runtimeLayer.ts";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
@@ -814,6 +816,7 @@ const layerMakeRoutes = Layer.mergeAll(
       Layer.provide(PullRequestHttp.layer),
       Layer.provide(ProjectHttp.layer),
       Layer.provide(speechHttpApiLayer),
+      Layer.provide(VoiceOutputHttp.layer),
       Layer.provide(ServerHttp.layerServerEnvironmentHttpApi),
       Layer.provide(WebhookRoute.layer.pipe(Layer.provide(RelayDeliveryProof.layer))),
       Layer.provide(AuthHttp.layerAuthenticatedAuth),
@@ -860,6 +863,9 @@ const layerMakeRoutes = Layer.mergeAll(
       Layer.provideMerge(PeerMcpClient.layer),
       Layer.provideMerge(PeerLinks.layer),
     ),
+  ),
+  Layer.provide(
+    VoiceOutput.layer.pipe(Layer.provide(SpeechModelStore.layer), Layer.provide(TeamCatalog.layer)),
   ),
   Layer.provide(
     SpeechService.layer.pipe(

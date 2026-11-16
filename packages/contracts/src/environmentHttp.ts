@@ -65,6 +65,7 @@ import {
   EnvironmentSpeechStatus,
   EnvironmentSpeechTranscriptionResult,
 } from "./speech.ts";
+import { makeEnvironmentVoiceOutputHttpApi } from "./voiceOutput.ts";
 import { SecretReference } from "./secretReference.ts";
 import {
   OrchestrationV2ShellHttpSnapshot,
@@ -938,6 +939,11 @@ export class EnvironmentVoiceHttpApi extends HttpApiGroup.make("voice")
     }).middleware(EnvironmentAuthenticatedAuth),
   ) {}
 
+export const EnvironmentVoiceOutputHttpApi = makeEnvironmentVoiceOutputHttpApi({
+  auth: EnvironmentAuthenticatedAuth,
+  errors: [...EnvironmentScopedOperationErrors, EnvironmentRequestInvalidError],
+});
+
 class EnvironmentConnectHttpApi extends HttpApiGroup.make("connect")
   .add(
     HttpApiEndpoint.post("linkProof", "/api/connect/link-proof", {
@@ -1027,5 +1033,6 @@ export class EnvironmentHttpApi extends HttpApi.make("environment")
   .add(EnvironmentPullRequestsHttpApi)
   .add(EnvironmentProjectsHttpApi)
   .add(EnvironmentVoiceHttpApi)
+  .add(EnvironmentVoiceOutputHttpApi)
   .add(EnvironmentConnectHttpApi)
   .add(EnvironmentWebhooksHttpApi) {}
