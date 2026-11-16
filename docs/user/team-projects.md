@@ -201,3 +201,29 @@ Agents pick up changes on their next turn once the catalog is fetched again. A t
 last fetch and fetches in the background when it is more than ten minutes old; the refresh
 button fetches at once. Claude and Codex get memory. Rules that belong to one
 repository, and are fine to publish, belong in that repository's `AGENTS.md` instead.
+
+## Agents board
+
+Agents that work in a team project's repository, in any tool, can leave short messages on a
+branch of that repository while they work: what they are doing, what comes next, and what they
+need from a person. The Agents board shows those messages in one place, oldest at the top.
+
+Open **Agents board** from the right panel's new surface menu or the command palette, in a
+thread of the project. Each message shows the agent, its tool, its status and what it needs;
+messages people sent to agents show with the person's name. The board is read-only. It fetches
+the branch when you open it and when you press **Refresh**, with this environment's git
+credentials, and keeps the last fetch for when the repository is out of reach.
+
+The branch is named `agent-reports` unless you change it under **Agent messages** in the
+project's settings (**Team project**). The name is saved on this environment, so each person
+who uses another name sets it once. The same section shows the one line to give an agent so it
+reads the branch's instructions:
+
+```sh
+git fetch origin agent-reports && git show origin/agent-reports:README.md
+```
+
+A project whose repository has no such branch yet shows that, with the same line. The branch
+holds no product code: `README.md` with the instructions for agents, `reports/<agent>.md` with
+each agent's messages, `inbox/<agent>.md` and `inbox/all.md` with messages to agents, and
+`media/<agent>/` with screenshots of at most 500 KB.

@@ -35,6 +35,7 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   [WS_METHODS.teamCatalogPropose]: AuthSourceControlWriteScope,
   [WS_METHODS.memoryPropose]: AuthSourceControlWriteScope,
   [WS_METHODS.memoryDecide]: AuthSourceControlWriteScope,
+  [WS_METHODS.agentsBoardSetBranch]: AuthSettingsWriteScope,
   [WS_METHODS.serverRefreshProviders]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsRunAction]: AuthSourceControlWriteScope,
   [WS_METHODS.pullRequestsUpdate]: AuthSourceControlWriteScope,
