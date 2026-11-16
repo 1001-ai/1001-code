@@ -1885,7 +1885,12 @@ export const layer: Layer.Layer<
           modelSelection: input.modelSelection,
           runtimePolicy: input.runtimePolicy,
           ...(appContext.length === 0 ? {} : { appContext }),
-          ...(yield* memoryTurnInput(memory, input.appThread.projectId, input.run.threadId)),
+          ...(yield* memoryTurnInput(
+            memory,
+            input.appThread.projectId,
+            input.run.threadId,
+            input.appThread.lineage,
+          )),
         };
         // Check after the context read: ingestion can settle the run while
         // it awaits. A failed ownership read fails the start below.

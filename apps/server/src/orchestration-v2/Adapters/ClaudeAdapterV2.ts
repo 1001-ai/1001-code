@@ -216,6 +216,7 @@ import {
 } from "@t3tools/provider-core/server/orchestrationInstructions";
 import { buildRuntimeInstructions } from "@t3tools/provider-core/server/runtimeInstructions";
 import { claudeMemoryQueryKey } from "../../memory/memoryProviders.ts";
+import { lockClaudeQueryForVoiceAgent } from "../../voiceAgent/voiceAgentClaudeLock.ts";
 import {
   mcpToolPresentation,
   normalizeMcpText,
@@ -12047,7 +12048,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             turnInput.runtimePolicy.cwd,
             launchArgSettings,
           );
-          const queryOptions = makeClaudeQueryOptions({
+          const unlockedQueryOptions = makeClaudeQueryOptions({
             modelSelection: turnInput.modelSelection,
             modelCatalog,
             nativeThreadId,
@@ -12093,6 +12094,12 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             ...(toolSearchOverride === undefined ? {} : { toolSearchOverride }),
             memory: turnInput.memory,
           });
+          // Fork: a voice agent thread gets only its own tools; see fork/README.md.
+          const queryOptions = lockClaudeQueryForVoiceAgent(
+            unlockedQueryOptions,
+            turnInput.appThread,
+            turnInput.memory,
+          );
           const resolvedTurnCwd = yield* fileSystem
             .realPath(turnInput.runtimePolicy.cwd ?? ".")
             .pipe(Effect.orElseSucceed(() => turnInput.runtimePolicy.cwd));

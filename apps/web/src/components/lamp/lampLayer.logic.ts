@@ -87,3 +87,86 @@ export function isLampTalkKey(
   if (event.isComposing || event.keyCode === 229) return false;
   return event.key === " " && !event.metaKey && !event.ctrlKey && !event.altKey;
 }
+
+/**
+ * Runs `done` once: when the animations have settled, or after `durationMs`, whichever comes
+ * first. A tab that is not painted (in the background, or behind another window) never finishes
+ * an animation, so the timer is what lets the layer leave there. Returns a cancel.
+ */
+export function afterLampMotion(
+  animations: ReadonlyArray<{ readonly finished: Promise<unknown> }>,
+  durationMs: number,
+  done: () => void,
+): () => void {
+  let pending = true;
+  const finish = () => {
+    if (!pending) return;
+    pending = false;
+    clearTimeout(timer);
+    done();
+  };
+  const timer = setTimeout(finish, durationMs);
+  void Promise.allSettled(animations.map((animation) => animation.finished)).then(finish);
+  return () => {
+    pending = false;
+    clearTimeout(timer);
+  };
+}
+
+/** What covering a chat needs of its layers. An `HTMLElement` is one. */
+interface LampCoveredLayer {
+  hasAttribute(name: string): boolean;
+  setAttribute(name: string, value: string): void;
+  removeAttribute(name: string): void;
+  animate(
+    keyframes: Keyframe[],
+    options: KeyframeAnimationOptions,
+  ): { readonly cancel: () => void };
+}
+
+/**
+ * Puts a chat's layers under a glass layer: none can be used, and one stacked above the glass,
+ * such as the timeline minimap, fades out, since it would stay sharp on top of it. A layer that
+ * is inert already is someone else's to give back. Returns the way back, as the glass clears.
+ */
+export function coverLampSiblings<Layer extends LampCoveredLayer>(
+  siblings: ReadonlyArray<Layer>,
+  isAboveGlass: (sibling: Layer) => boolean,
+  timing: { readonly duration: number; readonly easing: string },
+): () => void {
+  const covered = siblings
+    .filter((sibling) => !sibling.hasAttribute("inert"))
+    .map((sibling) => {
+      sibling.setAttribute("inert", "");
+      const hidden = isAboveGlass(sibling)
+        ? sibling.animate([{}, { opacity: 0 }], { ...timing, fill: "forwards" })
+        : null;
+      return { sibling, hidden };
+    });
+  return () => {
+    for (const { sibling, hidden } of covered) {
+      if (hidden) {
+        hidden.cancel();
+        // An empty keyframe is the layer's own CSS opacity, so hover-only chrome returns hidden.
+        sibling.animate([{ opacity: 0 }, {}], timing);
+      }
+      sibling.removeAttribute("inert");
+    }
+  };
+}
+
+/** `coverLampSiblings` for the element a glass layer is drawn in: every child but the layer's own. */
+export function coverLampChat(
+  chat: Element,
+  own: ReadonlyArray<Element>,
+  glassZIndex: number,
+  timing: { readonly duration: number; readonly easing: string },
+): () => void {
+  return coverLampSiblings(
+    [...chat.children].filter(
+      (child): child is HTMLElement => child instanceof HTMLElement && !own.includes(child),
+    ),
+    (child) => Number.parseInt(getComputedStyle(child).zIndex, 10) > glassZIndex,
+    timing,
+  );
+}

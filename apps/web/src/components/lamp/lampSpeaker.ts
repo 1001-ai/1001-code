@@ -58,9 +58,8 @@ function browserSpeechEngine(): LampSpeechEngine | null {
 }
 
 /**
- * Speaks with the browser's own voices. A stand-in: a voice model that sends audio with word
- * timings replaces it behind the same `LampSpeaker`. A voice that reports word boundaries sets
- * the word; for one that does not, each word's start is estimated from the text.
+ * Speaks with the browser's own voices: the system voice. A voice that reports word boundaries
+ * sets the word; for one that does not, each word's start is estimated from the text.
  */
 export function createLampSpeaker(engine = browserSpeechEngine()): LampSpeaker {
   return {
@@ -167,5 +166,5 @@ export function createLampSpeaker(engine = browserSpeechEngine()): LampSpeaker {
   };
 }
 
-/** The voice the layer speaks with. Replace this one line to change how the agent sounds. */
+/** The system voice: it speaks when no downloaded voice can. `useLampSpeaker` chooses. */
 export const lampSpeaker: LampSpeaker = createLampSpeaker();

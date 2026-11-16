@@ -322,3 +322,45 @@ export function buildAgentsBoard(
     truncated: truncated || ordered.length > messages.length,
   };
 }
+
+/**
+ * A person's message as one plain line. It becomes part of a file other agents parse, so nothing
+ * in it may read as a heading or a field: line breaks and control characters become spaces, and
+ * what could open a heading or a bullet is taken off the front.
+ */
+export function inboxMessageText(text: string): string {
+  return text
+    .replace(UNSAFE_CHARACTERS, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^[#\-*>\s]+/, "");
+}
+
+/** The name a message is signed with: one word of letters, digits, `.`, `'` or `-`. */
+export function inboxSignerName(name: string | null, login: string): string {
+  const first = (name ?? "")
+    .replace(UNSAFE_CHARACTERS, " ")
+    .trim()
+    .split(/\s+/)[0]
+    ?.replace(/[^\p{L}\p{N}.'-]/gu, "")
+    .slice(0, 40);
+  return first === undefined || first === "" ? login : first;
+}
+
+/** The inbox file with one more entry at its end. `existing` is null for a file not there yet. */
+export function withInboxEntry(
+  existing: string | null,
+  entry: {
+    readonly to: string;
+    readonly at: string;
+    readonly from: string;
+    readonly text: string;
+    readonly via: string;
+  },
+): string {
+  const head =
+    existing === null || existing.trim() === ""
+      ? `# Inbox: ${entry.to}\n`
+      : existing.replace(/\s+$/, "") + "\n";
+  return `${head}\n## ${entry.at} · from ${entry.from}\n\n${entry.text}\n\n- via: ${entry.via}\n`;
+}

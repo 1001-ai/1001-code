@@ -1,8 +1,10 @@
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
   LAMP_LAYER_CLOSED,
+  afterLampMotion,
   canToggleLampLayer,
+  coverLampSiblings,
   isLampLayerOpenIn,
   isLampTalkKey,
   lampHoldsKeyboard,
@@ -116,5 +118,87 @@ describe("lamp layer", () => {
     expect(isLampTalkKey({ ...space, altKey: true })).toBe(false);
     expect(isLampTalkKey({ ...space, isComposing: true })).toBe(false);
     expect(isLampTalkKey({ ...space, keyCode: 229 })).toBe(false);
+  });
+});
+
+/** One of the chat's layers, as far as covering it goes: its attributes and its animations. */
+function chatLayer(attribute?: string) {
+  const attributes = new Set(attribute === undefined ? [] : [attribute]);
+  const animations: Array<{
+    keyframes: Keyframe[];
+    options: KeyframeAnimationOptions;
+    cancelled: boolean;
+  }> = [];
+  return {
+    attributes,
+    animations,
+    hasAttribute: (name: string) => attributes.has(name),
+    setAttribute: (name: string) => void attributes.add(name),
+    removeAttribute: (name: string) => void attributes.delete(name),
+    animate: (keyframes: Keyframe[], options: KeyframeAnimationOptions) => {
+      const animation = { keyframes, options, cancelled: false };
+      animations.push(animation);
+      return { cancel: () => void (animation.cancelled = true) };
+    },
+  };
+}
+
+describe("lamp layer motion", () => {
+  const never = { finished: new Promise<never>(() => {}) };
+
+  it("covers the chat's layers, fades out the ones above the glass, and gives each back", () => {
+    const list = chatLayer();
+    const minimap = chatLayer();
+    const coveredAlready = chatLayer("inert");
+    const timing = { duration: 240, easing: "ease-out" };
+    const uncover = coverLampSiblings(
+      [list, minimap, coveredAlready],
+      (layer) => layer === minimap,
+      timing,
+    );
+    expect([list.attributes.has("inert"), minimap.attributes.has("inert")]).toEqual([true, true]);
+    expect(list.animations).toEqual([]);
+    const hidden = { keyframes: [{}, { opacity: 0 }], options: { ...timing, fill: "forwards" } };
+    expect(minimap.animations).toEqual([{ ...hidden, cancelled: false }]);
+
+    uncover();
+    expect([list.attributes.has("inert"), minimap.attributes.has("inert")]).toEqual([false, false]);
+    // Back to its own CSS opacity, which for hover-only chrome is hidden.
+    expect(minimap.animations).toEqual([
+      { ...hidden, cancelled: true },
+      { keyframes: [{ opacity: 0 }, {}], options: timing, cancelled: false },
+    ]);
+    // What was inert before is not this layer's to give back.
+    expect(coveredAlready.attributes.has("inert")).toBe(true);
+    expect(coveredAlready.animations).toEqual([]);
+  });
+
+  it("leaves once: after the motion's time in a tab that never paints, or when it settles", async () => {
+    vi.useFakeTimers();
+    try {
+      const unpainted = vi.fn();
+      afterLampMotion([never, never], 240, unpainted);
+      await vi.advanceTimersByTimeAsync(239);
+      expect(unpainted).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(unpainted).toHaveBeenCalledTimes(1);
+
+      // Finished or cancelled, the animations settling is enough, and the timer adds nothing.
+      const painted = vi.fn();
+      const cancelled = { finished: Promise.reject(new Error("cancelled")) };
+      afterLampMotion([{ finished: Promise.resolve() }, cancelled], 240, painted);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(painted).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(240);
+      expect(painted).toHaveBeenCalledTimes(1);
+
+      // Cancelled, as when the layer opens again while it leaves.
+      const reopened = vi.fn();
+      afterLampMotion([{ finished: Promise.resolve() }, never], 240, reopened)();
+      await vi.advanceTimersByTimeAsync(240);
+      expect(reopened).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

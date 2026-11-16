@@ -198,6 +198,7 @@ import {
 import { planThreadDeletion } from "./ThreadDeletion.ts";
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as ServerSettings from "../serverSettings.ts";
+import { voiceAgentThread } from "../voiceAgent/voiceAgentThread.ts";
 
 const isMessageQuestionAnswer = Schema.is(
   Schema.Union([TrimmedNonEmptyString, Schema.NonEmptyArray(TrimmedNonEmptyString)]),
@@ -3529,12 +3530,15 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       deletedAt: null,
     };
 
+    // Fork: the voice agent's hidden thread; see fork/README.md.
+    const voiceAgentParent =
+      command.voiceAgentOf === undefined ? null : yield* findThread(command.voiceAgentOf);
     yield* emitEvent({
       type: "thread.created",
       threadId: command.threadId,
       providerInstanceId: command.modelSelection.instanceId,
       occurredAt: now,
-      payload: thread,
+      payload: voiceAgentThread(thread, command.voiceAgentOf, voiceAgentParent),
     });
     if (command.importedNativeThread !== undefined) {
       yield* emitEvent({

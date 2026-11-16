@@ -661,7 +661,7 @@ export const buildBase = (
   const t3 = visibleT3Tools(options);
   const mcpTools = [
     ...(options.board === undefined ? [] : boardTools),
-    ...(options.memory === undefined ? [] : memoryTools),
+    ...(options.memory === undefined ? [] : memoryTools(options.memory).deferred),
   ];
   const firstAssistant = template.messages.findIndex((message) => message.role === "assistant");
   const head = template.messages.slice(0, firstAssistant === -1 ? undefined : firstAssistant);
@@ -737,6 +737,7 @@ export const buildBase = (
     nativeTools: [
       ...template.tools.filter((tool) => !isT3Name(tool.name)),
       ...t3.filter((tool) => alwaysLoaded.has(tool.name)),
+      ...(options.memory === undefined ? [] : memoryTools(options.memory).loaded),
     ],
     /** Tools ToolSearch loads: T3 tools from source, and native tools the template only names. */
     t3,
