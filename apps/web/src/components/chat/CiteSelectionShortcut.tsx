@@ -20,12 +20,16 @@ export function CiteSelectionShortcut({
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- registers the cite shortcut with the command registry while the Cite button is mounted
   useEffect(
     () =>
-      registerCommands({
-        "chat.citeSelection": (event) => {
-          event.preventDefault();
-          if (!event.repeat) cite();
+      // Capture phase: the Cite button stops key events it receives once Tab focuses it.
+      registerCommands(
+        {
+          "chat.citeSelection": (event) => {
+            event.preventDefault();
+            if (!event.repeat) cite();
+          },
         },
-      }),
+        { capture: true },
+      ),
     [cite],
   );
 
