@@ -109,7 +109,7 @@ import { searchableSetting, type SettingsSearchItemId } from "./settingsSearch";
 import { nativeLanguageName, SYSTEM_LANGUAGE } from "@t3tools/client-runtime/locales";
 import { SUPPORTED_LOCALES } from "../../i18n/locales";
 import { BackgroundActivitySettingsRow } from "./BackgroundActivitySettings";
-import { ReplyMarkersSettingsRow } from "./ReplyMarkersSettingsRow";
+import { MessageClickThreadSettingsRow, ReplyMarkersSettingsRow } from "./ReplyMarkersSettingsRow";
 import { AdvancedSettings } from "./AdvancedSettings";
 import { PullRequestLinksOpenInAppSetting } from "./IntegrationsSettings";
 import { StorageCleanupSections } from "./StorageSettings";
@@ -1296,6 +1296,7 @@ export function ChatSettingsPanel() {
       <SettingsSection id="activity" title="Activity">
         <ToolCallVisibilityRow />
         <ReplyMarkersSettingsRow />
+        <MessageClickThreadSettingsRow />
       </SettingsSection>
 
       <SettingsSection id="screen-reader" title="Screen reader">

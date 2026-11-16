@@ -510,6 +510,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["reply quote thread exchange which message answers steer queued view thread"],
   },
   {
+    id: "message-click-thread",
+    title: "Open thread on message click",
+    to: "/settings/chat",
+    searchTerms: ["click bubble message view thread exchange reply"],
+  },
+  {
     id: "guest-links",
     title: "Guest links",
     to: "/settings/labs",

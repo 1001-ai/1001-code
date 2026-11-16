@@ -11,8 +11,12 @@ import { describe, expect, it } from "vite-plus/test";
 import { responseContextRecord } from "~/lib/composerContextRecords";
 import {
   deriveExchangeMap,
+  messageClickOpensThread,
+  reLineMatchText,
+  reLineQuotesMessage,
   replyMarkersEnabled,
   sameExchangeStructure,
+  setMessageClickOpensThread,
   setReplyMarkersEnabled,
   shouldAttachThreadReply,
   threadTriggerFocusSelectors,
@@ -275,6 +279,26 @@ describe("sameExchangeStructure", () => {
   });
 });
 
+describe("reLineQuotesMessage", () => {
+  const messages = [
+    "Can you fix the **bubble** click?\n\n> It’s   opening the “thread” twice",
+    "Also rename snake_case_name",
+  ].map(reLineMatchText);
+  it.each([
+    { name: "exact words", excerpt: "fix the bubble click", quotes: true },
+    { name: "case and spacing differ", excerpt: "Can you  FIX the", quotes: true },
+    { name: "across a quote mark", excerpt: 'It\'s opening the "thread" twice', quotes: true },
+    { name: "markdown marks in the excerpt", excerpt: "the *bubble* click", quotes: true },
+    { name: "a trailing ellipsis", excerpt: "rename snake_case_name…", quotes: true },
+    { name: "words from no message", excerpt: "fix the sidebar", quotes: false },
+    { name: "words spanning two messages", excerpt: "twice also rename", quotes: false },
+    { name: "only an ellipsis", excerpt: "...", quotes: false },
+    { name: "a line still streaming", excerpt: null, quotes: false },
+  ])("$name", ({ excerpt, quotes }) => {
+    expect(reLineQuotesMessage(excerpt, messages)).toBe(quotes);
+  });
+});
+
 describe("reply markers setting", () => {
   it("is on by default and stores only the change", () => {
     expect(replyMarkersEnabled({ threadDetailsItems: {} })).toBe(true);
@@ -282,5 +306,13 @@ describe("reply markers setting", () => {
     expect(off).toEqual({ usage: true, replyMarkers: false });
     expect(replyMarkersEnabled({ threadDetailsItems: off })).toBe(false);
     expect(setReplyMarkersEnabled({ threadDetailsItems: off }, true)).toEqual({ usage: true });
+  });
+
+  it("leaves message clicks off by default and stores only the change", () => {
+    expect(messageClickOpensThread({ threadDetailsItems: {} })).toBe(false);
+    const on = setMessageClickOpensThread({ threadDetailsItems: { usage: true } }, true);
+    expect(on).toEqual({ usage: true, messageClickOpensThread: true });
+    expect(messageClickOpensThread({ threadDetailsItems: on })).toBe(true);
+    expect(setMessageClickOpensThread({ threadDetailsItems: on }, false)).toEqual({ usage: true });
   });
 });

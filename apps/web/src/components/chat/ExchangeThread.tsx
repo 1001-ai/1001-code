@@ -2,6 +2,7 @@ import type { ResponseContextRecord, ScopedThreadRef } from "@t3tools/contracts"
 import { resolveUserMessagePresentation } from "@t3tools/client-runtime/user-message";
 import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
 import { textAfterReLines, type ReLine } from "@t3tools/shared/replyMarkers";
+import { MessagesSquareIcon } from "lucide-react";
 import {
   createContext,
   use,
@@ -22,8 +23,13 @@ import { cn } from "~/lib/utils";
 import { useComposerDraftStore } from "../../composerDraftStore";
 import { useClientSettings } from "../../hooks/useSettings";
 import { readResponseSubagents } from "../../state/entities";
+import { Button } from "../ui/button";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   deriveExchangeMap,
+  messageClickOpensThread,
+  reLineMatchText,
+  reLineQuotesMessage,
   replyMarkersEnabled,
   sameExchangeStructure,
   shouldAttachThreadReply,
@@ -79,7 +85,10 @@ const BUBBLE_INTERACTIVE_SELECTOR = [
 export interface ExchangeThreadContextValue {
   readonly map: ExchangeMap;
   readonly quotes: ReadonlyMap<string, string>;
+  /** Each user message's `reLineMatchText`, by row. */
+  readonly matchTexts: ReadonlyMap<string, string>;
   readonly markersEnabled: boolean;
+  readonly bubbleOpensThread: boolean;
   readonly open: (trigger: ThreadTrigger) => void;
   readonly openFromBubble: (event: MouseEvent<HTMLElement>, rowId: string) => void;
 }
@@ -98,11 +107,14 @@ function messageQuote(message: MessagesTimelineRow & { kind: "message" }): strin
 
 function deriveStructure(identity: string, rows: ReadonlyArray<MessagesTimelineRow>) {
   const quotes = new Map<string, string>();
+  const matchTexts = new Map<string, string>();
   for (const row of rows) {
-    if (row.kind === "message" && row.message.role === "user")
-      quotes.set(row.id, messageQuote(row));
+    if (row.kind !== "message" || row.message.role !== "user") continue;
+    const quote = messageQuote(row);
+    quotes.set(row.id, quote);
+    matchTexts.set(row.id, reLineMatchText(quote));
   }
-  return { identity, rows, map: deriveExchangeMap(rows), quotes };
+  return { identity, rows, map: deriveExchangeMap(rows), quotes, matchTexts };
 }
 
 function hasTextSelection() {
@@ -207,8 +219,9 @@ export function useExchangeThread(input: {
     current = deriveStructure(identity, rows);
     setStructure(current);
   }
-  const { map, quotes } = current;
+  const { map, quotes, matchTexts } = current;
   const markersEnabled = useClientSettings(replyMarkersEnabled);
+  const bubbleOpensThread = useClientSettings(messageClickOpensThread);
 
   const [opened, setOpened] = useState<OpenThread | null>(null);
   const [closing, setClosing] = useState(false);
@@ -365,7 +378,9 @@ export function useExchangeThread(input: {
   const context: ExchangeThreadContextValue = {
     map,
     quotes,
+    matchTexts,
     markersEnabled,
+    bubbleOpensThread,
     open,
     openFromBubble,
   };
@@ -423,39 +438,65 @@ export function ExchangeReplyMarker({ row }: { row: MessagesTimelineRow }) {
   );
 }
 
-/**
- * "1 reply" under a message whose reply landed further down. Otherwise a View thread button
- * that shows only on keyboard focus, since a click on the bubble opens the thread.
- */
+/** "1 reply" under a message whose reply landed further down. */
 export function ExchangeReplyLink({ row }: { row: MessagesTimelineRow }) {
   const { ctx, exchange } = useExchange(row.id);
-  if (!ctx || !exchange) return null;
-  const replyLink =
-    ctx.markersEnabled && exchange.replyRowId !== null && exchange.earlierRowIds.includes(row.id);
-  const control = replyLink ? "reply-link" : "view-thread";
+  if (!ctx || !ctx.markersEnabled || !exchange) return null;
+  if (exchange.replyRowId === null || !exchange.earlierRowIds.includes(row.id)) return null;
   return (
     <button
       type="button"
-      data-exchange-thread-control={control}
+      data-exchange-thread-control="reply-link"
       data-exchange-control-row={row.id}
-      onClick={() => ctx.open({ rowId: row.id, control })}
-      className={cn(
-        "me-1 cursor-pointer rounded-sm text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring",
-        !replyLink && "sr-only focus-visible:not-sr-only",
-      )}
+      onClick={() => ctx.open({ rowId: row.id, control: "reply-link" })}
+      className="me-1 cursor-pointer rounded-sm text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
     >
-      {replyLink ? "1 reply" : "View thread"}
+      1 reply
     </button>
   );
 }
 
-/** What a message bubble spreads on itself so a click on it opens its exchange. */
+/** Opens the thread of a row that belongs to an exchange with a user message; null otherwise. */
+export function useExchangeThreadOpener(rowId: string): (() => void) | null {
+  const { ctx, exchange } = useExchange(rowId);
+  if (!ctx || !exchange || exchange.userRowIds.length === 0) return null;
+  const { open } = ctx;
+  return () => open({ rowId, control: "view-thread" });
+}
+
+/** The View thread button in a message's actions. */
+export function ExchangeThreadButton({ rowId }: { rowId: string }) {
+  const openThread = useExchangeThreadOpener(rowId);
+  if (!openThread) return null;
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            type="button"
+            size="xs"
+            variant="ghost-muted"
+            aria-label="View thread"
+            data-exchange-thread-control="view-thread"
+            data-exchange-control-row={rowId}
+            onClick={openThread}
+          />
+        }
+      >
+        <MessagesSquareIcon className="size-3" />
+      </TooltipTrigger>
+      <TooltipPopup side="top">View thread</TooltipPopup>
+    </Tooltip>
+  );
+}
+
+/** What a message bubble spreads on itself so a click on it opens its exchange, when that is on. */
 export function useExchangeBubble(rowId: string): {
   onClick?: (event: MouseEvent<HTMLElement>) => void;
   style?: CSSProperties;
 } {
   const { ctx, exchange } = useExchange(rowId);
-  if (!ctx || !exchange || exchange.userRowIds.length === 0) return {};
+  if (!ctx?.bubbleOpensThread || !exchange || exchange.userRowIds.length === 0) return {};
   const { openFromBubble } = ctx;
   return {
     onClick: (event) => openFromBubble(event, rowId),
@@ -463,28 +504,37 @@ export function useExchangeBubble(rowId: string): {
   };
 }
 
-/** An agent's opening "Re:" lines, drawn small and muted; they open the thread they answer. */
+/**
+ * An agent's opening "Re:" lines, drawn small and muted. A line that quotes one of its
+ * exchange's messages opens the thread; any other line stays text.
+ */
 export function ExchangeReLines({ rowId, lines }: { rowId: string; lines: ReadonlyArray<ReLine> }) {
   const { ctx, exchange } = useExchange(rowId);
-  const className =
-    "mb-1.5 block max-w-full text-start text-xs whitespace-pre-line text-muted-foreground [overflow-wrap:anywhere]";
-  const content = lines.map((line) => line.text).join("\n");
-  if (!ctx || !exchange || exchange.userRowIds.length === 0) {
-    return <p className={className}>{content}</p>;
-  }
+  const messageMatchTexts =
+    ctx && exchange ? exchange.userRowIds.flatMap((id) => ctx.matchTexts.get(id) ?? []) : [];
   return (
-    <button
-      type="button"
-      data-exchange-thread-control="re-line"
-      data-exchange-control-row={rowId}
-      onClick={() => ctx.open({ rowId, control: "re-line" })}
-      className={cn(
-        className,
-        "cursor-pointer rounded-sm underline-offset-2 transition-colors hover:text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-ring",
+    <div className="mb-1.5 flex max-w-full flex-col items-start text-start text-xs text-muted-foreground [overflow-wrap:anywhere]">
+      {lines.map((line, index) =>
+        ctx && reLineQuotesMessage(line.excerpt, messageMatchTexts) ? (
+          <button
+            // oxlint-disable-next-line react/no-array-index-key -- a streaming line keeps its slot as its text grows
+            key={index}
+            type="button"
+            data-exchange-thread-control="re-line"
+            data-exchange-control-row={rowId}
+            onClick={() => ctx.open({ rowId, control: "re-line" })}
+            className="max-w-full cursor-pointer rounded-sm text-start underline-offset-2 transition-colors hover:text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-ring"
+          >
+            {line.text}
+          </button>
+        ) : (
+          // oxlint-disable-next-line react/no-array-index-key -- a streaming line keeps its slot as its text grows
+          <span key={index} className="max-w-full">
+            {line.text}
+          </span>
+        ),
       )}
-    >
-      {content}
-    </button>
+    </div>
   );
 }
 
