@@ -53,7 +53,11 @@ export function TeamProjectSettings(props: {
         projectKey={entry.project.key}
       />
       {local === undefined ? null : (
-        <AgentsBoardBranchSetting environmentId={environmentId} projectId={local.id} />
+        <AgentsBoardBranchSetting
+          key={`${environmentId}:${local.id}`}
+          environmentId={environmentId}
+          projectId={local.id}
+        />
       )}
     </SettingsSection>
   );

@@ -195,7 +195,11 @@ export function RightPanelSurfaceContent(props: {
     case "agents-board":
       return (
         <Suspense fallback={null}>
-          <AgentsBoardPanel threadRef={threadRef} projectId={props.pullRequest.projectId} />
+          <AgentsBoardPanel
+            key={`${threadRef.environmentId}:${props.pullRequest.projectId}`}
+            threadRef={threadRef}
+            projectId={props.pullRequest.projectId}
+          />
         </Suspense>
       );
     case "side-chat":
