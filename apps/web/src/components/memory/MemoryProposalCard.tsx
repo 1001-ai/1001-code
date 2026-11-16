@@ -24,7 +24,7 @@ import { useEnvironmentScope } from "~/state/session";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { Button } from "../ui/button";
 import { Textarea } from "../ui/textarea";
-import { memoryProposalInput, proposalForCall } from "./memoryProposal.logic";
+import { memoryProposalInput, proposalForCall, proposalTarget } from "./memoryProposal.logic";
 
 /** Accept for me, Accept for team, Reject: one person's click, from this client's session. */
 export function useMemoryDecision(environmentId: EnvironmentId, projectId: ProjectId | null) {
@@ -54,6 +54,8 @@ export function MemoryDecisionButtons(props: {
   readonly canDecide: boolean;
   /** Accepting needs a line to save; rejecting never does. */
   readonly acceptDisabled?: boolean;
+  /** A voice agent memory is one person's, so it has no team choice. */
+  readonly personalOnly?: boolean;
   readonly onChoose: (choice: MemoryChoice) => void;
 }) {
   const disabled = props.busy !== null || !props.canDecide;
@@ -66,16 +68,18 @@ export function MemoryDecisionButtons(props: {
         disabled={acceptDisabled}
         onClick={() => props.onChoose("me")}
       >
-        {props.busy === "me" ? "Saving…" : "Accept for me"}
+        {props.busy === "me" ? "Saving…" : props.personalOnly ? "Accept" : "Accept for me"}
       </Button>
-      <Button
-        size="xs"
-        variant="outline"
-        disabled={acceptDisabled}
-        onClick={() => props.onChoose("team")}
-      >
-        {props.busy === "team" ? "Saving…" : "Accept for team"}
-      </Button>
+      {props.personalOnly ? null : (
+        <Button
+          size="xs"
+          variant="outline"
+          disabled={acceptDisabled}
+          onClick={() => props.onChoose("team")}
+        >
+          {props.busy === "team" ? "Saving…" : "Accept for team"}
+        </Button>
+      )}
       <Button
         size="xs"
         variant="ghost-muted"
@@ -85,6 +89,15 @@ export function MemoryDecisionButtons(props: {
         Reject
       </Button>
     </>
+  );
+}
+
+/** The memory a voice agent proposal takes the place of, shown above or below the new line. */
+export function MemoryReplaces(props: { readonly replaces: string | null }) {
+  return props.replaces === null ? null : (
+    <p className="text-xs text-muted-foreground [overflow-wrap:anywhere]">
+      Replaces: <span className="line-through">{props.replaces}</span>
+    </p>
   );
 }
 
@@ -117,10 +130,14 @@ function MemoryOutcome(props: {
   return (
     <p className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
       <CheckIcon aria-hidden className="size-3.5 shrink-0 text-success-foreground" />
-      <span>
-        Accepted {decision.choice === "me" ? "for you" : "for the team"}
-        {where}
-      </span>
+      {props.proposal.category === undefined ? (
+        <span>
+          Accepted {decision.choice === "me" ? "for you" : "for the team"}
+          {where}
+        </span>
+      ) : (
+        <span>Accepted for the voice agent</span>
+      )}
       {decision.merged ? (
         <span>· {link("merged")} · applies from the next turn</span>
       ) : (
@@ -156,6 +173,7 @@ export function MemoryProposalCard(props: {
   if (call === null) return null;
 
   const pending = proposal !== undefined && proposal.decision === null;
+  const target = proposalTarget(proposal, call);
   return (
     <div
       data-v2-item-type="memory-proposal"
@@ -164,7 +182,9 @@ export function MemoryProposalCard(props: {
       <div className="min-w-0 text-sm [overflow-wrap:anywhere]">
         <span className="me-2 font-mono text-2xs text-muted-foreground">memory</span>
         {pending ? (
-          <span className="font-medium">Remember this?</span>
+          <span className="font-medium">
+            {target.voiceAgent ? "Remember this for the voice agent?" : "Remember this?"}
+          </span>
         ) : (
           <span
             className={
@@ -177,6 +197,9 @@ export function MemoryProposalCard(props: {
           </span>
         )}
       </div>
+      {proposal?.decision?.choice === "reject" ? null : (
+        <MemoryReplaces replaces={target.replaces} />
+      )}
       {pending ? (
         <>
           <Textarea
@@ -199,6 +222,7 @@ export function MemoryProposalCard(props: {
               busy={decision.busy}
               canDecide={decision.canDecide}
               acceptDisabled={(draft ?? proposal.text).trim() === ""}
+              personalOnly={target.voiceAgent}
               onChoose={(choice) => void decision.submit(proposal, choice, draft ?? proposal.text)}
             />
             <span className="min-w-0 flex-1" />

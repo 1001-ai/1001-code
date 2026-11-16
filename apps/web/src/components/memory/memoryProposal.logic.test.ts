@@ -1,7 +1,7 @@
 import type { MemoryProposal } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { memoryProposalInput, proposalForCall } from "./memoryProposal.logic";
+import { memoryProposalInput, proposalForCall, proposalTarget } from "./memoryProposal.logic";
 
 const proposal = (id: string, createdAt: string, text = "Use tabs."): MemoryProposal =>
   ({
@@ -34,12 +34,40 @@ describe("proposalForCall", () => {
 
 describe("memoryProposalInput", () => {
   it("reads the proposed line and reason, and refuses an empty line", () => {
+    const general = { voiceAgent: false, replaces: null };
     expect(memoryProposalInput({ text: "  Use tabs. ", reason: " Said twice. " })).toEqual({
       text: "Use tabs.",
       reason: "Said twice.",
+      ...general,
     });
-    expect(memoryProposalInput({ text: "Use tabs." })).toEqual({ text: "Use tabs.", reason: "" });
+    expect(memoryProposalInput({ text: "Use tabs." })).toEqual({
+      text: "Use tabs.",
+      reason: "",
+      ...general,
+    });
     expect(memoryProposalInput({ text: "  " })).toBeNull();
     expect(memoryProposalInput("Use tabs.")).toBeNull();
+  });
+
+  it("reads what a voice agent memory replaces, and ignores it on any other memory", () => {
+    const voice = memoryProposalInput({
+      text: "Two sentences per agent.",
+      category: "voice-agent-memories",
+      replaces: " One sentence per agent. ",
+    });
+    expect(voice).toMatchObject({ voiceAgent: true, replaces: "One sentence per agent." });
+    expect(memoryProposalInput({ text: "Use tabs.", replaces: "Use spaces." })).toMatchObject({
+      voiceAgent: false,
+      replaces: null,
+    });
+    // The stored proposal wins over the call once it loads.
+    expect(proposalTarget(undefined, voice)).toEqual({
+      voiceAgent: true,
+      replaces: "One sentence per agent.",
+    });
+    expect(proposalTarget(proposal("first", "2026-11-15T10:00:01.000Z"), voice)).toEqual({
+      voiceAgent: false,
+      replaces: null,
+    });
   });
 });
