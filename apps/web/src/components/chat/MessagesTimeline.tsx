@@ -140,6 +140,8 @@ import { ThreadActivityAnnouncer } from "./ThreadActivityAnnouncer";
 import { useStableHandoffRuns, useIncrementalTimelineRows, useStableRows } from "./useTimelineRows";
 import { useClientSettings } from "../../hooks/useSettings";
 import { ExchangeThreadView, useExchangeThread } from "./ExchangeThread";
+import { useLampLayer } from "../lamp/LampLayer";
+import { LampTranscriptTimelineRow, useLampTranscriptRows } from "../lamp/LampTranscript";
 
 function timelineListStateFor(identity: string): {
   readonly identity: string;
@@ -752,7 +754,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     toolCallVisibility,
     revealedMessageId,
   });
-  const rows = useStableRows(rawRows, listIdentityKey);
+  const rows = useLampTranscriptRows(useStableRows(rawRows, listIdentityKey), listIdentityKey);
   const matchedApprovalRequestIds = new Set<string>();
   for (const row of pendingApprovalRequestIds.size > 0 ? rows : []) {
     const entries =
@@ -826,13 +828,19 @@ const ConversationTimeline = memo(function ConversationTimeline({
   const [timelineViewportElement, setTimelineViewportElement] = useState<HTMLDivElement | null>(
     null,
   );
+  const lampLayer = useLampLayer({
+    threadKey: listIdentityKey,
+    bottomInset: showsEmptyState ? emptyPlaceholderInset : contentInsetEndAdjustment,
+    topFadeEnabled,
+    empty: showsEmptyState,
+  });
   const exchangeThread = useExchangeThread({
     rows,
     identity: listIdentityKey,
     viewport: timelineViewportElement,
     threadRef: citationThreadRef,
     onReplyToResponse,
-    suspended: findActive,
+    suspended: findActive || lampLayer.open,
     awaitingUser,
   });
   const {
@@ -1398,6 +1406,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
         <>
           {activityAnnouncer}
           <div className="h-full min-h-0 bg-background" data-timeline-loading="true" />
+          {lampLayer.element}
         </>
       );
     }
@@ -1410,6 +1419,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
         >
           <p className="text-sm text-muted-foreground">Send a message to start the conversation.</p>
         </div>
+        {lampLayer.element}
       </>
     );
   }
@@ -1504,6 +1514,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
                 renderRow={(row) => renderItem({ item: row })}
               />
             ) : null}
+            {lampLayer.element}
           </TooltipScrollDismissArea>
         </TimelineRowActivityCtx>
       </MarkdownFindContext>
@@ -1690,6 +1701,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       {row.kind === "working" ? <WorkingTimelineRow row={row} /> : null}
       {row.kind === "worktree-setup" ? <WorktreeSetupTimelineRow row={row} /> : null}
       {row.kind === "event" ? <V2EventTimelineRow row={row} /> : null}
+      {row.kind === "lamp-transcripts" ? <LampTranscriptTimelineRow row={row} /> : null}
     </div>
   );
 });

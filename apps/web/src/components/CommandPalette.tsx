@@ -250,7 +250,9 @@ import { useTeamProjectPaletteGroups } from "./teamProjects/useTeamProjectPalett
 import { useTeamProjectsDrawerToggle } from "./teamProjects/teamProjectsDrawerState";
 import { boardPaletteAction } from "./board/boardSurface";
 import { memoryPaletteAction } from "./memory/memorySurface";
+import { agentsBoardPaletteAction } from "./agentsBoard/agentsBoardSurface";
 import { questionsPaletteAction } from "./questions/questionsEntryPoints";
+import { useLampPaletteAction } from "./lamp/lampEntryPoints";
 import { useCommandPaletteThreadItems } from "./CommandPaletteThreadItems";
 import { useCommandPaletteThemeItems } from "./CommandPaletteThemeItems";
 import {
@@ -1240,6 +1242,7 @@ function OpenCommandPaletteDialog(props: {
     closePalette: () => setOpen(false),
   });
   const teamProjectsDrawer = useTeamProjectsDrawerToggle();
+  const lampPaletteAction = useLampPaletteAction();
 
   const openAddProjectFlow = () => {
     switch (addProjectEntry.kind) {
@@ -1495,6 +1498,7 @@ function OpenCommandPaletteDialog(props: {
     actionItems.push(
       boardPaletteAction(scopeThreadRef(activeThread.environmentId, activeThread.id)),
       memoryPaletteAction(scopeThreadRef(activeThread.environmentId, activeThread.id)),
+      agentsBoardPaletteAction(scopeThreadRef(activeThread.environmentId, activeThread.id)),
     );
   }
 
@@ -1668,6 +1672,7 @@ function OpenCommandPaletteDialog(props: {
     });
   }
   actionItems.push(questionsPaletteAction(() => navigate({ to: "/questions" })));
+  if (lampPaletteAction) actionItems.push(lampPaletteAction);
 
   actionItems.push({
     kind: "action",

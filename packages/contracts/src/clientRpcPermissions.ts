@@ -29,10 +29,18 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   [WS_METHODS.serverListTextGeneratorModels]: AuthSettingsWriteScope,
   [WS_METHODS.teamCatalogSetSource]: AuthSettingsWriteScope,
   [WS_METHODS.boardConnect]: AuthSettingsWriteScope,
+  // Posts to Linear as the signed-in person and starts a turn in the linked thread.
+  [WS_METHODS.boardComment]: AuthOrchestrationOperateScope,
   [WS_METHODS.boardDisconnect]: AuthSettingsWriteScope,
   [WS_METHODS.teamCatalogPropose]: AuthSourceControlWriteScope,
   [WS_METHODS.memoryPropose]: AuthSourceControlWriteScope,
   [WS_METHODS.memoryDecide]: AuthSourceControlWriteScope,
+  [WS_METHODS.agentsBoardSetBranch]: AuthSettingsWriteScope,
+  // Each starts or steers a turn of the voice agent, or ends its conversation.
+  [WS_METHODS.voiceAgentOpen]: AuthOrchestrationOperateScope,
+  [WS_METHODS.voiceAgentSay]: AuthOrchestrationOperateScope,
+  [WS_METHODS.voiceAgentClose]: AuthOrchestrationOperateScope,
+  [WS_METHODS.voiceAgentMediaStep]: AuthOrchestrationOperateScope,
   [WS_METHODS.serverRefreshProviders]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsRunAction]: AuthSourceControlWriteScope,
   [WS_METHODS.pullRequestsUpdate]: AuthSourceControlWriteScope,

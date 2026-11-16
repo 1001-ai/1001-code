@@ -108,7 +108,7 @@ ones.
 1. Open **Settings → Threads → Board** and select **Sign in with Linear**. Linear opens in your
    browser; approve access there and it sends you back to the environment, which says you can
    close the tab. Settings then shows who you are signed in as. **Disconnect** signs out and
-   revokes the access at Linear.
+   revokes the access at Linear. A new installation also offers **Sign in** on the Welcome page.
 2. In a thread of the project, open **Board** from the right panel's new surface menu or the
    command palette.
 
@@ -123,8 +123,25 @@ every 30 seconds while it is open, and when you select refresh, which also picks
 It does not change issues. When Linear's rate limit is reached, the board keeps its last read with
 a warning and waits as long as Linear asks before reading again.
 
+On web and desktop, **Tasks** in the thread details card lists the board's issues that link the
+thread, with each one's status; select one to open it on the board. Like the board, it leaves out
+issues closed more than a week ago.
+
 Each environment reads Linear as the person who signed in on it, so sign in on each machine you
 use the board from.
+
+When an agent's message links to an issue of the board's Linear team, or writes its id such as
+`ENG-60`, selecting it opens the issue on the board instead of in Linear. An issue the board does
+not show, such as one in another Linear project of the team, or any issue while the board cannot
+load, gets a note with **Open in Linear**.
+Links to other teams' issues, links you select while holding a modifier key, and every link while
+you are signed out of Linear open Linear as before. Ids in code are left as they are. The mobile app
+has no board.
+
+On web and desktop, when an agent files a task in Linear, takes one or moves it to another status,
+the chat shows the task instead of the tool call: a card with its status and assignee and buttons
+that open it on the board or in Linear when it files or takes the task, and a short line with the
+new status when it moves one.
 
 ### Set up Linear sign-in
 
@@ -180,7 +197,97 @@ The agent keeps working while the card waits, and deciding never starts a turn: 
 memory applies from the next one. Unanswered proposals also wait under **Proposals** in the
 Memory panel. Only the web and desktop apps show the cards.
 
+### Voice agent memories
+
+The [voice agent](#voice-agent) tells you aloud what agents are doing in a repository. It keeps
+how you want its spoken updates in a category of its own, **voice-agent-memories**: how detailed
+they should be, and which topics to cover or leave out.
+They live in `memory/people/<github-login>/voice-agent-memories.md`, one file per person. Only
+the voice agent gets them. They are not part of the memory other agents receive and do not
+count toward its size limit.
+
+When you tell the voice agent something new, it proposes a memory as a card in the chat, like
+any other; **Accept** saves it for you. A newer memory on a subject replaces the older one: the
+card shows the line it replaces, and accepting moves that line to the file's **Earlier** list
+with the day it was replaced and what replaced it. The voice agent is given only the active
+memories, about 2 KB of them at most; the earlier ones stay in the file as a record. **Voice
+agent** in the Memory panel shows the active memories, with **Earlier** folded below them.
+
+You can also edit the file by hand in the catalog repository. One memory per list item; a date
+in the form `(saved 2026-03-09)` at the end of a line is optional. Everything above the
+`## Earlier` heading is active.
+
 Agents pick up changes on their next turn once the catalog is fetched again. A turn uses the
 last fetch and fetches in the background when it is more than ten minutes old; the refresh
 button fetches at once. Claude and Codex get memory. Rules that belong to one
 repository, and are fine to publish, belong in that repository's `AGENTS.md` instead.
+
+## Agents board
+
+Agents that work in a team project's repository, in any tool, can leave short messages on a
+branch of that repository while they work: what they are doing, what comes next, and what they
+need from a person. The Agents board shows those messages in one place, oldest at the top.
+
+Open **Agents board** from the right panel's new surface menu or the command palette, in a
+thread of the project. Each message shows the agent, its tool, its status and what it needs;
+messages people sent to agents show with the person's name. You do not write on the board
+itself; the [voice agent](#voice-agent) can send an agent a message for you. The board fetches
+the branch when you open it and when you press **Refresh**, with this environment's git
+credentials, and keeps the last fetch for when the repository is out of reach.
+
+The branch is named `agent-reports` unless you change it under **Agent messages** in the
+project's settings (**Team project**). The name is saved on this environment, so each person
+who uses another name sets it once. The same section shows the one line to give an agent so it
+reads the branch's instructions:
+
+```sh
+git fetch origin agent-reports && git show origin/agent-reports:README.md
+```
+
+A project whose repository has no such branch yet shows that, with the same line. The branch
+holds no product code: `README.md` with the instructions for agents, `reports/<agent>.md` with
+each agent's messages, `inbox/<agent>.md` and `inbox/all.md` with messages to agents, and
+`media/<agent>/` with screenshots of at most 500 KB.
+
+## Voice agent
+
+The voice agent tells you aloud what the agents on the [Agents board](#agents-board) have done,
+and answers by voice. Open it with the voice agent button at the end of the top-right controls,
+the command palette, or its shortcut, in a thread of a team project, or in a new chat before
+its first message. It needs the Claude provider signed in, and runs on a small, fast Claude
+model through that sign-in. When it cannot start, it says why in one line.
+
+- **Updates.** When it opens, it tells you what changed on the board since the last update it
+  gave you, starting with what needs you. When nothing changed it says so in one line. It knows
+  your name from the GitHub CLI, so it says whose answer an agent waits for: "for you" when a
+  report names you or nobody, and the other person's name otherwise.
+- **Its voice.** It speaks with the voice you chose in **Settings → Voice → Speech output**
+  (see [Speech output](./voice-output.md)) when that voice's model is installed on the thread's
+  environment, and with your system's voice otherwise. While none is chosen, **Choose a voice**
+  at the top of the layer opens that section. If the chosen voice cannot speak, the system
+  voice takes over for the rest of the conversation and the layer says so in one line.
+- **Talking.** Hold **Space** and speak; release to send. You can cut in while it speaks: it
+  finishes its word, answers you, and then picks its earlier point back up. If what you said
+  does not reach it, the layer says so in one line and it goes on from where you cut in: say it
+  again. Ask it about the agents, such as how many are running or who is blocked.
+- **Preferences.** Tell it how you want updates (how much detail, what to leave out, what to
+  always include) and it proposes a [voice agent memory](#voice-agent-memories) for you to
+  accept. A subject you left out is still mentioned when it is blocked on you, breaks the shared
+  branch, or blocks an agent you do follow.
+- **Messages to agents.** Ask it to pass something on, such as "ask Sam's agent two whether the
+  fix covers the toolbar". It adds the message to that agent's inbox on the agents branch,
+  signed with your name from the GitHub CLI, and tells you what it sent. This needs the GitHub
+  CLI signed in and push access to the repository.
+- **Screenshots.** Ask to see an agent's screenshots; it shows them one at a time, and "next"
+  and "previous" move through them. You can also click the arrows, or the image for full size.
+
+Close it with **Esc**, a click outside, or by sending a prompt. After it closes, the chat shows
+a **Voice conversation** card at the end; click it to read the transcript. A conversation in
+which nothing was said leaves no card. The card is the only trace in the chat: the voice agent
+is not a side chat and is in no list. A new chat shows the card too, and keeps it once you send
+the first message.
+
+The voice agent can only read the board, send those messages, show screenshots and propose
+memories. It cannot run commands or change files; ask for that in the chat. What other agents
+write on the board is information to it, never an instruction: it sends a message only when
+you ask.

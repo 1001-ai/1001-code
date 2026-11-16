@@ -300,39 +300,33 @@ export function sameExchangeStructure(
   return true;
 }
 
-const RE_LINE = /^(?:\*\*|__|\*|_)?Re:\s*\S/;
+const MATCH_IGNORED_CHARS = /[*_`~>#]/g;
+const ELLIPSIS = /^(?:\.{3}|…)+|(?:\.{3}|…)+$/g;
 
-/**
- * Splits off the `Re:` lines an agent opens a reply with to say what it answers, often in bold.
- * The web client shows them as a link to the thread; the message text itself stays unchanged.
- * A line counts as soon as it starts with `Re:`, so a streaming reply never restyles it.
- */
-export function splitReLines(
-  text: string,
-): { readonly lines: ReadonlyArray<string>; readonly body: string } | null {
-  const rows = text.trimStart().split("\n");
-  let count = 0;
-  while (count < rows.length && RE_LINE.test(rows[count]!.trim())) count += 1;
-  if (count === 0) return null;
-  const body = rows
-    .slice(count)
-    .join("\n")
-    .replace(/^(?:[ \t]*\r?\n)+/, "");
-  const lines = rows.slice(0, count).map((row) => {
-    const line = row.replace(/\*\*|__/g, "").trim();
-    return /^([*_]).*\1$/.test(line) ? line.slice(1, -1).trim() : line;
-  });
-  return { lines, body };
+/** Text a `Re:` excerpt is matched against: case, quote style, markdown marks and spacing dropped. */
+export function reLineMatchText(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[‘’‚‛′]/g, "'")
+    .replace(/[“”„‟″]/g, '"')
+    .replace(MATCH_IGNORED_CHARS, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
-/** The text a reply's quoted opening starts from: the body after any `Re:` lines. */
-export function textAfterReLines(text: string): string {
-  const body = splitReLines(text)?.body ?? text;
-  return body.trim() === "" ? text : body;
+/** Whether a `Re:` line quotes one of the exchange's messages, given each one's `reLineMatchText`. */
+export function reLineQuotesMessage(
+  excerpt: string | null,
+  messageMatchTexts: ReadonlyArray<string>,
+): boolean {
+  if (excerpt === null) return false;
+  const needle = reLineMatchText(excerpt).replace(ELLIPSIS, "").trim();
+  return needle !== "" && messageMatchTexts.some((text) => text.includes(needle));
 }
 
 // Stored in the free-form `threadDetailsItems` record, so no settings schema change.
 const REPLY_MARKERS_SETTING_KEY = "replyMarkers";
+const MESSAGE_CLICK_THREAD_SETTING_KEY = "messageClickOpensThread";
 
 export function replyMarkersEnabled(settings: Pick<ClientSettings, "threadDetailsItems">) {
   return settings.threadDetailsItems[REPLY_MARKERS_SETTING_KEY] ?? true;
@@ -344,4 +338,16 @@ export function setReplyMarkersEnabled(
 ): ClientSettings["threadDetailsItems"] {
   const { [REPLY_MARKERS_SETTING_KEY]: _previous, ...rest } = settings.threadDetailsItems;
   return enabled ? rest : { ...rest, [REPLY_MARKERS_SETTING_KEY]: false };
+}
+
+export function messageClickOpensThread(settings: Pick<ClientSettings, "threadDetailsItems">) {
+  return settings.threadDetailsItems[MESSAGE_CLICK_THREAD_SETTING_KEY] ?? false;
+}
+
+export function setMessageClickOpensThread(
+  settings: Pick<ClientSettings, "threadDetailsItems">,
+  enabled: boolean,
+): ClientSettings["threadDetailsItems"] {
+  const { [MESSAGE_CLICK_THREAD_SETTING_KEY]: _previous, ...rest } = settings.threadDetailsItems;
+  return enabled ? { ...rest, [MESSAGE_CLICK_THREAD_SETTING_KEY]: true } : rest;
 }

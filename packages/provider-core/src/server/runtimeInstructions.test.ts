@@ -13,6 +13,7 @@ describe("buildRuntimeInstructions", () => {
     assert.include(instructions, "through the Antigravity harness, as gemini-3.8-flash.");
     assert.notInclude(instructions, "<pull_request_linking>");
     assert.notInclude(instructions, "<asking_the_user>");
+    assert.notInclude(instructions, "<reply_markers>");
   });
 
   it("links PRs the agent creates, takes over, or pushes to, and no others", () => {

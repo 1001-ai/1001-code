@@ -1,4 +1,5 @@
 import {
+  MemoryCategory,
   MEMORY_PROPOSAL_MAX_LENGTH,
   MEMORY_PROPOSAL_REASON_MAX_LENGTH,
   MEMORY_PROPOSE_TOOL_NAME,
@@ -24,6 +25,21 @@ const MemoryProposeTool = Tool.make(MEMORY_PROPOSE_TOOL_NAME, {
     reason: Schema.String.check(Schema.isMaxLength(MEMORY_PROPOSAL_REASON_MAX_LENGTH)).annotate({
       description: "Why it is worth remembering, such as the user correcting you twice.",
     }),
+    category: Schema.optional(
+      MemoryCategory.annotate({
+        description:
+          'Only the voice agent sets this, to "voice-agent-memories", for how the user wants its spoken updates: their detail and topics. Leave it out for every other memory.',
+      }),
+    ),
+    replaces: Schema.optional(
+      Schema.String.check(
+        Schema.isMinLength(1),
+        Schema.isMaxLength(MEMORY_PROPOSAL_MAX_LENGTH),
+      ).annotate({
+        description:
+          'Only with category "voice-agent-memories": the exact text of the active memory this one changes or contradicts. The new memory takes its place. Leave it out for a new subject.',
+      }),
+    ),
   }),
   success: Schema.Struct({
     status: Schema.Literal("pending"),

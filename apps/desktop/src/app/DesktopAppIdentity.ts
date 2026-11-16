@@ -93,7 +93,7 @@ export const make = Effect.gen(function* () {
   const configure = Effect.gen(function* () {
     const commitHash = yield* resolveAboutCommitHash;
     // Electron strips spaces but keeps parentheses in its User-Agent token, breaking Turnstile in preview sessions.
-    // Identity, not display: User-Agent, logs folder, Linux window class and the macOS "<name> Safe Storage" Keychain item.
+    // Identity, not display: User-Agent, logs folder and Linux window class. The macOS Keychain item takes productName instead.
     const identityName = environment.isDevelopment ? "T3 Code" : FORK_DESKTOP.productName;
     yield* electronApp.setName(`${identityName} ${environment.branding.stageLabel}`);
     yield* electronApp.setAboutPanelOptions({

@@ -11,12 +11,14 @@ import { describe, expect, it } from "vite-plus/test";
 import { responseContextRecord } from "~/lib/composerContextRecords";
 import {
   deriveExchangeMap,
+  messageClickOpensThread,
+  reLineMatchText,
+  reLineQuotesMessage,
   replyMarkersEnabled,
   sameExchangeStructure,
+  setMessageClickOpensThread,
   setReplyMarkersEnabled,
   shouldAttachThreadReply,
-  splitReLines,
-  textAfterReLines,
   threadTriggerFocusSelectors,
   canRestoreFocusTo,
   threadExchangeKeys,
@@ -277,55 +279,23 @@ describe("sameExchangeStructure", () => {
   });
 });
 
-describe("splitReLines", () => {
+describe("reLineQuotesMessage", () => {
+  const messages = [
+    "Can you fix the **bubble** click?\n\n> It’s   opening the “thread” twice",
+    "Also rename snake_case_name",
+  ].map(reLineMatchText);
   it.each([
-    {
-      name: "a bold Re: line splits off without its emphasis",
-      text: '**Re: "fix the bubble"** and **"the line"**\nDone. The **bubble** opens it.',
-      expected: {
-        lines: ['Re: "fix the bubble" and "the line"'],
-        body: "Done. The **bubble** opens it.",
-      },
-    },
-    {
-      name: "a plain Re: paragraph, then a blank line",
-      text: '  Re: "first words" / "more words"\r\n \r\n\n- one\n- two',
-      expected: { lines: ['Re: "first words" / "more words"'], body: "- one\n- two" },
-    },
-    {
-      name: "several Re: lines in a row read as one block",
-      text: "_Re: one_\n**Re: two**\nBody\n\n**Re: later stays in the body**",
-      expected: { lines: ["Re: one", "Re: two"], body: "Body\n\n**Re: later stays in the body**" },
-    },
-    {
-      name: "the body keeps an indented code block's indent",
-      text: "Re: the script\n\n    run it\n",
-      expected: { lines: ["Re: the script"], body: "    run it\n" },
-    },
-    {
-      name: "a Re: line still streaming is already a Re: line",
-      text: '**Re: "half a quo',
-      expected: { lines: ['Re: "half a quo'], body: "" },
-    },
-    {
-      name: "nothing after the Re: line yet",
-      text: "Re: done\n\n  \n",
-      expected: { lines: ["Re: done"], body: "" },
-    },
-    { name: "an empty Re:", text: "Re:\nBody", expected: null },
-    { name: "Re: later in the reply", text: "Done.\n\nRe: the rest", expected: null },
-    { name: "a word that starts with Re", text: "Reading it now\nBody", expected: null },
-    { name: "lowercase re:", text: "re: it\nBody", expected: null },
-  ])("$name", ({ text, expected }) => {
-    expect(splitReLines(text)).toEqual(expected);
-  });
-
-  it.each([
-    { text: '**Re: "fix it"**\nDone. Fixed.', opening: "Done. Fixed." },
-    { text: "Done. Fixed.", opening: "Done. Fixed." },
-    { text: "**Re: only this**", opening: "**Re: only this**" },
-  ])("a reply's opening skips Re: lines: $text", ({ text, opening }) => {
-    expect(textAfterReLines(text)).toBe(opening);
+    { name: "exact words", excerpt: "fix the bubble click", quotes: true },
+    { name: "case and spacing differ", excerpt: "Can you  FIX the", quotes: true },
+    { name: "across a quote mark", excerpt: 'It\'s opening the "thread" twice', quotes: true },
+    { name: "markdown marks in the excerpt", excerpt: "the *bubble* click", quotes: true },
+    { name: "a trailing ellipsis", excerpt: "rename snake_case_name…", quotes: true },
+    { name: "words from no message", excerpt: "fix the sidebar", quotes: false },
+    { name: "words spanning two messages", excerpt: "twice also rename", quotes: false },
+    { name: "only an ellipsis", excerpt: "...", quotes: false },
+    { name: "a line still streaming", excerpt: null, quotes: false },
+  ])("$name", ({ excerpt, quotes }) => {
+    expect(reLineQuotesMessage(excerpt, messages)).toBe(quotes);
   });
 });
 
@@ -336,5 +306,13 @@ describe("reply markers setting", () => {
     expect(off).toEqual({ usage: true, replyMarkers: false });
     expect(replyMarkersEnabled({ threadDetailsItems: off })).toBe(false);
     expect(setReplyMarkersEnabled({ threadDetailsItems: off }, true)).toEqual({ usage: true });
+  });
+
+  it("leaves message clicks off by default and stores only the change", () => {
+    expect(messageClickOpensThread({ threadDetailsItems: {} })).toBe(false);
+    const on = setMessageClickOpensThread({ threadDetailsItems: { usage: true } }, true);
+    expect(on).toEqual({ usage: true, messageClickOpensThread: true });
+    expect(messageClickOpensThread({ threadDetailsItems: on })).toBe(true);
+    expect(setMessageClickOpensThread({ threadDetailsItems: on }, false)).toEqual({ usage: true });
   });
 });

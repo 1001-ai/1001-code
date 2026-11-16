@@ -1,7 +1,9 @@
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { AuthSettingsWriteScope, type EnvironmentId } from "@t3tools/contracts";
 import { RefreshCwIcon } from "lucide-react";
+import type { ReactNode } from "react";
 
+import { RelativeTime } from "../RelativeTime";
 import { useEnvironmentScope } from "../../state/session";
 import { teamCatalogRefresh, teamCatalogSetSource, useTeamCatalog } from "../../state/teamCatalog";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -13,13 +15,13 @@ import { useSettingsScope } from "./SettingsScopeContext";
 import { BoardSettings } from "./BoardSettings";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
 
-function catalogStatus(snapshot: NonNullable<ReturnType<typeof useTeamCatalog>>): string {
+function catalogStatus(snapshot: NonNullable<ReturnType<typeof useTeamCatalog>>): ReactNode {
   if (snapshot.source === null) return snapshot.defaultSource === null ? "Not set." : "Off.";
   const status = fetchStatus(snapshot);
-  return snapshot.source === snapshot.defaultSource ? `Default catalog. ${status}` : status;
+  return snapshot.source === snapshot.defaultSource ? <>Default catalog. {status}</> : status;
 }
 
-function fetchStatus(snapshot: NonNullable<ReturnType<typeof useTeamCatalog>>): string {
+function fetchStatus(snapshot: NonNullable<ReturnType<typeof useTeamCatalog>>): ReactNode {
   if (snapshot.refreshing) return "Fetching…";
   const count = `${snapshot.projects.length} project${snapshot.projects.length === 1 ? "" : "s"}`;
   if (snapshot.error !== null) {
@@ -27,12 +29,12 @@ function fetchStatus(snapshot: NonNullable<ReturnType<typeof useTeamCatalog>>): 
       ? `Could not fetch: ${snapshot.error}`
       : `${count} from the last fetch. The latest fetch failed: ${snapshot.error}`;
   }
-  if (snapshot.fetchedAt === null) return count;
-  const time = new Date(snapshot.fetchedAt).toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-  return `${count}, fetched at ${time}.`;
+  if (snapshot.fetchedAt === null) return "Not fetched yet.";
+  return (
+    <>
+      {count}. Updated <RelativeTime timestamp={snapshot.fetchedAt} />.
+    </>
+  );
 }
 
 function TeamCatalogRow(props: {

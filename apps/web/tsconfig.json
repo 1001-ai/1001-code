@@ -9,7 +9,8 @@
     "jsx": "react-jsx",
     "lib": ["ES2023", "ESNext.Disposable", "DOM", "DOM.Iterable"],
     "paths": {
-      "~/*": ["./src/*"]
+      "~/*": ["./src/*"],
+      "@1001-private/lamp": ["./src/components/lamp/lampGlyphFallback.tsx"]
     },
     "plugins": [
       {
@@ -35,6 +36,7 @@
     "scripts/verify-built-boot.ts",
     "scripts/warm-dep-cache.ts",
     "../../scripts/lib/public-config.ts",
+    "../../scripts/lib/private-lamp.ts",
     "../../scripts/lib/third-party-licenses.ts"
   ]
 }

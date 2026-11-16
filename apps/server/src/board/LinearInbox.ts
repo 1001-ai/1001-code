@@ -3,6 +3,7 @@ import {
   EnvironmentId,
   MessageId,
   OrchestrationV2LinkedSender,
+  type OrchestrationV2ThreadShell,
   ProjectId,
   ThreadId,
 } from "@t3tools/contracts";
@@ -216,20 +217,28 @@ const make = Effect.gen(function* () {
     const fields = { comment: comment.id, issue: comment.issue?.identifier ?? null };
     const route = routeComment(comment, { viewerId, environmentId, memberIds });
     if (route._tag === "skip") {
-      return yield* Effect.logDebug("Linear inbox skips a comment.", {
+      return yield* Effect.logInfo("Linear inbox skips a comment.", {
         ...fields,
         reason: route.reason,
       });
     }
     // A failed read fails the poll before the cursor passes this comment, so it is read again.
-    const thread = yield* threads.getThreadShell(route.threadId);
+    let threadId = route.threadIds[0];
+    let thread: OrchestrationV2ThreadShell | null = null;
+    for (const candidate of route.threadIds) {
+      thread = yield* threads.getThreadShell(candidate);
+      if (thread !== null) {
+        threadId = candidate;
+        break;
+      }
+    }
     const instance =
       thread === null ? undefined : yield* instances.getInstance(thread.providerInstanceId);
     // Held comments count for a day from when they arrived, like delivered ones.
     const waiting =
-      recentDeliveries(state.delivered[route.threadId] ?? [], nowMs).length +
+      recentDeliveries(state.delivered[threadId] ?? [], nowMs).length +
       recentDeliveries(
-        state.held.filter((item) => item.threadId === route.threadId).map((item) => item.since),
+        state.held.filter((item) => item.threadId === threadId).map((item) => item.since),
         nowMs,
       ).length;
     const reason =
@@ -239,13 +248,13 @@ const make = Effect.gen(function* () {
     if (thread === null || reason !== null) {
       return yield* Effect.logInfo("Linear inbox skips a comment for a thread.", {
         ...fields,
-        threadId: route.threadId,
+        threadId: threadId,
         reason,
       });
     }
     const title = route.kind === "agent" ? `${route.sender}'s agent` : route.sender;
     const delivery: Delivery = {
-      threadId: route.threadId,
+      threadId: threadId,
       projectId: thread.projectId,
       commentId: comment.id,
       text: framedComment({
@@ -268,7 +277,7 @@ const make = Effect.gen(function* () {
       state = { ...state, held: [...state.held, held] };
       return yield* Effect.logInfo("Linear inbox holds a comment for a full-access thread.", {
         ...fields,
-        threadId: route.threadId,
+        threadId: threadId,
       });
     }
     const retry = yield* deliverOrHold(held);

@@ -1,6 +1,9 @@
 // No T3 imports inside the string; resolve Pi and typebox from the user's Pi install.
 import { T3_CODE_ORCHESTRATION_INSTRUCTIONS } from "@t3tools/provider-core/server/orchestrationInstructions";
-import { QUESTION_CARD_INSTRUCTIONS } from "@t3tools/provider-core/server/runtimeInstructions";
+import {
+  QUESTION_CARD_INSTRUCTIONS,
+  REPLY_MARKER_INSTRUCTIONS,
+} from "@t3tools/provider-core/server/runtimeInstructions";
 
 export const PI_T3_MCP_EXTENSION_FILENAME = "pi-t3-mcp-extension.ts";
 
@@ -26,6 +29,7 @@ const RUNTIME_MODE_ENV = ${JSON.stringify(T3_PI_RUNTIME_MODE_ENV)};
 const EXTENSION_PATH_ENV = ${JSON.stringify(T3_PI_MCP_EXTENSION_PATH_ENV)};
 const ORCHESTRATION_INSTRUCTIONS = ${JSON.stringify(T3_CODE_ORCHESTRATION_INSTRUCTIONS.trim())};
 const QUESTION_CARD_INSTRUCTIONS = ${JSON.stringify(QUESTION_CARD_INSTRUCTIONS)};
+const REPLY_MARKER_INSTRUCTIONS = ${JSON.stringify(REPLY_MARKER_INSTRUCTIONS)};
 const SERVICE_TIER_COMMAND = ${JSON.stringify(PI_T3_SERVICE_TIER_COMMAND)};
 const PROTOCOL = "2025-06-18";
 const READ_ONLY_TOOLS = new Set(["read", "grep", "find", "ls"]);
@@ -253,14 +257,15 @@ function createMcpClient(endpoint: string, token: string) {
 }
 
 export default async function t3McpExtension(pi: ExtensionAPI) {
-  // Question cards need no MCP server, so this hook comes before the endpoint check.
+  // Question cards and Re: lines need no MCP server, so this hook comes before the endpoint check.
   pi.on("before_agent_start", (event) => {
     const sections = event.systemPromptOptions?.sections;
     if (sections && typeof sections === "object" && event.systemPromptOptions?.forceSystemPrompt === undefined) {
       sections.t3_code_question_cards = QUESTION_CARD_INSTRUCTIONS;
+      sections.t3_code_reply_markers = REPLY_MARKER_INSTRUCTIONS;
       return undefined;
     }
-    return { systemPrompt: event.systemPrompt + "\\n\\n" + QUESTION_CARD_INSTRUCTIONS };
+    return { systemPrompt: event.systemPrompt + "\\n\\n" + QUESTION_CARD_INSTRUCTIONS + "\\n\\n" + REPLY_MARKER_INSTRUCTIONS };
   });
 
   // RPC has no trust prompt, so Pi skips an untrusted folder's protected resources. Session

@@ -33,6 +33,7 @@ import { withUntracedRequests } from "./http.ts";
 import * as ServerHttp from "./http.ts";
 import {
   guardHttpResponseWriteErrors,
+  keepIdleConnections,
   rejectRequestsUntilServing,
 } from "./httpResponseErrorGuard.ts";
 import { fixPath } from "./os-jank.ts";
@@ -202,9 +203,14 @@ import * as ThreadCost from "./usage/ThreadCost.ts";
 import * as TeamCatalog from "./teamCatalog/TeamCatalog.ts";
 import * as Board from "./board/Board.ts";
 import * as LinearInbox from "./board/LinearInbox.ts";
+import * as LinearWriteWatch from "./board/LinearWriteWatch.ts";
 import * as LiveAppCheckout from "./liveAppCheckout.ts";
 import * as MemoryLayer from "./memory/layer.ts";
+import * as AgentsBoard from "./agentsBoard/AgentsBoard.ts";
+import * as VoiceAgent from "./voiceAgent/VoiceAgent.ts";
 import * as BoardHttp from "./board/http.ts";
+import * as VoiceOutput from "./voiceOutput/VoiceOutput.ts";
+import * as VoiceOutputHttp from "./voiceOutput/http.ts";
 import * as CodexUsageHistory from "./usage/CodexUsageHistory.ts";
 import * as RuntimeLayer from "./orchestration-v2/runtimeLayer.ts";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
@@ -361,7 +367,7 @@ const layerHttpServer = Layer.unwrap(
     return NodeHttpServer.layer(
       () => {
         const server = rejectRequestsUntilServing(
-          guardHttpResponseWriteErrors(NodeHttp.createServer()),
+          keepIdleConnections(guardHttpResponseWriteErrors(NodeHttp.createServer())),
         );
         if (config.privateNetworkOnly) {
           server.on("connection", (socket) => {
@@ -695,7 +701,11 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   ReplayMarkers.layer,
   ThreadCost.layer,
   TeamCatalog.layer,
-  LinearInbox.layer.pipe(Layer.provideMerge(Board.layer), Layer.provide(TeamCatalog.layer)),
+  Layer.merge(LinearInbox.layer, LinearWriteWatch.layer).pipe(
+    Layer.provideMerge(Board.layer),
+    Layer.provide(TeamCatalog.layer),
+  ),
+  VoiceAgent.layer.pipe(Layer.provideMerge(AgentsBoard.layer), Layer.provide(TeamCatalog.layer)),
   LiveAppCheckout.layer,
   Layer.effectDiscard(ProjectSettingsOverrideSweep.sweep),
 ).pipe(
@@ -807,6 +817,7 @@ const layerMakeRoutes = Layer.mergeAll(
       Layer.provide(PullRequestHttp.layer),
       Layer.provide(ProjectHttp.layer),
       Layer.provide(speechHttpApiLayer),
+      Layer.provide(VoiceOutputHttp.layer),
       Layer.provide(ServerHttp.layerServerEnvironmentHttpApi),
       Layer.provide(WebhookRoute.layer.pipe(Layer.provide(RelayDeliveryProof.layer))),
       Layer.provide(AuthHttp.layerAuthenticatedAuth),
@@ -853,6 +864,9 @@ const layerMakeRoutes = Layer.mergeAll(
       Layer.provideMerge(PeerMcpClient.layer),
       Layer.provideMerge(PeerLinks.layer),
     ),
+  ),
+  Layer.provide(
+    VoiceOutput.layer.pipe(Layer.provide(SpeechModelStore.layer), Layer.provide(TeamCatalog.layer)),
   ),
   Layer.provide(
     SpeechService.layer.pipe(

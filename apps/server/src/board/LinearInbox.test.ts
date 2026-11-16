@@ -48,25 +48,21 @@ const catalog: TeamCatalogSnapshot = {
   fetchedAt: null,
   refreshing: false,
   error: null,
-  projects: [entry("web", "COD"), entry("api", "COD"), entry("docs", null)],
+  projects: [entry("web", "ENG"), entry("api", "ENG"), entry("docs", null)],
   invalid: [],
   viewer: { login: null, problem: null },
 };
 
-const lawrenceComment = (
-  id: string,
-  createdAt: string,
-  body = "agent: proposal",
-): LinearComment => ({
+const samComment = (id: string, createdAt: string, body = "agent: proposal"): LinearComment => ({
   id,
   body,
   createdAt,
-  user: { id: "user-lawrence", name: "Lawrence Smith", displayName: "Lawrence" },
+  user: { id: "user-sam", name: "Sam Lee", displayName: "Sam" },
   botActor: null,
   externalUser: null,
   parent: null,
   issue: {
-    identifier: "COD-2",
+    identifier: "ENG-2",
     state: { type: "started" },
     attachments: {
       nodes: [
@@ -103,7 +99,7 @@ const makeInbox = (baseDir: string, comments: Array<LinearComment>) => {
                   .toSorted((a, b) => b.createdAt.localeCompare(a.createdAt));
                 const page = variables["after"] === null ? 0 : Number(variables["after"]);
                 return {
-                  teams: { nodes: [{ members: { nodes: [{ id: ME }, { id: "user-lawrence" }] } }] },
+                  teams: { nodes: [{ members: { nodes: [{ id: ME }, { id: "user-sam" }] } }] },
                   comments: {
                     nodes: fresh.slice(page, page + 1),
                     pageInfo: { hasNextPage: page + 1 < fresh.length, endCursor: String(page + 1) },
@@ -169,7 +165,7 @@ it.effect(
   "delivers a teammate's agent comment once, labelled, and keeps its place over restarts",
   () =>
     Effect.gen(function* () {
-      const comments = [lawrenceComment("comment-1", "2026-11-15T12:00:00.000Z")];
+      const comments = [samComment("comment-1", "2026-11-15T12:00:00.000Z")];
       const inbox = makeInbox(yield* tempBaseDir, comments);
 
       yield* inbox.poll;
@@ -186,14 +182,14 @@ it.effect(
         linkedSender: {
           environmentId: "linear",
           threadId: "linear-comment-comment-1",
-          title: "Lawrence's agent",
+          title: "Sam Lee's agent",
         },
         mode: "queue",
         createdBy: "agent",
         creationSource: "mcp",
       });
       expect(inbox.sent[0]!.text).toMatch(
-        /^\[Linear comment ([0-9a-f]{8}) on COD-2 from Lawrence's agent\]\nagent: proposal\n\[End of Linear comment \1\. /,
+        /^\[Linear comment ([0-9a-f]{8}) on ENG-2 from Sam Lee's agent\]\nagent: proposal\n\[End of Linear comment \1\. /,
       );
     }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
@@ -201,7 +197,7 @@ it.effect(
 it.effect("holds a comment for a full-access thread until the user sends there", () =>
   Effect.gen(function* () {
     const inbox = makeInbox(yield* tempBaseDir, [
-      lawrenceComment("comment-1", "2026-11-15T12:00:00.000Z"),
+      samComment("comment-1", "2026-11-15T12:00:00.000Z"),
     ]);
     inbox.thread.runtimeMode = "full-access";
 
@@ -230,21 +226,21 @@ it.effect("stops at the daily limit for a thread, counting what earlier runs del
     yield* fileSystem.writeFileString(
       path.join(config.stateDir, "linear-inbox.json"),
       JSON.stringify({
-        cursors: { COD: "1970-01-01T00:00:00.000Z" },
+        cursors: { ENG: "1970-01-01T00:00:00.000Z" },
         delivered: { "thread-mine": Array.from({ length: 11 }, () => "1970-01-01T00:00:00.000Z") },
         held: [],
       }),
     );
     const inbox = makeInbox(baseDir, [
-      lawrenceComment("comment-1", "2026-11-15T12:00:00.000Z", "Can you take the cursor file?"),
-      lawrenceComment("comment-2", "2026-11-15T12:01:00.000Z", "And the dedupe?"),
+      samComment("comment-1", "2026-11-15T12:00:00.000Z", "Can you take the cursor file?"),
+      samComment("comment-2", "2026-11-15T12:01:00.000Z", "And the dedupe?"),
     ]);
 
     yield* inbox.poll;
     expect(inbox.sent.map((input) => input.commandId)).toEqual([
       "linear-inbox:thread-mine:comment-1",
     ]);
-    expect(inbox.sent[0]!.linkedSender?.title).toBe("Lawrence");
+    expect(inbox.sent[0]!.linkedSender?.title).toBe("Sam Lee");
   }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
@@ -269,12 +265,12 @@ it.effect("held comments stop counting toward the daily limit a day after they a
     yield* fileSystem.writeFileString(
       statePath,
       JSON.stringify({
-        cursors: { COD: "1970-01-01T00:00:00.000Z" },
+        cursors: { ENG: "1970-01-01T00:00:00.000Z" },
         delivered: {},
         held: Array.from({ length: 12 }, (_, id) => held(id)),
       }),
     );
-    const inbox = makeInbox(baseDir, [lawrenceComment("comment-1", "2026-11-15T12:00:00.000Z")]);
+    const inbox = makeInbox(baseDir, [samComment("comment-1", "2026-11-15T12:00:00.000Z")]);
     inbox.thread.runtimeMode = "full-access";
 
     yield* inbox.poll;
@@ -290,7 +286,7 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const inbox = makeInbox(yield* tempBaseDir, [
-        lawrenceComment("comment-1", "2026-11-15T12:00:00.000Z"),
+        samComment("comment-1", "2026-11-15T12:00:00.000Z"),
       ]);
       yield* inbox.poll;
 

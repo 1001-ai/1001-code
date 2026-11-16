@@ -10,6 +10,7 @@ import {
   IDLE_COMPACTION_TITLES,
 } from "@t3tools/client-runtime/user-message";
 import type { HandoffTimelineRun } from "@t3tools/client-runtime/handoff";
+import type { LampTranscriptRow } from "../lamp/lampTranscript.logic";
 import { renderCodexDirectivesForCopy } from "@t3tools/shared/codexMarkdownDirectives";
 import {
   commandDisplayText,
@@ -492,6 +493,7 @@ export type MessagesTimelineRow = MessagesTimelineRowContent & {
 };
 
 type MessagesTimelineRowContent =
+  | LampTranscriptRow
   | {
       kind: "worktree-setup";
       id: string;
@@ -2695,6 +2697,9 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
         a.continuesSteer === bm.continuesSteer
       );
     }
+
+    case "lamp-transcripts":
+      return a === b;
   }
 }
 
