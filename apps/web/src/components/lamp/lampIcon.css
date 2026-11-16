@@ -1,0 +1,71 @@
+/*
+ * The lamp's thinking: its stars stream out of the spout, each a soft light in its own colour.
+ * Nothing here reaches the lamp itself. --lamp-star-x and --lamp-star-y carry a star from its place
+ * back to the spout, in the drawing's units, so the motion scales with the icon.
+ */
+[data-lamp-icon] {
+  /* In flight a star may pass the edge of the box. */
+  overflow: visible;
+  --lamp-star-period: 2200ms;
+}
+
+[data-lamp-icon] [data-lamp-star] {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* One behind another, a third of the period apart. */
+[data-lamp-icon][data-thinking] [data-lamp-star] {
+  animation: lamp-star-stream var(--lamp-star-period) linear infinite;
+  animation-delay: calc(var(--lamp-star-period) / 3 * var(--lamp-star-i) * -1);
+}
+
+/*
+ * A pale tint of the star's hue, lit by the icon's own ink: near white on a dark surface, deeper on
+ * a light one, where it lifts toward yellow. Round it, a halo of the same hue carries the colour.
+ */
+@supports (color: oklch(from currentColor l c h)) {
+  [data-lamp-icon][data-thinking] [data-lamp-star] {
+    color: oklch(
+      from currentColor
+        calc(
+          clamp(0.6, l * 0.92 + 0.19, 0.9) + (0.07 - l * 0.07) * cos(var(--lamp-star-hue) - 100deg)
+        )
+        calc(0.15 - l * 0.075) var(--lamp-star-hue) / 1
+    );
+    filter: drop-shadow(0 0 0.55px oklch(from currentColor calc(l - 0.06) calc(c + 0.085) h / 0.95))
+      drop-shadow(0 0 1.7px oklch(from currentColor calc(l - 0.1) calc(c + 0.095) h / 0.8));
+  }
+}
+
+/* Out of the spout to its place, then on and away. */
+@keyframes lamp-star-stream {
+  0% {
+    opacity: 0;
+    transform: translate(var(--lamp-star-x), var(--lamp-star-y)) scale(0.2) rotate(-45deg);
+    animation-timing-function: cubic-bezier(0.2, 0.7, 0.3, 1);
+  }
+  12% {
+    opacity: 1;
+  }
+  46% {
+    opacity: 1;
+    transform: translate(0, 0) scale(1) rotate(0deg);
+    animation-timing-function: cubic-bezier(0.5, 0, 0.8, 0.5);
+  }
+  74% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(var(--lamp-star-x) * -0.1), calc(var(--lamp-star-y) * -0.1 - 0.7px))
+      scale(0.5) rotate(45deg);
+  }
+}
+
+/* Still: the stars hold their places, each in one colour. */
+@media (prefers-reduced-motion: reduce) {
+  [data-lamp-icon][data-thinking] [data-lamp-star] {
+    animation: none;
+  }
+}

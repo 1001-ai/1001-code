@@ -354,7 +354,10 @@ function LampLayerView({
             className="flex flex-col gap-1 self-start text-muted-foreground"
           >
             <div className="flex items-center gap-2 text-sm">
-              <LampIcon className="size-4.5 shrink-0 text-foreground" />
+              <LampIcon
+                thinking={voice.status === "thinking"}
+                className="size-4.5 shrink-0 text-foreground"
+              />
               <span className="font-medium text-foreground">{LAMP_NAME}</span>
               <span aria-hidden="true">·</span>
               <span role="status">{LAMP_STATUS_LABEL[voice.status]}</span>

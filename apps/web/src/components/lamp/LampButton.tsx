@@ -8,6 +8,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { LampIcon } from "./LampIcon";
 import { LAMP_NAME, LAMP_NAME_IN_SENTENCE } from "./lampLayer.logic";
 import { toggleLampLayer, useLampLayerOpen, useLampThread } from "./lampLayer.state";
+import { useLampThinking } from "./lampVoice.state";
 
 /**
  * Opens and closes the layer over one thread's chat. As tall as the toggles beside it and two
@@ -23,6 +24,7 @@ export function LampButton({
 }) {
   useLampThread(threadKey, covered);
   const open = useLampLayerOpen(threadKey);
+  const thinking = useLampThinking();
   const shortcutLabel = shortcutLabelForCommand(
     useAtomValue(primaryServerKeybindingsAtom),
     "lamp.toggle",
@@ -50,7 +52,10 @@ export function LampButton({
             "hover:before:scale-125 hover:before:opacity-100 aria-pressed:before:opacity-100",
           )}
         >
-          <LampIcon className="size-5 shrink-0 motion-safe:transition-transform motion-safe:duration-200 motion-safe:ease-out motion-safe:group-hover/lamp:scale-110 motion-safe:group-hover/lamp:-rotate-6" />
+          <LampIcon
+            thinking={open && thinking}
+            className="size-5 shrink-0 motion-safe:transition-transform motion-safe:duration-200 motion-safe:ease-out motion-safe:group-hover/lamp:scale-110 motion-safe:group-hover/lamp:-rotate-6"
+          />
         </button>
       </TooltipTrigger>
       <TooltipPopup side="bottom">
