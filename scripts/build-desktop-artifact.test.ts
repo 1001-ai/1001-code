@@ -583,7 +583,8 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
             undefined,
             undefined,
           );
-          const mac = config.mac as { extendInfo: Record<string, unknown> };
+          const mac = config.mac as { icon: string; extendInfo: Record<string, unknown> };
+          assert.strictEqual(mac.icon, "icon.icon", `${version}, signed=${signed}: icon`);
           for (const key of [
             "NSCalendarsUsageDescription",
             "NSCalendarsFullAccessUsageDescription",
