@@ -50,7 +50,7 @@ export function LampButton({
             "hover:before:scale-125 hover:before:opacity-100 aria-pressed:before:opacity-100",
           )}
         >
-          <LampIcon className="size-4 shrink-0 motion-safe:transition-transform motion-safe:duration-200 motion-safe:ease-out motion-safe:group-hover/lamp:scale-110 motion-safe:group-hover/lamp:-rotate-6" />
+          <LampIcon className="size-5 shrink-0 motion-safe:transition-transform motion-safe:duration-200 motion-safe:ease-out motion-safe:group-hover/lamp:scale-110 motion-safe:group-hover/lamp:-rotate-6" />
         </button>
       </TooltipTrigger>
       <TooltipPopup side="bottom">

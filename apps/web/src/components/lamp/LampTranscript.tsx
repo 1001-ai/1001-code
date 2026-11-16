@@ -61,7 +61,7 @@ function LampTranscriptCard(props: {
       className="flex w-full max-w-md items-center gap-3 rounded-lg border border-border bg-card px-3 py-2 text-left outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
       onClick={() => openLampTranscript(props.threadKey, props.session.id)}
     >
-      <LampIcon className="size-4 shrink-0 text-muted-foreground" />
+      <LampIcon className="size-4.5 shrink-0 text-muted-foreground" />
       <span className="flex min-w-0 flex-col">
         <span className="font-medium text-foreground text-sm">Voice conversation</span>
         <span className="truncate text-muted-foreground text-xs">
@@ -162,7 +162,7 @@ export function LampTranscriptView(props: {
             data-lamp-transcript-content=""
             className="flex items-center gap-2 text-muted-foreground text-sm"
           >
-            <LampIcon className="size-4 shrink-0 text-foreground" />
+            <LampIcon className="size-4.5 shrink-0 text-foreground" />
             <span className="font-medium text-foreground">{LAMP_NAME}</span>
             {transcript ? (
               <>
