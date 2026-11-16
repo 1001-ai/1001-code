@@ -66,8 +66,8 @@ const at = DateTime.makeUnsafe("2026-11-15T10:00:00.000Z");
 const createdResult = {
   id: "ENG-106",
   uuid: "4981c0de",
-  title: "The Board shows people's full names",
-  url: "https://linear.app/acme/issue/ENG-106/the-board-shows-peoples-full-names",
+  title: "Search results keep their scroll position",
+  url: "https://linear.app/acme/issue/ENG-106/search-results-keep-their-scroll-position",
   status: "In Progress",
   statusType: "started",
   assignee: "Alex Kim",
@@ -81,8 +81,8 @@ const createdResult = {
 const boardResult = {
   task: {
     identifier: "ENG-115",
-    title: "The Board task card also shows for board_add",
-    url: "https://linear.app/acme/issue/ENG-115/the-board-task-card",
+    title: "Settings show the current version",
+    url: "https://linear.app/acme/issue/ENG-115/settings-show-the-current-version",
     status: { name: "Todo", type: "unstarted" },
     assignee: null,
     project: "Code",
@@ -125,8 +125,8 @@ describe("boardTaskChange", () => {
     ).toEqual({
       kind: "created",
       identifier: "ENG-106",
-      title: "The Board shows people's full names",
-      url: "https://linear.app/acme/issue/ENG-106/the-board-shows-peoples-full-names",
+      title: "Search results keep their scroll position",
+      url: "https://linear.app/acme/issue/ENG-106/search-results-keep-their-scroll-position",
       status: "In Progress",
       statusType: "started",
       assignee: "Alex Kim",
@@ -218,8 +218,8 @@ describe("boardTaskChange", () => {
     ).toEqual({
       kind: "created",
       identifier: "ENG-115",
-      title: "The Board task card also shows for board_add",
-      url: "https://linear.app/acme/issue/ENG-115/the-board-task-card",
+      title: "Settings show the current version",
+      url: "https://linear.app/acme/issue/ENG-115/settings-show-the-current-version",
       status: "Todo",
       statusType: "unstarted",
       project: "Code",

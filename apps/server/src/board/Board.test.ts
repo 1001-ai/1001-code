@@ -448,13 +448,7 @@ const detailAnswer = (id: string, teamId: string, linked = true): Answer => ({
               bot: "GitHub",
             }),
             // A reply to a reply, which Linear's API allows; it belongs under the root.
-            linearComment(
-              "c-4",
-              "2026-11-14T10:30:00.000Z",
-              "Thanks.",
-              { user: "Sam" },
-              "c-2",
-            ),
+            linearComment("c-4", "2026-11-14T10:30:00.000Z", "Thanks.", { user: "Sam" }, "c-2"),
             linearComment(
               "c-2",
               "2026-11-14T10:00:00.000Z",

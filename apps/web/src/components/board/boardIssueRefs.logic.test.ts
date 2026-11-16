@@ -42,7 +42,7 @@ const columns: ReadonlyArray<BoardColumn> = [
 
 describe("findIssueRefs", () => {
   it.each([
-    ["prose and punctuation", "See ENG-60, (ENG-7) and ENG-61.", ["ENG-60", "ENG-7", "ENG-61"]],
+    ["prose and punctuation", "See ENG-60, (OPS-7) and ENG-61.", ["ENG-60", "OPS-7", "ENG-61"]],
     ["suffixes, paths and zero", "ENG-60a ENG-60-x a/ENG-60 x-ENG-60 ENG-0 eng-60", []],
     ["multi-character keys", "T3_CODE-12 and A1-2", ["T3_CODE-12", "A1-2"]],
   ])("finds ids in %s", (_name, text, ids) => {
@@ -83,7 +83,7 @@ describe("boardTeamKey", () => {
     locator: { source: "git-remote" as const, remoteName: "origin", remoteUrl: "x" },
   };
   const catalogProjects = [
-    entry("github.com/acme/other", "ENG"),
+    entry("github.com/acme/other", "OPS"),
     entry("github.com/acme/code", "ENG"),
   ];
 
@@ -92,7 +92,7 @@ describe("boardTeamKey", () => {
   });
 
   it.each([
-    ["not in the catalog", [entry("github.com/acme/other", "ENG")]],
+    ["not in the catalog", [entry("github.com/acme/other", "OPS")]],
     ["without a Linear team", [entry("github.com/acme/code")]],
   ])("is null when the project is %s", (_name, projects) => {
     expect(boardTeamKey({ catalogProjects: projects, repositoryIdentity: identity })).toBeNull();
@@ -112,7 +112,7 @@ describe("boardIssueOpenTarget", () => {
   });
 
   it.each([
-    ["another team", "https://linear.app/acme/issue/ENG-60", "ENG", false],
+    ["another team", "https://linear.app/acme/issue/OPS-60", "ENG", false],
     ["no board", "https://linear.app/acme/issue/ENG-60", null, false],
     ["a modified click", "https://linear.app/acme/issue/ENG-60", "ENG", true],
     ["another link", "https://github.com/acme/code/pull/1", "ENG", false],
@@ -210,10 +210,10 @@ describe("remarkBoardIssueRefs", () => {
   it.each([
     [
       "prose, lists and emphasis",
-      "Done in ENG-60.\n\n- ENG-1 and *ENG-2*",
-      ["ENG-60", "ENG-1", "ENG-2"],
+      "Done in ENG-60.\n\n- OPS-1 and *ENG-2*",
+      ["ENG-60", "OPS-1", "ENG-2"],
     ],
-    ["code", "`ENG-60` and\n\n```\nCOD-61\n```", []],
+    ["code", "`ENG-60` and\n\n```\nENG-61\n```", []],
     ["existing links", "[ENG-60](https://linear.app/acme/issue/ENG-60)", []],
   ])("links ids in %s", (_name, markdown, ids) => {
     expect(linkedIds(markdown)).toEqual(ids);

@@ -54,7 +54,7 @@ describe("routeComment", () => {
     ["a deleted user", comment({ user: null }), "not-a-person"],
     [
       "my own comment",
-      comment({ user: { id: ME, name: "Alex", displayName: "Alex" } }),
+      comment({ user: { id: ME, name: "Alex Kim", displayName: "Alex Kim" } }),
       "own-comment",
     ],
     [

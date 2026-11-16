@@ -20,9 +20,9 @@ const link = (environmentId: string, threadId: string) => ({
 
 const issue = (id: string, threads: BoardIssue["threads"]): BoardIssue => ({
   id,
-  identifier: `COD-${id}`,
+  identifier: `ENG-${id}`,
   title: id,
-  url: `https://linear.app/acme/issue/COD-${id}`,
+  url: `https://linear.app/acme/issue/ENG-${id}`,
   stateId: "state",
   assignee: null,
   labels: [],

@@ -53,11 +53,7 @@ const catalog: TeamCatalogSnapshot = {
   viewer: { login: null, problem: null },
 };
 
-const samComment = (
-  id: string,
-  createdAt: string,
-  body = "agent: proposal",
-): LinearComment => ({
+const samComment = (id: string, createdAt: string, body = "agent: proposal"): LinearComment => ({
   id,
   body,
   createdAt,
@@ -230,7 +226,7 @@ it.effect("stops at the daily limit for a thread, counting what earlier runs del
     yield* fileSystem.writeFileString(
       path.join(config.stateDir, "linear-inbox.json"),
       JSON.stringify({
-        cursors: { COD: "1970-01-01T00:00:00.000Z" },
+        cursors: { ENG: "1970-01-01T00:00:00.000Z" },
         delivered: { "thread-mine": Array.from({ length: 11 }, () => "1970-01-01T00:00:00.000Z") },
         held: [],
       }),
@@ -269,7 +265,7 @@ it.effect("held comments stop counting toward the daily limit a day after they a
     yield* fileSystem.writeFileString(
       statePath,
       JSON.stringify({
-        cursors: { COD: "1970-01-01T00:00:00.000Z" },
+        cursors: { ENG: "1970-01-01T00:00:00.000Z" },
         delivered: {},
         held: Array.from({ length: 12 }, (_, id) => held(id)),
       }),

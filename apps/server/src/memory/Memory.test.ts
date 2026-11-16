@@ -258,7 +258,7 @@ it.effect("names a project's Linear board and the thread's link, even without me
       return { ...base, projects: [{ ...entry, project: { ...entry.project, linear } }] };
     };
     const threadLink =
-      "<board>\nThis project's board is the COD team in Linear; its tasks are Linear issues. Use it for every task you read, file or update, unless the user names another board.\nUse board_list to see its open tasks, board_add to file a task and board_update to change one";
+      "<board>\nThis project's board is the ENG team in Linear; its tasks are Linear issues. Use it for every task you read, file or update, unless the user names another board.\nUse board_list to see its open tasks, board_add to file a task and board_update to change one";
 
     const memory = yield* makeMemory({ catalog: boardCatalog() }).build;
     const view = yield* memory.read(PROJECT_ID);
