@@ -9,6 +9,8 @@ import {
   lampLayerClosed,
   lampLayerSharesThreadWithFind,
   lampLayerToggled,
+  lampPromptSent,
+  lampThreadCovered,
   lampThreadHidden,
   lampThreadShown,
   type LampLayerState,
@@ -27,6 +29,20 @@ export function toggleLampLayer(): void {
     closeThreadFind();
   }
   useLampLayerStore.setState(next);
+}
+
+/**
+ * Wraps the send a thread's prompt box calls, so sending a prompt leaves the layer over that
+ * thread. The prompt box calls it once the draft has passed its own checks.
+ */
+export function closingLampLayerOnSend<Args extends readonly unknown[], Result>(
+  threadKey: string,
+  send: (...args: Args) => Result,
+): (...args: Args) => Result {
+  return (...args) => {
+    useLampLayerStore.setState((state) => lampPromptSent(state, threadKey));
+    return send(...args);
+  };
 }
 
 export function readCanToggleLampLayer(): boolean {
@@ -51,11 +67,16 @@ export function useLampLayerToggleState(): "open" | "closed" | null {
   );
 }
 
-/** Names the thread whose title bar shows the button, for as long as it shows it. */
-export function useLampThread(threadKey: string): void {
+/**
+ * Names the thread whose title bar shows the button, for as long as it shows it. While a
+ * maximized panel covers that thread's chat, there is nothing for a layer to cover.
+ */
+export function useLampThread(threadKey: string, covered: boolean): void {
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- the shortcut and the palette act outside React, so the store has to know which thread's button is on screen
   useEffect(() => {
-    useLampLayerStore.setState((state) => lampThreadShown(state, threadKey));
+    useLampLayerStore.setState((state) =>
+      covered ? lampThreadCovered(state, threadKey) : lampThreadShown(state, threadKey),
+    );
     return () => useLampLayerStore.setState((state) => lampThreadHidden(state, threadKey));
-  }, [threadKey]);
+  }, [threadKey, covered]);
 }

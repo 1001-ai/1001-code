@@ -1,5 +1,7 @@
 /** The feature's working name, in the one place the interface reads it from. */
-export const LAMP_NAME = "Lamp";
+export const LAMP_NAME = "Voice agent";
+/** The name after a verb, as in "Toggle voice agent". A proper name would stay as written. */
+export const LAMP_NAME_IN_SENTENCE = LAMP_NAME.toLowerCase();
 
 export interface LampLayerState {
   /** The thread whose title bar shows the button; the shortcut and the palette act on it. */
@@ -26,10 +28,23 @@ export function lampThreadShown(state: LampLayerState, threadKey: string): LampL
 
 /**
  * A thread's button left the screen. Its layer stays as it was: the button also leaves when
- * the right panel moves it between the title bar and the chat header.
+ * the right panel opens or closes and the controls are drawn somewhere else.
  */
 export function lampThreadHidden(state: LampLayerState, threadKey: string): LampLayerState {
   return state.target === threadKey ? { ...state, target: null } : state;
+}
+
+/** A maximized panel covers the thread's chat: its layer closes, and nothing opens one. */
+export function lampThreadCovered(state: LampLayerState, threadKey: string): LampLayerState {
+  return {
+    target: state.target === threadKey ? null : state.target,
+    openIn: state.openIn === threadKey ? null : state.openIn,
+  };
+}
+
+/** A prompt was sent from a thread's prompt box: the layer over that thread closes. */
+export function lampPromptSent(state: LampLayerState, threadKey: string): LampLayerState {
+  return state.openIn === threadKey ? { ...state, openIn: null } : state;
 }
 
 export function lampLayerToggled(state: LampLayerState): LampLayerState {

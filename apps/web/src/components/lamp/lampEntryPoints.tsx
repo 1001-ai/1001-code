@@ -1,7 +1,7 @@
 import { dispatchCommandPalette } from "../../commandPaletteStore";
 import { type CommandPaletteActionItem, ITEM_ICON_CLASS } from "../CommandPalette.logic";
 import { LampIcon } from "./LampIcon";
-import { LAMP_NAME } from "./lampLayer.logic";
+import { LAMP_NAME_IN_SENTENCE } from "./lampLayer.logic";
 import {
   readCanToggleLampLayer,
   toggleLampLayer,
@@ -26,7 +26,7 @@ export function useLampPaletteAction(): CommandPaletteActionItem | null {
     kind: "action",
     value: "action:lamp",
     searchTerms: ["lamp", "voice", "talk", "listen", "agents", "report", "narrate"],
-    title: state === "open" ? `Close ${LAMP_NAME}` : `Open ${LAMP_NAME}`,
+    title: `${state === "open" ? "Close" : "Open"} ${LAMP_NAME_IN_SENTENCE}`,
     icon: <LampIcon className={ITEM_ICON_CLASS} />,
     shortcutCommand: "lamp.toggle",
     run: async () => {

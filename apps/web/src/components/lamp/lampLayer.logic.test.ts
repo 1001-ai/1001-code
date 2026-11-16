@@ -7,6 +7,8 @@ import {
   lampLayerClosed,
   lampLayerSharesThreadWithFind,
   lampLayerToggled,
+  lampPromptSent,
+  lampThreadCovered,
   lampThreadHidden,
   lampThreadShown,
 } from "./lampLayer.logic";
@@ -43,6 +45,22 @@ describe("lamp layer", () => {
     expect(canToggleLampLayer(buttonGone)).toBe(true);
     expect(isLampLayerOpenIn(lampLayerToggled(buttonGone), "a")).toBe(false);
     expect(isLampLayerOpenIn(lampThreadShown(buttonGone, "a"), "a")).toBe(true);
+  });
+
+  it("closes and cannot be opened while a maximized panel covers the chat", () => {
+    const open = lampLayerToggled(onThread("a"));
+    const covered = lampThreadCovered(lampThreadHidden(open, "a"), "a");
+    expect(covered).toEqual(LAMP_LAYER_CLOSED);
+    expect(canToggleLampLayer(covered)).toBe(false);
+    expect(lampThreadCovered(onThread("b"), "a")).toEqual(onThread("b"));
+    expect(canToggleLampLayer(lampThreadShown(covered, "a"))).toBe(true);
+  });
+
+  it("closes when a prompt is sent from its thread, not from another", () => {
+    const open = lampLayerToggled(onThread("a"));
+    expect(lampPromptSent(open, "b")).toBe(open);
+    expect(lampPromptSent(open, "a")).toEqual(onThread("a"));
+    expect(lampPromptSent(onThread("a"), "a")).toEqual(onThread("a"));
   });
 
   it("ignores a button leaving that is not the one on screen", () => {

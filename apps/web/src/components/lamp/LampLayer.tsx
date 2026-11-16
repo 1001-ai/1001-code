@@ -18,13 +18,55 @@ import {
   VIEW_Z_INDEX,
 } from "../chat/ExchangeThread";
 import { Kbd } from "../ui/kbd";
-import { LAMP_ACCENT_CLASS } from "./LampButton";
 import { LampIcon } from "./LampIcon";
 import { LAMP_NAME } from "./lampLayer.logic";
 import { closeLampLayer, useLampLayerOpen } from "./lampLayer.state";
 
 /** Clicks on these are not clicks on the backdrop. */
 const CONTENT_SELECTOR = "[data-lamp-layer-content]";
+
+/** The prompt box of the chat the layer covers. It is drawn above the glass and stays usable. */
+const PROMPT_BOX_SELECTOR = '[data-chat-composer-overlay="true"] [data-slot="composer-shell"]';
+// On for as long as the layer is mounted, so the prompt box also moves on its way back.
+const PROMPT_BOX_MOTION_CLASSES = [
+  "origin-bottom",
+  "motion-safe:transition-[transform,translate,scale,opacity]",
+  "motion-safe:duration-200",
+  "motion-safe:ease-out",
+];
+// Set back behind the glass: lower, tilted away on its bottom edge, smaller and fainter, until
+// it is hovered, has focus or has a menu open. Reduced motion keeps only the fade. Receded, it
+// hangs below where it rests, so the strip under it (`after`) keeps it hovered while it returns.
+const PROMPT_BOX_RECEDED_CLASSES = [
+  "opacity-70",
+  "motion-safe:translate-y-2",
+  "motion-safe:scale-95",
+  "motion-safe:transform-[perspective(800px)_rotateX(45deg)]",
+  "hover:opacity-100",
+  "hover:translate-y-0",
+  "hover:scale-100",
+  "hover:transform-none",
+  "focus-within:opacity-100",
+  "focus-within:translate-y-0",
+  "focus-within:scale-100",
+  "focus-within:transform-none",
+  "has-data-popup-open:opacity-100",
+  "has-data-popup-open:translate-y-0",
+  "has-data-popup-open:scale-100",
+  "has-data-popup-open:transform-none",
+  "after:pointer-events-none",
+  "after:absolute",
+  "after:inset-x-0",
+  "after:top-full",
+  "after:h-3",
+  "hover:after:pointer-events-auto",
+];
+
+function promptBoxUnder(overlay: HTMLElement | null) {
+  return (
+    overlay?.closest("[data-chat-column]")?.querySelector<HTMLElement>(PROMPT_BOX_SELECTOR) ?? null
+  );
+}
 
 function motionDuration() {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : MOTION_MS;
@@ -95,7 +137,14 @@ function LampLayerView({
   const contentRef = useRef<HTMLDivElement>(null);
   const focusBeforeOpenRef = useRef<HTMLElement | null>(null);
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- frosts the chat under the layer and takes focus from it before the first paint, and again when a close is interrupted
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- the prompt box is outside the layer, so its motion classes go on and come off with the layer
+  useLayoutEffect(() => {
+    const promptBox = promptBoxUnder(overlayRef.current);
+    promptBox?.classList.add(...PROMPT_BOX_MOTION_CLASSES);
+    return () => promptBox?.classList.remove(...PROMPT_BOX_MOTION_CLASSES);
+  }, []);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- frosts the chat under the layer, sets its prompt box back and takes focus before the first paint, and again when a close is interrupted
   useLayoutEffect(() => {
     const overlay = overlayRef.current;
     const glass = glassRef.current;
@@ -109,6 +158,8 @@ function LampLayerView({
       focusBeforeOpenRef.current = active;
     }
     overlay.focus({ preventScroll: true });
+    const promptBox = promptBoxUnder(overlay);
+    promptBox?.classList.add(...PROMPT_BOX_RECEDED_CLASSES);
     const covered = [...chat.children].flatMap((child) => {
       if (child === overlay || child === glass || !(child instanceof HTMLElement)) return [];
       child.setAttribute("inert", "");
@@ -130,6 +181,7 @@ function LampLayerView({
       ),
     ];
     return () => {
+      promptBox?.classList.remove(...PROMPT_BOX_RECEDED_CLASSES);
       for (const animation of moves) animation.cancel();
       for (const { element, hidden } of covered) {
         hidden?.cancel();
@@ -211,7 +263,6 @@ function LampLayerView({
         tabIndex={-1}
         className={cn(
           "absolute inset-0 z-10 flex flex-col overflow-y-auto overscroll-y-contain outline-none",
-          LAMP_ACCENT_CLASS,
           LIST_LANE_PADDING_CLASS,
         )}
         onClick={onBackdropClick}
@@ -228,7 +279,7 @@ function LampLayerView({
             data-lamp-layer-content=""
             className="flex items-center gap-2 self-start text-muted-foreground text-sm"
           >
-            <LampIcon className="size-4 shrink-0 text-(--lamp-amber)" />
+            <LampIcon className="size-4 shrink-0 text-foreground" />
             <span className="font-medium text-foreground">{LAMP_NAME}</span>
             <span aria-hidden="true">·</span>
             <span>Idle</span>

@@ -298,7 +298,8 @@ import {
   ThreadPanelHeaderControl,
   WorkspaceTitlebarControls,
 } from "./chat/PanelLayoutControls";
-import { LampButton, LampHeaderEntry } from "./lamp/LampButton";
+import { LampButton, LampHeaderRoom } from "./lamp/LampButton";
+import { closingLampLayerOnSend } from "./lamp/lampLayer.state";
 import type { ExpandedImagePreview } from "./chat/ExpandedImagePreview";
 import { ThreadDetailsPanel } from "./chat/ThreadDetailsPanel";
 import { ComposerStatusStrip } from "./chat/ComposerStatusStrip";
@@ -2991,7 +2992,9 @@ export default function ChatView(props: ChatViewProps) {
     });
   };
   const onWorktreeSetupWorkLocallyStable = useStableCallback(onWorktreeSetupWorkLocally);
-  const onComposerSendStable = useStableCallback(onSend);
+  const onComposerSendStable = useStableCallback(
+    closingLampLayerOnSend(displayedTimelineKey, onSend),
+  );
   const sendPreviewAnnotation = (
     annotation: PreviewAnnotationPayload,
     image: ComposerImageAttachment | null,
@@ -3290,8 +3293,8 @@ export default function ChatView(props: ChatViewProps) {
       maximized={rightPanelMaximized}
       onToggleMaximized={toggleRightPanelMaximizedStable}
     >
-      {inlineRightPanelOwnsTitleBar ? null : <LampButton threadKey={displayedTimelineKey} />}
       {panelToggleControls}
+      <LampButton threadKey={displayedTimelineKey} covered={rightPanelMaximized} />
     </WorkspaceTitlebarControls>
   );
   const workspaceFileDropHandlers = makeWorkspaceFileDropHandlers({
@@ -3342,7 +3345,7 @@ export default function ChatView(props: ChatViewProps) {
             {isElectron && rightPanelControlsAtRoot ? (
               <span
                 aria-hidden
-                className="pointer-events-none fixed top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] h-[var(--workspace-topbar-height)] w-28 [-webkit-app-region:no-drag]"
+                className="pointer-events-none fixed top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] h-[var(--workspace-topbar-height)] w-36 [-webkit-app-region:no-drag]"
               />
             ) : null}
             {!rightPanelControlsAtRoot && !rightPanelControlsInPanel ? panelLayoutControls : null}
@@ -3363,10 +3366,7 @@ export default function ChatView(props: ChatViewProps) {
                 : {})}
               {...(threadFindEnabled ? { onFindInThread: openThreadFindStable } : {})}
             />
-            <LampHeaderEntry
-              threadKey={displayedTimelineKey}
-              inHeader={inlineRightPanelOwnsTitleBar}
-            />
+            {inlineRightPanelOwnsTitleBar ? null : <LampHeaderRoom />}
           </header>
         )}
 
