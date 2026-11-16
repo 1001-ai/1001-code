@@ -10,10 +10,9 @@ import { LAMP_NAME, LAMP_NAME_IN_SENTENCE } from "./lampLayer.logic";
 import { toggleLampLayer, useLampLayerOpen, useLampThread } from "./lampLayer.state";
 
 /**
- * Opens and closes the layer over one thread's chat. A square the size of the toggles beside
- * it, in the page's colours swapped so it stands out from them. Its resting glow is static;
- * only hover moves, and only for a moment. `covered` is a maximized panel over the chat: the
- * button keeps its place, so the controls do not shift, and does nothing.
+ * Opens and closes the layer over one thread's chat. As tall as the toggles beside it and two
+ * and a half times as wide, icon centred, in the page's colours swapped. Only hover moves it.
+ * `covered` is a maximized panel over the chat: the button keeps its place and does nothing.
  */
 export function LampButton({
   threadKey,
@@ -39,7 +38,7 @@ export function LampButton({
           disabled={covered}
           onClick={toggleLampLayer}
           className={cn(
-            "group/lamp relative isolate inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-foreground text-background outline-none select-none sm:size-7 [-webkit-app-region:no-drag]",
+            "group/lamp relative isolate inline-flex h-8 w-20 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-foreground text-background outline-none select-none sm:h-7 sm:w-17.5 [-webkit-app-region:no-drag]",
             "hover:bg-foreground/90 motion-safe:transition-colors motion-safe:duration-200 motion-safe:ease-out",
             "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background focus-visible:ring-inset",
             "aria-pressed:bg-foreground/80 aria-pressed:inset-shadow-sm aria-pressed:inset-shadow-background/40",
@@ -63,7 +62,7 @@ export function LampButton({
   );
 }
 
-/** Room at the end of the chat header, one control and its gap, so the breadcrumb stops short of the button. */
+/** Room at the end of the chat header, the button and its gap, so the breadcrumb stops short of it. */
 export function LampHeaderRoom() {
-  return <span aria-hidden="true" className="w-9 shrink-0 sm:w-8" />;
+  return <span aria-hidden="true" className="w-21 shrink-0 sm:w-18.5" />;
 }

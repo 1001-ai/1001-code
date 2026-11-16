@@ -31,34 +31,35 @@ const PROMPT_BOX_SELECTOR = '[data-chat-composer-overlay="true"] [data-slot="com
 const PROMPT_BOX_MOTION_CLASSES = [
   "origin-bottom",
   "motion-safe:transition-[transform,translate,scale,opacity]",
-  "motion-safe:duration-200",
+  "motion-safe:duration-300",
   "motion-safe:ease-out",
 ];
 // Set back behind the glass: lower, tilted away on its bottom edge, smaller and fainter, until
 // it is hovered, has focus or has a menu open. Reduced motion keeps only the fade. Receded, it
-// hangs below where it rests, so the strip under it (`after`) keeps it hovered while it returns.
+// hangs well below where it rests (it may leave the screen), so the strip under it (`after`)
+// keeps it hovered while it returns.
 const PROMPT_BOX_RECEDED_CLASSES = [
   "opacity-70",
-  "motion-safe:translate-y-2",
+  "motion-safe:translate-y-12",
   "motion-safe:scale-95",
-  "motion-safe:transform-[perspective(800px)_rotateX(45deg)]",
+  "motion-safe:transform-[perspective(800px)_rotateX(30deg)]",
   "hover:opacity-100",
   "hover:translate-y-0",
   "hover:scale-100",
-  "hover:transform-none",
+  "hover:transform-[perspective(800px)_rotateX(0deg)]",
   "focus-within:opacity-100",
   "focus-within:translate-y-0",
   "focus-within:scale-100",
-  "focus-within:transform-none",
+  "focus-within:transform-[perspective(800px)_rotateX(0deg)]",
   "has-data-popup-open:opacity-100",
   "has-data-popup-open:translate-y-0",
   "has-data-popup-open:scale-100",
-  "has-data-popup-open:transform-none",
+  "has-data-popup-open:transform-[perspective(800px)_rotateX(0deg)]",
   "after:pointer-events-none",
   "after:absolute",
   "after:inset-x-0",
   "after:top-full",
-  "after:h-3",
+  "after:h-14",
   "hover:after:pointer-events-auto",
 ];
 
