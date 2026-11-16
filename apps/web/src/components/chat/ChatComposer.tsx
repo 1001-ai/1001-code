@@ -280,7 +280,13 @@ import { ComposerControlsBar } from "./ComposerControlsBar";
 import { composerCommandKeyHandler } from "./composerCommandKey";
 import { usePromptSuggestion } from "./usePromptSuggestion";
 import { useFreshSessionArmed } from "./freshSessionArms";
-import { addReplyAnnotation, editReplyAnnotation, useReplyAnnotations } from "./replyAnnotations";
+import {
+  addReplyAnnotation,
+  appendReplyAnnotations,
+  editReplyAnnotation,
+  useReplyAnnotations,
+} from "./replyAnnotations";
+import { appendAnnotationCitations } from "./replyAnnotations.logic";
 import { ReplyAnnotationsPill } from "./ReplyAnnotationsPill";
 
 function consumePasteAsTextShortcut(deadline: { current: number }): boolean {
@@ -1090,6 +1096,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   }, [backgroundThread]);
 
   const replyAnnotations = useReplyAnnotations(composerDraftTarget);
+  const annotatedPrompt = appendAnnotationCitations(
+    prompt,
+    replyAnnotations.map((annotation) => annotation.citation),
+  );
   const composerSendState = deriveComposerSendState({
     prompt,
     imageCount: composerImages.length + composerFiles.length,
@@ -1108,7 +1118,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     composerDraft.persistedAttachments.length === 0 &&
     composerTerminalContexts.length === 0 &&
     composerPreviewAnnotations.length === 0 &&
-    composerReviewComments.length === 0;
+    composerReviewComments.length === 0 &&
+    replyAnnotations.length === 0;
   const linkedEnvironments = useLinkedEnvironments(environmentId);
   const {
     items: composerMenuItems,
@@ -1383,7 +1394,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   }
 
   if (composerSubmissionError !== null) {
-    const nextError = getComposerPromptLengthValidationMessage(prompt);
+    const nextError = getComposerPromptLengthValidationMessage(annotatedPrompt);
     if (nextError !== composerSubmissionError) {
       setComposerSubmissionError(nextError);
     }
@@ -1393,7 +1404,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     composerPreviewAnnotations,
     composerReviewComments,
     composerTerminalContexts,
-    prompt,
+    annotatedPrompt,
     selectedModel,
     selectedPromptEffort,
     selectedProvider,
@@ -2150,7 +2161,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       return false;
     }
     const submission = submitComposerDraft({
-      prompt: promptRef.current,
+      prompt: appendReplyAnnotations(composerDraftTarget, promptRef.current),
       submissionTarget,
       event,
       onSend: (sendEvent) => {
@@ -3164,7 +3175,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       setMultipleModelSelections,
       validateProviderInput: (providerInput: string) => {
         const validationMessage = getComposerSubmissionValidationMessage({
-          prompt: promptRef.current,
+          prompt: appendReplyAnnotations(composerDraftTarget, promptRef.current),
           providerInput,
           submissionTarget: "provider-turn",
         });

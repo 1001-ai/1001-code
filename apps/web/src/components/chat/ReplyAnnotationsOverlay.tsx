@@ -1,6 +1,5 @@
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { resolveAssistantCitationRange } from "~/lib/assistantTextSelection";
 import { Popover, PopoverPopup } from "../ui/popover";
 import { ReplyAnnotationCommentBox } from "./ReplyAnnotationCommentBox";
@@ -62,6 +61,7 @@ export function ReplyAnnotationsOverlay({
   const editingId = useEditingReplyAnnotationId();
   const [placements, setPlacements] = useState<ReadonlyArray<Placement>>([]);
   const draftRef = useRef<{ id: string; comment: string } | null>(null);
+  const markersRef = useRef<HTMLDivElement>(null);
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- measures quote ranges in the virtualized timeline DOM, which React does not own, as it scrolls and re-renders
   useEffect(() => {
@@ -109,9 +109,9 @@ export function ReplyAnnotationsOverlay({
           range,
           marker: visible
             ? {
-                top: Math.round(line.top + line.height / 2 - MARKER_SIZE / 2),
+                top: Math.round(line.top - bounds.top + line.height / 2 - MARKER_SIZE / 2),
                 left: Math.round(
-                  Math.max(bounds.left + 8, source.getBoundingClientRect().left - MARKER_SIZE - 12),
+                  Math.max(8, source.getBoundingClientRect().left - bounds.left - MARKER_SIZE - 12),
                 ),
               }
             : null,
@@ -124,7 +124,10 @@ export function ReplyAnnotationsOverlay({
       if (frame === 0) frame = requestAnimationFrame(place);
     };
     const reposition = () => schedule(false);
-    const mutations = new MutationObserver(() => schedule(true));
+    // The markers render inside the viewport; their own updates must not trigger a re-measure.
+    const mutations = new MutationObserver((records) => {
+      if (records.some((record) => !markersRef.current?.contains(record.target))) schedule(true);
+    });
     mutations.observe(viewport, { childList: true, subtree: true, characterData: true });
     viewport.addEventListener("scroll", reposition, { capture: true, passive: true });
     window.addEventListener("resize", reposition);
@@ -163,25 +166,30 @@ export function ReplyAnnotationsOverlay({
     editReplyAnnotation(null);
   };
 
-  return createPortal(
+  // Markers stay inside the timeline, under the thread view's glass; the comment box is a popover.
+  return (
     <>
+      <div ref={markersRef} className="pointer-events-none absolute inset-0 z-[1] overflow-hidden">
+        {placements.map(({ annotation, marker }) =>
+          marker ? (
+            <button
+              key={annotation.id}
+              type="button"
+              aria-label={`Annotation ${annotation.number}${annotation.citation.comment ? `: ${annotation.citation.comment}` : ""}`}
+              aria-expanded={annotation.id === editingId}
+              className="pointer-events-auto absolute flex size-6 items-center justify-center rounded-full rounded-br-sm bg-info font-semibold text-white text-xs shadow-sm focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white"
+              style={{ top: marker.top, left: marker.left }}
+              onPointerDown={(event) => event.preventDefault()}
+              onClick={() =>
+                editReplyAnnotation(annotation.id === editingId ? null : annotation.id)
+              }
+            >
+              {annotation.number}
+            </button>
+          ) : null,
+        )}
+      </div>
       <style>{HIGHLIGHT_STYLE}</style>
-      {placements.map(({ annotation, marker }) =>
-        marker ? (
-          <button
-            key={annotation.id}
-            type="button"
-            aria-label={`Annotation ${annotation.number}${annotation.citation.comment ? `: ${annotation.citation.comment}` : ""}`}
-            aria-expanded={annotation.id === editingId}
-            className="fixed z-40 flex size-6 items-center justify-center rounded-full rounded-br-sm bg-info font-semibold text-white text-xs shadow-sm focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white"
-            style={{ top: marker.top, left: marker.left }}
-            onPointerDown={(event) => event.preventDefault()}
-            onClick={() => editReplyAnnotation(annotation.id === editingId ? null : annotation.id)}
-          >
-            {annotation.number}
-          </button>
-        ) : null,
-      )}
       <Popover
         open={editing !== null}
         onOpenChange={(open, details) => {
@@ -216,7 +224,6 @@ export function ReplyAnnotationsOverlay({
           </PopoverPopup>
         ) : null}
       </Popover>
-    </>,
-    document.body,
+    </>
   );
 }
