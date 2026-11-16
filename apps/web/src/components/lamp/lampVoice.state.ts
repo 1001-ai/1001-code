@@ -5,6 +5,7 @@ import {
   lampListeningBegan,
   lampSpeechBegan,
   lampSpeechInterrupted,
+  lampSpeechPreparing,
   lampSpeechProgressed,
   lampSpeechQueued,
   lampSpeechSilenced,
@@ -20,6 +21,8 @@ import {
 const useLampVoiceStore = create<LampVoiceSession>(() => LAMP_VOICE_SILENT);
 
 export const lampVoice = {
+  preparing: (text: string) =>
+    useLampVoiceStore.setState((session) => lampSpeechPreparing(session, text)),
   queue: (text: string) => useLampVoiceStore.setState(lampSpeechQueued(text), true),
   began: () => useLampVoiceStore.setState(lampSpeechBegan),
   progressed: (progress: LampSpeechProgress) =>

@@ -368,12 +368,24 @@ function LampLayerView({
         >
           <div
             data-lamp-layer-content=""
-            className="flex items-center gap-2 self-start text-muted-foreground text-sm"
+            className="flex flex-col gap-1 self-start text-muted-foreground"
           >
-            <LampIcon className="size-4 shrink-0 text-foreground" />
-            <span className="font-medium text-foreground">{LAMP_NAME}</span>
-            <span aria-hidden="true">·</span>
-            <span role="status">{LAMP_STATUS_LABEL[voice.status]}</span>
+            <div className="flex items-center gap-2 text-sm">
+              <LampIcon className="size-4 shrink-0 text-foreground" />
+              <span className="font-medium text-foreground">{LAMP_NAME}</span>
+              <span aria-hidden="true">·</span>
+              <span role="status">{LAMP_STATUS_LABEL[voice.status]}</span>
+              {voice.chooseVoice ? (
+                <Button variant="ghost-muted" size="compact" onClick={voice.chooseVoice}>
+                  Choose a voice
+                </Button>
+              ) : null}
+            </div>
+            {voice.voiceFailed ? (
+              <p role="status" className="text-xs">
+                {voice.voiceFailed}
+              </p>
+            ) : null}
           </div>
           <div className="flex flex-1 flex-col items-center justify-center gap-8">
             {closing ? null : <LampMediaPlayer environmentId={environmentId} threadId={threadId} />}

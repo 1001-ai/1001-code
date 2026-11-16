@@ -1,4 +1,5 @@
 import type { VoiceInputPhase } from "@t3tools/client-runtime/voice-input";
+import type { VoiceOutputCatalog } from "@t3tools/contracts";
 
 /** A stretch of the text the agent says, as offsets into the whole text. */
 export interface LampTextRange {
@@ -127,6 +128,8 @@ export interface LampInterruption {
 export interface LampVoiceSession {
   readonly said: LampSaid | null;
   readonly speaking: boolean;
+  /** A text handed to the voice that is not audible yet. `said` is still the text before it. */
+  readonly preparing: string | null;
   readonly interruption: LampInterruption | null;
   /** What the user said last. */
   readonly heard: string | null;
@@ -135,11 +138,20 @@ export interface LampVoiceSession {
 export const LAMP_VOICE_SILENT: LampVoiceSession = {
   said: null,
   speaking: false,
+  preparing: null,
   interruption: null,
   heard: null,
 };
 
-/** A text is about to be spoken. It starts a new exchange. */
+/**
+ * A text is handed to the voice. A voice model may need seconds for the first audio: until then
+ * the captions keep the text before it, and the agent shows as thinking.
+ */
+export function lampSpeechPreparing(session: LampVoiceSession, text: string): LampVoiceSession {
+  return { ...session, preparing: text };
+}
+
+/** A text starts to be spoken, or is shown as said. It starts a new exchange. */
 export function lampSpeechQueued(text: string): LampVoiceSession {
   return {
     ...LAMP_VOICE_SILENT,
@@ -166,11 +178,17 @@ export function lampSpeechProgressed(
 
 /** The voice went quiet without the user cutting in, as when the layer closes. */
 export function lampSpeechSilenced(session: LampVoiceSession): LampVoiceSession {
-  return session.speaking ? { ...session, speaking: false } : session;
+  return session.speaking || session.preparing !== null
+    ? { ...session, speaking: false, preparing: null }
+    : session;
 }
 
 /** The user cut in. If the agent had not finished, where it stopped is kept. */
 export function lampSpeechInterrupted(session: LampVoiceSession): LampVoiceSession {
+  // A text that was not audible yet was cut before its first word: none of it was said.
+  if (session.preparing !== null) {
+    return lampSpeechInterrupted(lampSpeechQueued(session.preparing));
+  }
   const said = session.said;
   if (!said || said.progress.done || said.stoppedAt !== null) {
     return lampSpeechSilenced(session);
@@ -277,6 +295,31 @@ export function lampStatus(input: {
   if (input.voicePhase !== "idle" && input.voicePhase !== "error") return "listening";
   if (input.speaking) return "speaking";
   return input.thinking ? "thinking" : "idle";
+}
+
+/**
+ * Which voice speaks in a conversation, from the environment's voice catalog as read when the
+ * layer opened (null when it could not be read). The downloaded voice speaks only when the user
+ * has picked one and its model is installed. `offerSettings` is true when there are voices to
+ * pick from and none is picked.
+ */
+export function lampVoiceChoice(catalog: VoiceOutputCatalog | null): {
+  readonly voice: "downloaded" | "system";
+  readonly offerSettings: boolean;
+} {
+  if (catalog === null) return { voice: "system", offerSettings: false };
+  const { selection } = catalog;
+  if (selection === null) {
+    return {
+      voice: "system",
+      offerSettings: catalog.unavailable === null && catalog.models.length > 0,
+    };
+  }
+  const model = catalog.models.find((entry) => entry.id === selection.modelId);
+  const installed =
+    model?.install.state === "installed" &&
+    model.voices.some((voice) => voice.id === selection.voiceId);
+  return { voice: installed ? "downloaded" : "system", offerSettings: false };
 }
 
 export type LampVoiceReadiness = "ready" | "not-set-up" | "missing-model" | "unavailable";

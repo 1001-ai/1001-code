@@ -21,8 +21,8 @@ import {
   nextLampSpeech,
   unsaidLampSpeech,
 } from "./lampAgent.logic";
-import { lampLayerHoldsKeyboard } from "./lampLayer.state";
-import { lampSpeaker } from "./lampSpeaker";
+import { openLampAudio, suspendLampAudio } from "./lampAudio";
+import { closeLampLayer, lampLayerHoldsKeyboard } from "./lampLayer.state";
 import {
   lampStatus,
   lampTalk,
@@ -33,6 +33,7 @@ import {
 } from "./lampSpeech.logic";
 import { lampVoice, useLampVoiceSession } from "./lampVoice.state";
 import { useLampAgent } from "./useLampAgent";
+import { useLampSpeaker } from "./useLampSpeaker";
 
 // Space talks to the layer through the dictation shortcut's own hold handling.
 const SPACE_TALKS: ResolvedKeybindingRule = {
@@ -51,6 +52,7 @@ const SPACE_TALKS: ResolvedKeybindingRule = {
 const NO_DRAFT = { text: "", selection: { start: 0, end: 0 } };
 
 const NOT_HEARD = "The voice agent did not get that. Say it again.";
+const VOICE_FAILED = "The downloaded voice could not be used. The system voice speaks instead.";
 
 export interface LampVoiceNotice {
   readonly text: string;
@@ -80,6 +82,7 @@ export function useLampVoice(input: {
   // True once the layer has opened: nothing is said over its opening.
   const [opened, setOpened] = useState(false);
   const agent = useLampAgent(input);
+  const voices = useLampSpeaker(input);
   const speaking = useRef<LampSpeech | null>(null);
   const feed = useRef(LAMP_AGENT_FEED_EMPTY);
   // What the voice finished of the answer in progress, and all of it when no voice can speak.
@@ -169,6 +172,8 @@ export function useLampVoice(input: {
     lineSaid.current = false;
     cutSent.current = null;
     byGesture.current = navigator.userActivation?.isActive ?? true;
+    // The downloaded voice needs its audio output opened in the gesture, like speech synthesis.
+    if (byGesture.current) openLampAudio();
     const settled = setTimeout(() => setOpened(true), openDurationMs());
     return () => {
       open.current = false;
@@ -177,6 +182,7 @@ export function useLampVoice(input: {
       setNotHeard(false);
       void speaking.current?.stop("now");
       speaking.current = null;
+      suspendLampAudio();
       stopListening();
       // The text stays while the layer fades out.
       lampVoice.silenced();
@@ -187,9 +193,14 @@ export function useLampVoice(input: {
 
   const listening = speech.state.phase !== "idle" && speech.state.phase !== "error";
   const { link, messages } = agent;
+  const { speaker } = voices;
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- hands the voice the next sentences of the agent's streamed answer whenever it is free, before a paint could show it idle: the speech synthesis is outside React
   useLayoutEffect(() => {
     if (!opened || closing || listening || session.speaking || speaking.current !== null) return;
+    // A text is with the voice and not audible yet.
+    if (session.preparing !== null) return;
+    // Which voice speaks is known once the environment's voice catalog has answered.
+    if (byGesture.current && speaker === null) return;
     let text: string | null = null;
     if (!lineSaid.current && link.status !== "opening") {
       lineSaid.current = true;
@@ -203,7 +214,7 @@ export function useLampVoice(input: {
       text = next.text;
     }
     const said = text;
-    if (!byGesture.current) {
+    if (!byGesture.current || speaker === null) {
       // No voice: everything written so far shows at once, and all of it counts as said.
       let shown = joined(saidBefore.current, said);
       for (
@@ -219,9 +230,15 @@ export function useLampVoice(input: {
       lampVoice.progressed({ sentenceIndex: 0, word: null, done: true });
       return;
     }
-    lampVoice.queue(said);
-    lampVoice.began();
-    const current: LampSpeech = lampSpeaker.speak(said, (progress) => {
+    // The captions and "Speaking" start with the voice, which a voice model may take seconds to make.
+    lampVoice.preparing(said);
+    let audible = false;
+    const current: LampSpeech = speaker.speak(said, (progress) => {
+      if (!audible) {
+        audible = true;
+        lampVoice.queue(said);
+        lampVoice.began();
+      }
       if (progress.done) {
         if (speaking.current === current) speaking.current = null;
         saidBefore.current = joined(saidBefore.current, said);
@@ -229,7 +246,7 @@ export function useLampVoice(input: {
       lampVoice.progressed(progress);
     });
     speaking.current = current;
-  }, [opened, closing, listening, session.speaking, link, messages]);
+  }, [opened, closing, listening, session.speaking, session.preparing, speaker, link, messages]);
 
   const voiceSettings = {
     label: "Voice settings",
@@ -255,10 +272,20 @@ export function useLampVoice(input: {
     status: lampStatus({
       speaking: session.speaking,
       voicePhase: speech.state.phase,
-      thinking: agent.working,
+      thinking: agent.working || session.preparing !== null,
     }),
     speech,
     notice,
+    /** One line for the rest of a conversation in which the downloaded voice failed. */
+    voiceFailed: voices.failed ? VOICE_FAILED : null,
+    /** Opens the speech output settings, offered while the user has picked no voice. */
+    chooseVoice: voices.offerSettings
+      ? () => {
+          // Settings draw over the chat: the agent would talk on under them, and over a voice sample.
+          closeLampLayer();
+          void navigate({ to: "/settings/voice", hash: "voice-output" });
+        }
+      : null,
     /** Whether Space is held to talk, or pressed once to start and once to finish. */
     holdToTalk: shortcutMode !== "toggle",
   };
