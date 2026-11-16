@@ -65,7 +65,7 @@
 
 /* Still: the stars hold their places, each in one colour. */
 @media (prefers-reduced-motion: reduce) {
-  [data-lamp-icon] [data-lamp-star] {
+  [data-lamp-icon][data-thinking] [data-lamp-star] {
     animation: none;
   }
 }
