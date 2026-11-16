@@ -43,6 +43,7 @@ import {
 } from "./lib/cli-external-packages.ts";
 import { loadRepoEnv } from "./lib/public-config.ts";
 import { applyLocalMacSigning } from "./lib/local-macos-signing.ts";
+import { iconSource, withPrivateMacAppIcon } from "./lib/private-icons.ts";
 import { selectDesktopRuntimeExternalDependencies } from "./lib/desktop-external-packages.ts";
 import { resolveCatalogDependencies } from "./lib/resolve-catalog.ts";
 
@@ -2841,7 +2842,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   if (platform === "mac") {
     const path = yield* Path.Path;
     const repoRoot = yield* RepoRoot;
-    buildConfig.mac = {
+    buildConfig.mac = withPrivateMacAppIcon(updateChannel, {
       target: target === "dmg" ? [target, "zip"] : [target],
       icon: "icon.icns",
       category: "public.app-category.developer-tools",
@@ -2891,7 +2892,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
             provisioningProfile: macPasskeySigning.provisioningProfilePath,
           }
         : {}),
-    };
+    });
   }
 
   if (platform === "mac" && target === "dmg") {
@@ -3846,9 +3847,9 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
     options.platform,
     stageResourcesDir,
     {
-      macIconPng: path.join(repoRoot, iconAssets.macIconPng),
-      linuxIconPng: path.join(repoRoot, iconAssets.linuxIconPng),
-      windowsIconIco: path.join(repoRoot, iconAssets.windowsIconIco),
+      macIconPng: iconSource(repoRoot, iconAssets.macIconPng),
+      linuxIconPng: iconSource(repoRoot, iconAssets.linuxIconPng),
+      windowsIconIco: iconSource(repoRoot, iconAssets.windowsIconIco),
     },
     options.verbose,
   );

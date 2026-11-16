@@ -24,6 +24,7 @@ import { thirdPartyLicensesPlugin } from "../../scripts/lib/third-party-licenses
 import { productNamePlugin } from "./vite/productName";
 import { tailwindPlugins } from "./vite/tailwind";
 import { warmBundledDevPlugin } from "./vite/warmBundledDev";
+import { privateWebIconsPlugin } from "../../scripts/lib/private-icons";
 import { formatAppDisplayName, resolveWebAppStageLabel } from "./src/branding.logic";
 
 const repoEnv = loadRepoEnv();
@@ -294,6 +295,7 @@ export default defineConfig(() => {
       bootstrapTitlePlugin(),
       productNamePlugin(),
       privateLampPlugin(),
+      privateWebIconsPlugin(),
       devCompressionPlugin(),
       chunkCycleGuardPlugin(),
       builtDev

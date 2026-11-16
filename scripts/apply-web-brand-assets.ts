@@ -13,6 +13,7 @@ import {
   WEB_ASSET_CHANNELS,
   type WebAssetBrand,
 } from "./lib/brand-assets.ts";
+import { iconSource } from "./lib/private-icons.ts";
 
 const WEB_ASSET_BRANDS = [
   "development",
@@ -31,7 +32,7 @@ export const applyWebBrandAssets = Effect.fn("applyWebBrandAssets")(function* (
   yield* Effect.forEach(
     resolveWebIconOverrides(brand, path.resolve(repoRoot, targetDirectory)),
     (override) =>
-      fs.copyFile(path.join(repoRoot, override.sourceRelativePath), override.targetRelativePath),
+      fs.copyFile(iconSource(repoRoot, override.sourceRelativePath), override.targetRelativePath),
     { concurrency: "unbounded" },
   );
 });
