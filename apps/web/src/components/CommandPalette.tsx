@@ -250,6 +250,7 @@ import { useTeamProjectPaletteGroups } from "./teamProjects/useTeamProjectPalett
 import { useTeamProjectsDrawerToggle } from "./teamProjects/teamProjectsDrawerState";
 import { boardPaletteAction } from "./board/boardSurface";
 import { memoryPaletteAction } from "./memory/memorySurface";
+import { agentsBoardPaletteAction } from "./agentsBoard/agentsBoardSurface";
 import { questionsPaletteAction } from "./questions/questionsEntryPoints";
 import { useLampPaletteAction } from "./lamp/lampEntryPoints";
 import { useCommandPaletteThreadItems } from "./CommandPaletteThreadItems";
@@ -1497,6 +1498,7 @@ function OpenCommandPaletteDialog(props: {
     actionItems.push(
       boardPaletteAction(scopeThreadRef(activeThread.environmentId, activeThread.id)),
       memoryPaletteAction(scopeThreadRef(activeThread.environmentId, activeThread.id)),
+      agentsBoardPaletteAction(scopeThreadRef(activeThread.environmentId, activeThread.id)),
     );
   }
 

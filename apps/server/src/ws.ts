@@ -246,6 +246,7 @@ import * as ThreadCost from "./usage/ThreadCost.ts";
 import * as TeamCatalog from "./teamCatalog/TeamCatalog.ts";
 import * as Board from "./board/Board.ts";
 import * as Memory from "./memory/Memory.ts";
+import * as AgentsBoard from "./agentsBoard/AgentsBoard.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as TriageService from "./triage/TriageService.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
@@ -1501,6 +1502,7 @@ export const layerWsRpc = (
       const teamCatalog = yield* TeamCatalog.TeamCatalog;
       const board = yield* Board.Board;
       const memory = yield* Memory.Memory;
+      const agentsBoard = yield* AgentsBoard.AgentsBoard;
       const usageLimitSources = yield* UsageLimitSources.UsageLimitSources;
       const worktreeSetupTracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
       const projectCloneTracker = yield* ProjectCloneTracker.ProjectCloneTracker;
@@ -2697,6 +2699,10 @@ export const layerWsRpc = (
         [WS_METHODS.memorySubscribe]: (input) => memory.changes(input.projectId),
         [WS_METHODS.memoryPropose]: (input) => memory.propose(input),
         [WS_METHODS.memoryDecide]: (input) => memory.decide(input, currentSessionId),
+        [WS_METHODS.agentsBoardSubscribe]: (input) => agentsBoard.changes(input.projectId),
+        [WS_METHODS.agentsBoardRefresh]: (input) => agentsBoard.refresh(input.projectId),
+        [WS_METHODS.agentsBoardSetBranch]: (input) => agentsBoard.setBranch(input),
+        [WS_METHODS.agentsBoardMedia]: (input) => agentsBoard.media(input),
         [WS_METHODS.serverRetryResourceTelemetry]: (_input) => resourceTelemetry.retry,
         [WS_METHODS.serverCheckOtlpEndpoint]: (input) => otlpEndpointCheck.check(input),
         [WS_METHODS.serverListTextGeneratorModels]: (input) => textGenerators.listModels(input),

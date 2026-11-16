@@ -105,6 +105,7 @@ import { PierreEntryIcon } from "./chat/PierreEntryIcon";
 import { resolvePullRequestState } from "./pullRequest/pullRequestPresentation";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { BoardSurfaceIcon } from "~/components/board/boardSurface";
+import { AgentsBoardSurfaceIcon } from "~/components/agentsBoard/agentsBoardSurface";
 import {
   MemorySurfaceIcon,
   type TeamSurfaceKind,
@@ -611,6 +612,8 @@ function surfaceTitle(
       return "Board";
     case "memory":
       return "Memory";
+    case "agents-board":
+      return "Agents board";
     case "preview": {
       const snapshot = surface.resourceId ? sessions[surface.resourceId] : null;
       if (!snapshot || snapshot.navStatus._tag === "Idle") return "Browser";
@@ -703,6 +706,8 @@ function SurfaceIcon({
       return <BoardSurfaceIcon />;
     case "memory":
       return <MemorySurfaceIcon />;
+    case "agents-board":
+      return <AgentsBoardSurfaceIcon />;
     case "side-chat":
       return <SideChatTabIcon environmentId={environmentId} threadId={surface.threadId} />;
     case "device":

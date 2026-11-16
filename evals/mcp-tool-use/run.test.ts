@@ -749,6 +749,59 @@ it("gives a board case T3's board text, its board tools and Linear's, and grades
   assert.deepEqual(failed(question.expect, run(filed)), ["notCalls board_add"]);
 });
 
+it("gives a voice agent case its memories and memory_propose, and grades a replacement", () => {
+  const cases = NodeFS.readFileSync(
+    new URL("./cases/voice-agent-memories.ndjson", import.meta.url),
+    "utf8",
+  )
+    .trim()
+    .split("\n")
+    .map((line) => decodeDeviceCase(line));
+  const replace = cases.find((c) => c.id === "voice-memory-detail-contradiction-replaces")!;
+  const ordinary = cases.find((c) => c.id === "memory-ordinary-thread-leaves-category-out")!;
+  const systemOf = (memory: (typeof replace)["setup"]["memory"]) => {
+    const base = buildBase(template, {
+      model: "claude-haiku-5-5",
+      keepUserInstructions: false,
+      memory,
+    });
+    assert.include(
+      base.deferred.map((tool) => tool.name),
+      "mcp__t3-code__memory_propose",
+    );
+    return base.system.map((block) => String(block.text)).join("\n");
+  };
+  const voice = systemOf(replace.setup.memory);
+  assert.include(voice, "<voice_agent_memories>");
+  assert.include(
+    voice,
+    "- Keep updates to one sentence per agent.\n- Leave out dependency updates.",
+  );
+  assert.isBelow(voice.indexOf("</memory>"), voice.indexOf("<voice_agent_memories>"));
+  assert.include(systemOf(ordinary.setup.memory), "call memory_propose");
+  assert.notInclude(systemOf(ordinary.setup.memory), "<voice_agent_memories>");
+
+  const run = (...inputs: ReadonlyArray<Record<string, string>>): SampleRun => ({
+    calls: inputs.map((input, step) => ({ step, tool: "memory_propose", input })),
+    text: "",
+    stopReason: "end_turn",
+  });
+  const category = "voice-agent-memories";
+  const text = "Give a short paragraph per agent.";
+  const replaces = "Keep updates to one sentence per agent.";
+  assert.deepEqual(failed(replace.expect, run({ text, category, replaces })), []);
+  // A second memory on the subject, with nothing named to replace, fails both checks.
+  assert.deepEqual(failed(replace.expect, run({ text, category })), [
+    'calls memory_propose {"category":"voice-agent-memories","replaces":"~keep updates to one sentence per agent"}',
+    'callsMustNot memory_propose {"replaces":null}',
+  ]);
+  assert.deepEqual(failed(ordinary.expect, run({ text: "Keep replies short." })), []);
+  assert.deepEqual(failed(ordinary.expect, run({ text: "Keep replies short.", category })), [
+    'calls memory_propose {"category":null,"replaces":null}',
+    'callsMustNot memory_propose {"category":"voice-agent-memories"}',
+  ]);
+});
+
 it("replays earlier capability results with the model under test as the caller", () => {
   const base = buildBase(template, { model: "claude-opus-5-5", keepUserInstructions: false });
   const capabilities = {
