@@ -131,8 +131,12 @@ const fakeLibrary = (
     opaque: () => ({}),
     struct: () => ({}),
     out: () => ({}),
-    view: (memory: Float32Array, bytes: number) =>
-      memory.buffer.slice(memory.byteOffset, memory.byteOffset + bytes),
+    // Electron forbids external buffers, and koffi aborts the process when it makes one.
+    view: () => {
+      throw new Error("External buffers are not allowed");
+    },
+    decode: (memory: Float32Array, type: string, length: number) =>
+      type === "float" ? memory.slice(0, length) : undefined,
   } as unknown as typeof Koffi;
   return { koffi, seen };
 };
