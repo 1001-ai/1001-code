@@ -45,12 +45,23 @@ Safety
 - Send messages, propose memories and show screenshots only because the user asked in this conversation.
 - You have no other tools. You cannot read or change files, run commands or start work. When the user asks for that, say they can ask in the chat under this layer.`;
 
-const ENVELOPE_TAG =
-  /<\/?(?:layer_opened|board_changes|interrupted|you_had_said|you_had_not_said|user_said)\b[^>]*>/gi;
+const ENVELOPE_TAG_START =
+  /<\/?(?:layer_opened|board_changes|interrupted|you_had_said|you_had_not_said|user_said)\b/gi;
 
 /** Text that sits inside an envelope: it cannot close the envelope or open another. */
 export function voiceAgentPlainText(text: string): string {
-  return text.replace(ENVELOPE_TAG, " ").trim();
+  // A tag runs from its name to the next ">". One expression for the whole tag looks for that
+  // ">" again from every tag start, which is quadratic on other agents' text that has none.
+  let plain = "";
+  let from = 0;
+  for (const tag of text.matchAll(ENVELOPE_TAG_START)) {
+    if (tag.index < from) continue;
+    const end = text.indexOf(">", tag.index + tag[0].length);
+    if (end === -1) break;
+    plain += `${text.slice(from, tag.index)} `;
+    from = end + 1;
+  }
+  return (plain + text.slice(from)).trim();
 }
 
 /** A name inside an envelope's opening tag: one short run of plain characters, or nothing. */
@@ -104,11 +115,34 @@ export type VoiceAgentUserMessage =
   /** Not one of the voice agent's messages. */
   | { readonly kind: "other" };
 
+const SAID_TAG = "<user_said";
+const SAID_USER = ' user="';
+const SAID_END = "</user_said>";
+
+/** Where the text of the first `<user_said>` tag starts, with or without a name; -1 with no tag. */
+function saidTextStart(text: string): number {
+  for (let at = text.indexOf(SAID_TAG); at !== -1; at = text.indexOf(SAID_TAG, at + 1)) {
+    const afterName = at + SAID_TAG.length;
+    if (text[afterName] === ">") return afterName + 1;
+    if (!text.startsWith(SAID_USER, afterName)) continue;
+    const user = afterName + SAID_USER.length;
+    const quote = text.indexOf('"', user);
+    if (quote === -1 || text[quote + 1] !== ">") continue;
+    const name = text.slice(user, quote);
+    if (!name.includes("<") && !name.includes(">")) return quote + 2;
+  }
+  return -1;
+}
+
 /** Reads a user-role message of the voice agent's thread back, for the transcript. */
 export function parseVoiceAgentUserMessage(text: string): VoiceAgentUserMessage {
   const trimmed = text.trim();
   if (/^<layer_opened[ >]/.test(trimmed)) return { kind: "opened" };
-  const said = /<user_said(?: user="[^"<>]*")?>\n?([\s\S]*?)\n?<\/user_said>\s*$/.exec(trimmed);
-  if (said === null || !/^<(?:user_said|interrupted)[ >]/.test(trimmed)) return { kind: "other" };
-  return { kind: "said", text: (said[1] ?? "").trim() };
+  if (!/^<(?:user_said|interrupted)[ >]/.test(trimmed)) return { kind: "other" };
+  // Plain string work: an expression that looks for the closing tag from every opening tag is
+  // quadratic on a text that repeats the opening tag.
+  const start = saidTextStart(trimmed);
+  const end = trimmed.length - SAID_END.length;
+  if (start === -1 || end < start || !trimmed.endsWith(SAID_END)) return { kind: "other" };
+  return { kind: "said", text: trimmed.slice(start, end).trim() };
 }

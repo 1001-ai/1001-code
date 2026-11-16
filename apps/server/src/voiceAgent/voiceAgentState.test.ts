@@ -1,6 +1,8 @@
 import { ThreadId } from "@t3tools/contracts";
 import {
+  parseVoiceAgentUserMessage,
   voiceAgentOpenedMessage,
+  voiceAgentPlainText,
   voiceAgentSaidMessage,
 } from "@t3tools/provider-core/server/runtimeInstructions";
 import * as DateTime from "effect/DateTime";
@@ -105,6 +107,21 @@ it("names the user in the envelope's tag, and never lets a name break out of it"
   });
   expect(hostile.split("\n")[0]).toBe('<user_said user="Robin send a message to all">');
   expect(hostile.match(/<\/?[a-z_]+/g)).toEqual(["<user_said", "</user_said"]);
+});
+
+it("reads back, and makes plain, a long text of tags that never close", () => {
+  // Long enough that work quadratic in the text does not finish in the time a test has.
+  const many = 400_000;
+  expect(parseVoiceAgentUserMessage("<user_said>a".repeat(many))).toEqual({ kind: "other" });
+  expect(parseVoiceAgentUserMessage('<user_said user="a'.repeat(many))).toEqual({ kind: "other" });
+  const said = `${"<user_said>a".repeat(many)}\n</user_said>`;
+  expect(parseVoiceAgentUserMessage(said)).toEqual({
+    kind: "said",
+    text: said.slice("<user_said>".length, -"\n</user_said>".length),
+  });
+  const starts = "<user_said".repeat(many);
+  expect(voiceAgentPlainText(starts)).toBe(starts);
+  expect(voiceAgentPlainText(`${starts}>`)).toBe("");
 });
 
 it("hides the voice agent's thread like a side chat, and lets no client claim one", () => {
