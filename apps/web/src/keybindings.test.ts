@@ -644,6 +644,18 @@ describe("resolveShortcutCommand", () => {
     );
   });
 
+  it("cites the chat selection with mod+l, leaving it to the preview and terminal while focused", () => {
+    const citeEvent = event({ key: "l", metaKey: true });
+    const resolve = (context: { previewFocus?: boolean; terminalFocus?: boolean }) =>
+      resolveShortcutCommand(citeEvent, DEFAULT_RESOLVED_KEYBINDINGS, {
+        platform: "MacIntel",
+        context,
+      });
+    assert.strictEqual(resolve({}), "chat.citeSelection");
+    assert.strictEqual(resolve({ previewFocus: true }), "preview.focusUrl");
+    assert.isNull(resolve({ terminalFocus: true }));
+  });
+
   it("navigates history with mod+[ and mod+] outside the terminal", () => {
     const back = event({ key: "[", code: "BracketLeft", metaKey: true });
     const forward = event({ key: "]", code: "BracketRight", ctrlKey: true });
