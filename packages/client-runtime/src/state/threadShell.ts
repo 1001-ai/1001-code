@@ -10,6 +10,7 @@ import {
   isListedThreadLineage,
   isProviderNativeSubagentThread,
   OrchestrationV2ThreadShell,
+  withoutVoiceAgentThreads,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import { Atom } from "effect/reactivity";
@@ -237,9 +238,8 @@ export function createEnvironmentThreadShellAtoms(input: {
   };
 
   const environmentThreadsAtom = Atom.family((environmentId: EnvironmentId) =>
-    Atom.make(
-      (get): ReadonlyArray<OrchestrationV2ThreadShell> =>
-        get(input.snapshotAtom(environmentId))?.threads ?? EMPTY_THREADS,
+    Atom.make((get): ReadonlyArray<OrchestrationV2ThreadShell> =>
+      withoutVoiceAgentThreads(get(input.snapshotAtom(environmentId))?.threads ?? EMPTY_THREADS),
     ).pipe(Atom.withLabel(`environment-threads:${environmentId}`)),
   );
 

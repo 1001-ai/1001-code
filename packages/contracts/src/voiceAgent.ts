@@ -174,3 +174,16 @@ export class VoiceAgentError extends Schema.TaggedError<VoiceAgentError>()("Voic
     return ERROR_MESSAGES[this.reason];
   }
 }
+
+/**
+ * The voice agent's thread is never one of the client's threads: no list, chip, pane or count
+ * may show it. It is read only by id, by the layer and the transcript. Returns the same array
+ * when it holds none, so nothing recomputes.
+ */
+export function withoutVoiceAgentThreads<
+  Thread extends { readonly lineage: { readonly voiceAgent?: boolean | undefined } },
+>(threads: ReadonlyArray<Thread>): ReadonlyArray<Thread> {
+  return threads.some((thread) => thread.lineage.voiceAgent === true)
+    ? threads.filter((thread) => thread.lineage.voiceAgent !== true)
+    : threads;
+}
