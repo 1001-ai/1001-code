@@ -109,3 +109,13 @@ it("kills the process when its signal aborts, failing the request in flight", as
   expect(model.alive).toBe(false);
   await expect(model.speak({ text: "again" })).rejects.toThrow("stopped");
 });
+
+it("says why the process died, from the end of its stderr", async () => {
+  const model = await load(
+    "() => { process.stderr.write('FATAL ERROR: fixture abort\\n'); process.exit(3); }",
+  );
+  await expect(model.speak({ text: "Hello." })).rejects.toThrow(
+    "Voice output process exited (3).\nFATAL ERROR: fixture abort",
+  );
+  await model.dispose();
+});

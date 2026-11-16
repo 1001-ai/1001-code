@@ -58,6 +58,9 @@ const workerArgs = () =>
     ? ["__speech-worker", "voice-output"]
     : ["--input-type=module", "-e", `const baseUrl = ${JSON.stringify(import.meta.url)};${entry}`];
 
+// Enough for a native fatal error and its stack trace, which follow the runtime's own logging.
+const STDERR_TAIL_CHARS = 8_192;
+
 const WORKER_ENVIRONMENT_NAMES = [
   "PATH",
   "HOME",
@@ -108,7 +111,7 @@ export async function loadVoiceOutputModel(options: {
 }) {
   options.signal.throwIfAborted();
   const child = NodeChildProcess.spawn(process.execPath, workerArgs(), {
-    stdio: ["ignore", "ignore", "inherit", "ipc"],
+    stdio: ["ignore", "ignore", "pipe", "ipc"],
     serialization: "advanced",
     env: voiceOutputWorkerEnvironment(process.env),
   });
@@ -124,8 +127,18 @@ export async function loadVoiceOutputModel(options: {
     fail(error);
     exited.resolve();
   });
-  child.on("exit", (code, exitSignal) => {
-    fail(new Error(`Voice output process exited (${exitSignal ?? code}).`));
+  // A native abort explains itself only on stderr, so the exit error carries its end.
+  let stderrTail = "";
+  child.stderr?.on("data", (chunk: Buffer) => {
+    process.stderr.write(chunk);
+    stderrTail = (stderrTail + chunk.toString()).slice(-STDERR_TAIL_CHARS);
+  });
+  // After `exit`, once stderr is drained.
+  child.on("close", (code, exitSignal) => {
+    const tail = stderrTail.trim();
+    fail(
+      new Error(`Voice output process exited (${exitSignal ?? code}).${tail ? `\n${tail}` : ""}`),
+    );
     options.signal.removeEventListener("abort", stop);
     exited.resolve();
   });
