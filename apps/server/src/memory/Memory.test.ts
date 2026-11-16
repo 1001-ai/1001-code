@@ -60,7 +60,19 @@ const FILES: Record<string, string> = {
   "memory/projects/web.md": "- Run the web tests before pushing.\n",
   "memory/people/alice.md": "- Keep replies short.\n",
   "memory/people/bob.md": "- Bob's own rule.\n",
+  "memory/people/alice/voice-agent-memories.md": [
+    "# Voice agent memories",
+    "",
+    "- Keep updates to one sentence per agent. (saved 2026-03-09)",
+    "",
+    "## Earlier",
+    "",
+    "- Give a paragraph per agent. (saved 2026-03-02, replaced 2026-03-09 by: Keep updates to one sentence per agent.)",
+    "",
+  ].join("\n"),
+  "memory/people/bob/voice-agent-memories.md": "- Bob wants every detail.\n",
 };
+const VOICE_FILE = "memory/people/alice/voice-agent-memories.md";
 
 const makeMemory = (input: {
   readonly catalog: TeamCatalogSnapshot;
@@ -81,6 +93,7 @@ const makeMemory = (input: {
 }) => {
   const proposals: Array<TeamCatalog.TeamCatalogFilesProposal> = [];
   const merged: Array<string> = [];
+  const reads: Array<string> = [];
   const store = { saved: input.stored ?? [], saves: 0 };
   const build = Memory.layer.pipe(
     Layer.provide(
@@ -111,7 +124,10 @@ const makeMemory = (input: {
           readFile:
             input.readFile ??
             ((file) =>
-              Effect.succeed(input.catalog.source === null ? null : (FILES[file] ?? null))),
+              Effect.sync(() => {
+                reads.push(file);
+                return input.catalog.source === null ? null : (FILES[file] ?? null);
+              })),
           refresh: () =>
             (input.refreshed === undefined
               ? Effect.void
@@ -157,7 +173,7 @@ const makeMemory = (input: {
     Layer.build,
     Effect.map((context) => Context.get(context, Memory.Memory)),
   );
-  return { build, proposals, merged, store };
+  return { build, proposals, merged, store, reads };
 };
 
 it.effect(
@@ -480,5 +496,184 @@ it.effect("a proposal made during a slow save is not lost when that save lands",
     yield* Fiber.join(first);
     yield* Fiber.join(second);
     expect(fixture.store.saved.map((saved) => saved.text)).toEqual(["Use tabs.", "Prefer pnpm."]);
+  }).pipe(Effect.scoped),
+);
+
+it.effect(
+  "keeps voice agent memories out of the block, and reads only the viewer's own active ones",
+  () =>
+    Effect.gen(function* () {
+      const fixture = makeMemory({ catalog: catalog() });
+      const memory = yield* fixture.build;
+      const block = yield* memory.instructions(PROJECT_ID, THREAD_ID);
+      expect(block).not.toContain("one sentence per agent");
+      // A turn of any other agent does not even read the file.
+      expect(fixture.reads.filter((file) => file.includes("voice-agent"))).toEqual([]);
+
+      const view = yield* memory.read(PROJECT_ID);
+      const without = yield* makeMemory({
+        catalog: catalog(),
+        readFile: (file) =>
+          Effect.succeed(file.includes("voice-agent") ? null : (FILES[file] ?? null)),
+      }).build;
+      const plain = yield* without.read(PROJECT_ID);
+      expect(view.block).toBe(block);
+      expect({ block: view.block, documents: view.documents }).toEqual({
+        block: plain.block,
+        documents: plain.documents,
+      });
+      expect(plain.voiceAgent).toEqual({
+        file: VOICE_FILE,
+        unavailable: null,
+        active: [],
+        earlier: [],
+      });
+      expect(view.voiceAgent).toEqual({
+        file: VOICE_FILE,
+        unavailable: null,
+        active: [{ text: "Keep updates to one sentence per agent.", savedOn: "2026-03-09" }],
+        earlier: [
+          {
+            text: "Give a paragraph per agent.",
+            savedOn: "2026-03-02",
+            replacedOn: "2026-03-09",
+            replacedBy: "Keep updates to one sentence per agent.",
+          },
+        ],
+      });
+
+      const instructions = yield* memory.voiceAgentInstructions();
+      expect(instructions).toContain("\n- Keep updates to one sentence per agent.\n");
+      expect(instructions).not.toContain("Give a paragraph per agent");
+      expect(instructions).not.toContain("Prefer small pull requests");
+      expect(yield* memory.voiceAgentEarlier()).toEqual(view.voiceAgent.earlier);
+      expect(new Set(fixture.reads.filter((file) => file.includes("voice-agent")))).toEqual(
+        new Set([VOICE_FILE]),
+      );
+
+      const signedOut = yield* makeMemory({
+        catalog: catalog({ viewer: { login: null, problem: "The GitHub CLI is not signed in." } }),
+      }).build;
+      expect(yield* signedOut.voiceAgentInstructions()).toBeUndefined();
+      expect((yield* signedOut.read(PROJECT_ID)).voiceAgent).toMatchObject({
+        file: null,
+        unavailable: "The GitHub CLI is not signed in.",
+      });
+      const none = yield* makeMemory({ catalog: catalog({ source: null }) }).build;
+      expect(yield* none.voiceAgentInstructions()).toBeUndefined();
+      expect(yield* none.voiceAgentEarlier()).toEqual([]);
+      const broken = yield* makeMemory({
+        catalog: catalog(),
+        readFile: () => Effect.die("disk gone"),
+      }).build;
+      expect(yield* broken.voiceAgentInstructions()).toBeUndefined();
+      expect(yield* broken.voiceAgentEarlier()).toEqual([]);
+    }).pipe(Effect.scoped),
+);
+
+it.effect("accepting a voice agent memory puts it in place of the one it replaces", () =>
+  Effect.gen(function* () {
+    const voice = (text: string, replaces?: string) => ({
+      ...agentProposal(text),
+      category: "voice-agent-memories" as const,
+      replaces,
+    });
+    // The file is the person's own, so the thread's project need not be in the catalog.
+    const fixture = makeMemory({ catalog: catalog(), identity: null });
+    const memory = yield* fixture.build;
+    expect(
+      (yield* Effect.flip(
+        memory.proposeFromAgent(voice("Give two sentences per agent.", "Keep it short.")),
+      )).detail,
+    ).toBe(
+      'No voice agent memory has the text given as replaces. Give the exact text of one of the active ones: "Keep updates to one sentence per agent.". Leave replaces out for a new subject.',
+    );
+    expect(
+      (yield* Effect.flip(
+        memory.proposeFromAgent({ ...agentProposal("Use tabs."), replaces: "Use spaces." }),
+      )).detail,
+    ).toContain("Only a voice agent memory replaces another one.");
+
+    const proposal = yield* memory.proposeFromAgent(
+      voice("Give two sentences per agent.", " Keep updates to one sentence per agent. "),
+    );
+    expect(proposal).toMatchObject({
+      category: "voice-agent-memories",
+      replaces: "Keep updates to one sentence per agent.",
+      decision: null,
+    });
+    const decide = (choice: "me" | "team", proposalId = proposal.id) =>
+      memory.decide(
+        { projectId: PROJECT_ID, proposalId, choice, text: "Give two sentences per agent." },
+        "session-1",
+      );
+    expect((yield* Effect.flip(decide("team"))).detail).toBe(
+      "A voice agent memory is yours alone: accept it for yourself or reject it.",
+    );
+    expect((yield* decide("me")).decision).toMatchObject({
+      choice: "me",
+      text: "Give two sentences per agent.",
+      file: VOICE_FILE,
+      merged: true,
+    });
+    expect(fixture.proposals).toEqual([
+      {
+        baseRevision: "rev-1",
+        files: [
+          {
+            file: VOICE_FILE,
+            text: [
+              "# Voice agent memories",
+              "",
+              "- Give two sentences per agent. (saved 1970-01-01)",
+              "",
+              "## Earlier",
+              "",
+              "- Keep updates to one sentence per agent. (saved 2026-03-09, replaced 1970-01-01 by: Give two sentences per agent.)",
+              "- Give a paragraph per agent. (saved 2026-03-02, replaced 2026-03-09 by: Keep updates to one sentence per agent.)",
+              "",
+            ].join("\n"),
+          },
+        ],
+        title: "Remember for the voice agent: Give two sentences per agent.",
+        body: expect.stringContaining(
+          "It replaces this memory, which moves to the file's log:\n\n> Keep updates to one sentence per agent.",
+        ),
+        branchStem: "memory/voice-agent-alice",
+      },
+    ]);
+    expect(fixture.merged).toHaveLength(1);
+
+    const repeat = yield* memory.proposeFromAgent(voice("Keep updates to one sentence per agent."));
+    expect(
+      (yield* Effect.flip(
+        memory.decide(
+          {
+            projectId: PROJECT_ID,
+            proposalId: repeat.id,
+            choice: "me",
+            text: "Keep updates to one sentence per agent.",
+          },
+          "session-1",
+        ),
+      )).detail,
+    ).toBe("Nothing to save: this voice agent memory is already active.");
+
+    // After a GitHub CLI account switch, the memory goes to the signed-in person's file.
+    const switched = makeMemory({ catalog: catalog(), liveLogin: "Bob" });
+    const bob = yield* switched.build;
+    const added = yield* bob.proposeFromAgent(voice("Skip finished agents."));
+    yield* bob.decide(
+      { projectId: PROJECT_ID, proposalId: added.id, choice: "me", text: "Skip finished agents." },
+      "session-1",
+    );
+    expect(switched.proposals.map((files) => files.files)).toEqual([
+      [
+        {
+          file: "memory/people/bob/voice-agent-memories.md",
+          text: "# Voice agent memories\n\n- Bob wants every detail.\n- Skip finished agents. (saved 1970-01-01)\n",
+        },
+      ],
+    ]);
   }).pipe(Effect.scoped),
 );

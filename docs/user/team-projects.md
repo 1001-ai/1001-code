@@ -197,6 +197,27 @@ The agent keeps working while the card waits, and deciding never starts a turn: 
 memory applies from the next one. Unanswered proposals also wait under **Proposals** in the
 Memory panel. Only the web and desktop apps show the cards.
 
+### Voice agent memories
+
+The voice agent tells you aloud what agents are doing in a repository. It is still being built;
+until it ships, nothing proposes these memories. It keeps how you want its spoken updates in a
+category of its own, **voice-agent-memories**: how detailed they should be, and which topics to
+cover or leave out.
+They live in `memory/people/<github-login>/voice-agent-memories.md`, one file per person. Only
+the voice agent gets them. They are not part of the memory other agents receive and do not
+count toward its size limit.
+
+When you tell the voice agent something new, it proposes a memory as a card in the chat, like
+any other; **Accept** saves it for you. A newer memory on a subject replaces the older one: the
+card shows the line it replaces, and accepting moves that line to the file's **Earlier** list
+with the day it was replaced and what replaced it. The voice agent is given only the active
+memories, about 2 KB of them at most; the earlier ones stay in the file as a record. **Voice
+agent** in the Memory panel shows the active memories, with **Earlier** folded below them.
+
+You can also edit the file by hand in the catalog repository. One memory per list item; a date
+in the form `(saved 2026-03-09)` at the end of a line is optional. Everything above the
+`## Earlier` heading is active.
+
 Agents pick up changes on their next turn once the catalog is fetched again. A turn uses the
 last fetch and fetches in the background when it is more than ten minutes old; the refresh
 button fetches at once. Claude and Codex get memory. Rules that belong to one

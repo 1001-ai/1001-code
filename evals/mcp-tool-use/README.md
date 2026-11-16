@@ -304,9 +304,28 @@ After the change, the first reference to a file is an absolute link. The remaini
 pnpm mcp-tool-use --cases mcp-tool-use/cases/board.ndjson --model claude-haiku-5-5 --samples 3 --out runs/board
 ```
 
+## Voice agent memory cases
+
+`cases/voice-agent-memories.ndjson` checks how an agent saves the user's preferences for the voice agent's spoken updates. These memories have their own category in `memory_propose`, and a newer one on a subject takes the place of the older one, which the agent names in `replaces`. `setup.memory` gives the thread T3's `<memory>` block and the `memory_propose` tool; with `voiceAgent`, a list of active memories, the thread also gets the voice agent's block. The voice agent's own instructions do not exist yet, so each voice case states its role in `setup.context`.
+
+| Case                                       | Kind    | What it checks                                                                               |
+| ------------------------------------------ | ------- | -------------------------------------------------------------------------------------------- |
+| voice-memory-detail-contradiction-replaces | guard   | Asked for more detail than an active memory allows, the agent replaces that memory.          |
+| voice-memory-topic-contradiction-replaces  | guard   | Asked to cover a topic an active memory leaves out, the agent replaces that memory.          |
+| voice-memory-new-subject-adds              | guard   | A preference on a new subject is proposed in the category, with nothing to replace.          |
+| voice-memory-unrelated-fact-control        | control | A fact about the project, told to the voice agent, is not saved in the voice category.       |
+| memory-ordinary-thread-leaves-category-out | control | In an ordinary thread a repeated preference is an ordinary memory: no category, no replaces. |
+
+```sh
+pnpm mcp-tool-use --cases mcp-tool-use/cases/voice-agent-memories.ndjson --model claude-haiku-5-5 --samples 3 --out runs/voice-agent-memories
+```
+
+These cases have not been run on a model yet, so they have no baseline.
+
 ## Where T3's text lives
 
 - `apps/server/src/memory/Memory.ts` (`boardInstructions`, the `<board>` block)
+- `apps/server/src/memory/voiceAgentMemories.ts` (`buildVoiceAgentMemoryBlock`, the `<voice_agent_memories>` block)
 - `packages/provider-core/src/server/runtimeInstructions.ts`
 - `packages/provider-core/src/server/orchestrationInstructions.ts`
 - `apps/server/src/provider/CodexDeveloperInstructions.ts`

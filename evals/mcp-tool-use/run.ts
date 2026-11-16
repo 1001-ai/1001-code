@@ -94,6 +94,7 @@ import {
   secretDiagnostics,
 } from "./secret-grading.ts";
 import { boardMemory, boardTools, LINEAR_PREFIX } from "./board.ts";
+import { MemorySetup, memoryText, memoryTools, teamText } from "./memory.ts";
 /** Agent models by id, with the display name a harness gives them. */
 const MODELS = {
   "claude-sonnet-5-5": "Sonnet 5.5",
@@ -310,6 +311,8 @@ export const McpToolUseCase = Schema.Struct({
     liveAppCheckout: Schema.optional(Schema.String),
     /** The project's Linear board: T3 adds its `<board>` block, and Linear's MCP tools are loadable. */
     board: Schema.optional(Contracts.TeamCatalogLinear),
+    /** T3's memory: its `<memory>` block and `memory_propose`; with `voiceAgent`, that block too. */
+    memory: Schema.optional(MemorySetup),
     /** delegate_task `role` for a delegated child. T3 builds the child's first message from it. */
     delegateRole: Schema.optional(OrchestratorMcpTaskRole),
     context: Schema.optional(Schema.String),
@@ -648,10 +651,15 @@ export const buildBase = (
     readonly browserAccess?: boolean;
     /** The project's Linear board: T3's `<board>` block joins the append, Linear's tools the list. */
     readonly board?: Contracts.TeamCatalogLinear | undefined;
+    /** T3's memory text joins the append, `memory_propose` the list. */
+    readonly memory?: typeof MemorySetup.Type | undefined;
   },
 ) => {
   const t3 = visibleT3Tools(options);
-  const mcpTools = options.board === undefined ? [] : boardTools;
+  const mcpTools = [
+    ...(options.board === undefined ? [] : boardTools),
+    ...(options.memory === undefined ? [] : memoryTools),
+  ];
   const firstAssistant = template.messages.findIndex((message) => message.role === "assistant");
   const head = template.messages.slice(0, firstAssistant === -1 ? undefined : firstAssistant);
   const systemTexts = [
@@ -679,7 +687,10 @@ export const buildBase = (
         model,
         options.deviceAccess,
         options.browserAccess,
-        options.board === undefined ? undefined : boardMemory(options.board, EVAL_ENVIRONMENT_ID),
+        teamText(
+          options.memory === undefined ? undefined : memoryText(options.memory),
+          options.board === undefined ? undefined : boardMemory(options.board, EVAL_ENVIRONMENT_ID),
+        ),
       );
   const modelLine = `You are powered by the model named ${MODELS[model]}. The exact model ID is ${model}.`;
   const joined = systemTexts.join("\n");
@@ -2547,6 +2558,7 @@ const main = Effect.gen(function* () {
     browserAccess: boolean,
     links: boolean,
     board: Contracts.TeamCatalogLinear | undefined,
+    memory: typeof MemorySetup.Type | undefined,
   ): Effect.Effect<Base, Schema.SchemaError> =>
     codex
       ? decodeCodexCapture(template).pipe(
@@ -2573,6 +2585,7 @@ const main = Effect.gen(function* () {
               deviceAccess,
               browserAccess,
               board,
+              memory,
             });
             return role === "native-subagent"
               ? Effect.promise(() =>
@@ -2583,8 +2596,8 @@ const main = Effect.gen(function* () {
         );
   // Codex has no native subagents; its cases with that role run as top-level threads.
   const baseKey = ({ setup }: McpToolUseCase) =>
-    `${codex && setup.role === "native-subagent" ? "top" : setup.role}:${setup.world?.deviceAgentAccess !== false}:${setup.world?.browserAgentAccess !== false}:${setup.linkedEnvironments === true}${setup.liveAppCheckout ? `:${setup.liveAppCheckout}` : ""}${setup.board ? `:board=${JSON.stringify(setup.board)}` : ""}`;
-  const base = yield* buildFor("top", true, true, false, undefined);
+    `${codex && setup.role === "native-subagent" ? "top" : setup.role}:${setup.world?.deviceAgentAccess !== false}:${setup.world?.browserAgentAccess !== false}:${setup.linkedEnvironments === true}${setup.liveAppCheckout ? `:${setup.liveAppCheckout}` : ""}${setup.board ? `:board=${JSON.stringify(setup.board)}` : ""}${setup.memory ? `:memory=${JSON.stringify(setup.memory)}` : ""}`;
+  const base = yield* buildFor("top", true, true, false, undefined, undefined);
   const bases = new Map<string, Base>([["top:true:true:false", base]]);
   for (const testCase of selected) {
     const key = baseKey(testCase);
@@ -2605,6 +2618,7 @@ const main = Effect.gen(function* () {
           browser === "true",
           links === "true",
           testCase.setup.board,
+          testCase.setup.memory,
         ),
       ),
     );
