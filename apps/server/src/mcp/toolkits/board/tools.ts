@@ -54,7 +54,7 @@ const BoardUpdateTool = Tool.make(BOARD_UPDATE_TOOL_NAME, {
   description:
     "Change a task on this thread's project board: its status, assignee, title or description. Only the fields you give change. Also attaches this thread's link if the task does not have it yet.",
   parameters: Schema.Struct({
-    task: Text("The task's identifier, such as COD-12.", 50),
+    task: Text("The task's identifier, such as ENG-12.", 50),
     title: Schema.optional(title),
     description: Schema.optional(description),
     status: Schema.optional(status),

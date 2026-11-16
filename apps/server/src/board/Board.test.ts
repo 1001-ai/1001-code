@@ -448,13 +448,7 @@ const detailAnswer = (id: string, teamId: string, linked = true): Answer => ({
               bot: "GitHub",
             }),
             // A reply to a reply, which Linear's API allows; it belongs under the root.
-            linearComment(
-              "c-4",
-              "2026-11-14T10:30:00.000Z",
-              "Thanks.",
-              { user: "Lawrence" },
-              "c-2",
-            ),
+            linearComment("c-4", "2026-11-14T10:30:00.000Z", "Thanks.", { user: "Sam" }, "c-2"),
             linearComment(
               "c-2",
               "2026-11-14T10:00:00.000Z",
@@ -463,7 +457,7 @@ const detailAnswer = (id: string, teamId: string, linked = true): Answer => ({
               "c-1",
             ),
             linearComment("c-1", "2026-11-14T09:00:00.000Z", "Can you take this?", {
-              user: "Lawrence",
+              user: "Sam",
             }),
           ],
         },
@@ -493,7 +487,7 @@ const calls = (linear: FakeLinear, operation: string) =>
 
 const members = [
   { id: "user-1", name: "Dana Kim", displayName: "dana", email: "dana@example.com" },
-  { id: "user-2", name: "Lawrence Ade", displayName: "Lawrence", email: "lawrence@acme.test" },
+  { id: "user-2", name: "Sam Lee", displayName: "Sam", email: "sam@acme.test" },
   { id: "user-3", name: "Sam Lee", displayName: "sam", email: "sam.lee@acme.test" },
   { id: "user-4", name: "Sam Park", displayName: "sam", email: "sam.park@acme.test" },
 ];
@@ -1087,7 +1081,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Board", (it) => 
               {
                 id: "c-1",
                 body: "Can you take this?",
-                author: "Lawrence Full",
+                author: "Sam Full",
                 createdAt: "2026-11-14T09:00:00.000Z",
                 agent: false,
                 replies: [
@@ -1101,7 +1095,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Board", (it) => 
                   {
                     id: "c-4",
                     body: "Thanks.",
-                    author: "Lawrence Full",
+                    author: "Sam Full",
                     createdAt: "2026-11-14T10:30:00.000Z",
                     agent: false,
                   },
@@ -1179,7 +1173,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Board", (it) => 
               projectId: "project-thread",
               threadId: "thread-mine",
               commandId: "board-comment:thread-mine:c-new",
-              text: "I replied to Lawrence Full's comment on ENG-1 in Linear:\n\nOn it.",
+              text: "I replied to Sam Full's comment on ENG-1 in Linear:\n\nOn it.",
               mode: "queue",
               createdBy: "user",
             }),
@@ -1754,12 +1748,12 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Board", (it) => 
             board.updateTask({ projectId: PROJECT_ID, thread: THREAD, identifier, ...fields });
 
           // Linked here already: one update, no second link.
-          const moved = yield* update("ENG-1", { status: "done", assignee: "lawrence@acme.test" });
+          const moved = yield* update("ENG-1", { status: "done", assignee: "sam@acme.test" });
           expect(moved).toEqual({
             task: expect.objectContaining({
               identifier: "ENG-1",
               status: { name: "Done", type: "completed" },
-              assignee: "Lawrence Ade",
+              assignee: "Sam Lee",
             }),
             threadLinked: true,
           });

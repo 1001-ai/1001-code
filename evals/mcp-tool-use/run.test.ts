@@ -724,7 +724,7 @@ it("gives a board case T3's board text, its board tools and Linear's, and grades
   });
   const system = base.system.map((block) => String(block.text)).join("\n");
   const environment = EnvironmentId.make("eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee");
-  assert.include(system, boardMemory({ team: "COD" }, environment));
+  assert.include(system, boardMemory({ team: "ENG" }, environment));
   assert.include(system, "mcp__linear__save_issue");
   assert.includeMembers(
     base.deferred.map((tool) => tool.name),
@@ -740,7 +740,7 @@ it("gives a board case T3's board text, its board tools and Linear's, and grades
     stopReason: "end_turn",
   });
   const filed: [string, unknown] = ["board_add", { title: "Fix 1 minutes", assignee: "me" }];
-  const linearFiled: [string, unknown] = ["save_issue", { team: "COD", title: "Fix 1 minutes" }];
+  const linearFiled: [string, unknown] = ["save_issue", { team: "ENG", title: "Fix 1 minutes" }];
   const edit: [string, unknown] = ["Edit", { file_path: "src/format.ts" }];
   assert.deepEqual(failed(fix.expect, run(["board_list", {}], filed, edit)), []);
   assert.deepEqual(failed(fix.expect, run(edit, filed)), ["order board_add > Edit"]);

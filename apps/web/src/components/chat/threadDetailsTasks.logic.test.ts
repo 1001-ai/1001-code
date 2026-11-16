@@ -20,9 +20,9 @@ const link = (environmentId: string, threadId: string) => ({
 
 const issue = (id: string, threads: BoardIssue["threads"]): BoardIssue => ({
   id,
-  identifier: `COD-${id}`,
+  identifier: `ENG-${id}`,
   title: id,
-  url: `https://linear.app/acme/issue/COD-${id}`,
+  url: `https://linear.app/acme/issue/ENG-${id}`,
   stateId: "state",
   assignee: null,
   labels: [],
@@ -46,7 +46,7 @@ const ready = (columns: Extract<BoardSnapshot, { status: "ready" }>["board"]["co
     status: "ready",
     failure: null,
     board: {
-      team: { id: "team", key: "COD", name: "Code" },
+      team: { id: "team", key: "ENG", name: "Code" },
       project: null,
       columns,
       truncated: false,
@@ -72,8 +72,8 @@ describe("threadBoardTasks", () => {
     expect(
       threadBoardTasks(snapshot, thread).map((task) => [task.issue.identifier, task.state.name]),
     ).toEqual([
-      ["COD-1", "In Progress"],
-      ["COD-4", "Done"],
+      ["ENG-1", "In Progress"],
+      ["ENG-4", "Done"],
     ]);
   });
 

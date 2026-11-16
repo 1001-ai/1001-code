@@ -6,19 +6,11 @@ The three Icon Composer projects are the source of truth for full application ic
 - `nightly/app-icon.icon`
 - `prod/app-icon.icon`
 
-Each project uses `text.svg` for the 1001 mark and `background.svg` when the background is a vector layer. Additional layers use semantic names that describe their role and placement.
-
-`1001/` holds the logo as supplied (`logo-black.png`), its white counterpart, and `mark.svg`, a vector trace of it. The dev and nightly `text.svg` layers and the web mark in `apps/web/src/components/T3Wordmark.tsx` carry that trace. Replace the trace if an original vector turns up. `1001/lamp.svg` is the agent's lamp with three stars, on a 24-unit icon grid.
-
-The prod icon is the lamp: `lamp.svg` and `stars.svg` are glass layers drawn from `1001/lamp.svg` in a 1024-unit design space (the icon body at 100..924) and wrapped onto the 128-unit layer canvas. It follows the appearance: a near-black lamp on a light fill by default, a white lamp on a dark fill in Dark, and a white lamp for Clear and Tinted, which take their look from the glyph's brightness. Icon Composer fills every path, open or not, so the layers outline the handle's stroke and draw the foot as a rounded rectangle. `prod/logo.svg` is the default appearance as a flat SVG.
-
-The prod PNG and ICO files are native Icon Composer exports, except `prod/black-macos-1024.png`: it is the macOS export scaled to 824×824 and placed on the classic safe area with a soft shadow, not a `macOS pre-Tahoe` export. Replace it with a native export when convenient. The dev and nightly PNG and ICO files were last rendered without Icon Composer: flat layers, with the silhouettes and the macOS shadow taken from upstream's exports. They will not match an Icon Composer export, so `vp run icons:check` reports them until `vp run icons:export` and the macOS exports below replace them with native renders.
+Each project uses `text.svg` for the T3 mark and `background.svg` when the background is a vector layer. Additional layers use semantic names that describe their role and placement.
 
 Run `vp run icons:export` from the repository root to regenerate the tracked iOS, Linux, Windows, and web assets. The development web exports are also copied to `apps/web/public` for the browser favicon, web app manifest icons, and splash screen. Run `vp run icons:check` to verify that the generated assets and public copies match their sources without changing files.
 
 Exporting requires Icon Composer 2 or newer on macOS. The script selects the newest compatible exporter from Xcode or a standalone Icon Composer installation and pins design generation 26. Set `ICON_COMPOSER_TOOL` to the full path of `Icon Composer.app/Contents/Executables/ictool` to override automatic discovery.
-
-The packaged macOS app ships `prod/macos-app-icon` or `nightly/macos-app-icon` (`Assets.car` for macOS 26 and `icon.icns` for older macOS), compiled from the Icon Composer project, so building the app does not need Xcode. After changing `prod/app-icon.icon` or `nightly/app-icon.icon`, run `vp run icons:compile:mac` on a Mac with Xcode 26 or newer and commit the result; a test fails until you do.
 
 ## macOS exports
 

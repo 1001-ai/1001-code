@@ -131,7 +131,7 @@ Each environment reads Linear as the person who signed in on it, so sign in on e
 use the board from.
 
 When an agent's message links to an issue of the board's Linear team, or writes its id such as
-`COD-60`, selecting it opens the issue on the board instead of in Linear. An issue the board does
+`ENG-60`, selecting it opens the issue on the board instead of in Linear. An issue the board does
 not show, such as one in another Linear project of the team, or any issue while the board cannot
 load, gets a note with **Open in Linear**.
 Links to other teams' issues, links you select while holding a modifier key, and every link while

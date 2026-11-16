@@ -15,8 +15,8 @@ import type { BoardOpenIssue } from "./boardOpenIssueStore";
 /** The context kind an issue id in prose renders through `renderContextReference`. */
 export const BOARD_ISSUE_REF_KIND = "linear-issue";
 
-// An id the way prose mentions it: `COD-60`, `(COD-60)` or `COD-60,`, but not `a/COD-60`,
-// `COD-60a`, `COD-60-x` or `COD-0`. Team keys follow the catalog's `linear.team` pattern.
+// An id the way prose mentions it: `ENG-60`, `(ENG-60)` or `ENG-60,`, but not `a/ENG-60`,
+// `ENG-60a`, `ENG-60-x` or `ENG-0`. Team keys follow the catalog's `linear.team` pattern.
 const ISSUE_REF =
   /(?<![\p{L}\p{N}_/-])[A-Z][A-Z0-9_]{0,15}-[1-9][0-9]{0,7}(?![\p{L}\p{N}_]|-[\p{L}\p{N}])/gu;
 const LINEAR_ISSUE_PATH = /^\/[^/]+\/issue\/([A-Za-z][A-Za-z0-9_]{0,15}-[1-9][0-9]{0,7})(?:\/|$)/;
@@ -36,7 +36,7 @@ export function findIssueRefs(
   }));
 }
 
-/** The identifier in a Linear issue URL, such as `https://linear.app/acme/issue/COD-60/slug`. */
+/** The identifier in a Linear issue URL, such as `https://linear.app/acme/issue/ENG-60/slug`. */
 export function parseLinearIssueUrl(href: string): string | null {
   let url: URL;
   try {

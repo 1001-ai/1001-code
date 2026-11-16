@@ -15,7 +15,7 @@ const toolCallFromTitle = (title: string) => {
 describe("extractMcpToolCallIdentity with the fork's T3 tools", () => {
   it.each([
     ["Running board_add", "board_add"],
-    ['board_update: {"task":"COD-115","status":"Done"}', "board_update"],
+    ['board_update: {"task":"ENG-115","status":"Done"}', "board_update"],
     ["@t3-code/board_list", "board_list"],
     ["t3-code/memory_propose", "memory_propose"],
   ])("names a title-only %s call as T3's", (title, tool) => {
