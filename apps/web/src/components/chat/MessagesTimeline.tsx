@@ -141,6 +141,7 @@ import { useStableHandoffRuns, useIncrementalTimelineRows, useStableRows } from 
 import { useClientSettings } from "../../hooks/useSettings";
 import { ExchangeThreadView, useExchangeThread } from "./ExchangeThread";
 import { useLampLayer } from "../lamp/LampLayer";
+import { LampTranscriptTimelineRow, useLampTranscriptRows } from "../lamp/LampTranscript";
 
 function timelineListStateFor(identity: string): {
   readonly identity: string;
@@ -753,7 +754,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     toolCallVisibility,
     revealedMessageId,
   });
-  const rows = useStableRows(rawRows, listIdentityKey);
+  const rows = useLampTranscriptRows(useStableRows(rawRows, listIdentityKey), listIdentityKey);
   const matchedApprovalRequestIds = new Set<string>();
   for (const row of pendingApprovalRequestIds.size > 0 ? rows : []) {
     const entries =
@@ -1377,7 +1378,6 @@ const ConversationTimeline = memo(function ConversationTimeline({
       composerInset={anchoredEndSpace ? 0 : contentInsetEndAdjustment}
       onGrow={onFooterGrow}
     >
-      {lampLayer.cards}
       {footer}
       {unmatchedPendingApprovals.length > 0 ? (
         <TimelineRowCtx value={sharedState}>
@@ -1701,6 +1701,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       {row.kind === "working" ? <WorkingTimelineRow row={row} /> : null}
       {row.kind === "worktree-setup" ? <WorktreeSetupTimelineRow row={row} /> : null}
       {row.kind === "event" ? <V2EventTimelineRow row={row} /> : null}
+      {row.kind === "lamp-transcripts" ? <LampTranscriptTimelineRow row={row} /> : null}
     </div>
   );
 });
