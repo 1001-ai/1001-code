@@ -180,9 +180,11 @@ export function ReplyAnnotationsOverlay({
               className="pointer-events-auto absolute flex size-6 items-center justify-center rounded-full rounded-br-sm bg-info font-semibold text-white text-xs shadow-sm focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white"
               style={{ top: marker.top, left: marker.left }}
               onPointerDown={(event) => event.preventDefault()}
-              onClick={() =>
-                editReplyAnnotation(annotation.id === editingId ? null : annotation.id)
-              }
+              onClick={() => {
+                const wasOpen = annotation.id === editingId;
+                closeEditing(true);
+                if (!wasOpen) editReplyAnnotation(annotation.id);
+              }}
             >
               {annotation.number}
             </button>
@@ -193,7 +195,11 @@ export function ReplyAnnotationsOverlay({
       <Popover
         open={editing !== null}
         onOpenChange={(open, details) => {
-          if (!open) closeEditing(details.reason !== "escape-key");
+          if (open) return;
+          // A marker click is handled by the marker, which saves before it switches.
+          const target = details.event.target;
+          if (target instanceof Node && markersRef.current?.contains(target)) return;
+          closeEditing(details.reason !== "escape-key");
         }}
       >
         {editing ? (

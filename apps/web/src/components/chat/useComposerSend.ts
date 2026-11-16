@@ -104,7 +104,7 @@ import {
   referencedThreadContexts,
 } from "./composerSend.logic";
 import { useMultipleModelSend } from "./useMultipleModelSend";
-import { appendReplyAnnotations } from "./replyAnnotations";
+import { appendReplyAnnotations, readReplyAnnotations } from "./replyAnnotations";
 import { type ComposerDispatchMode } from "@t3tools/client-runtime/state/composer-dispatch";
 import {
   awaitAttachmentUploads,
@@ -505,6 +505,7 @@ export function useComposerSend(input: ComposerSendInput) {
         sendCtx.reviewComments.length > 0 ||
         sendCtx.threadContexts.length > 0 ||
         sendCtx.environmentContexts.length > 0 ||
+        readReplyAnnotations(composerDraftTarget).length > 0 ||
         useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.replyTo
       ) {
         toastManager.add(
