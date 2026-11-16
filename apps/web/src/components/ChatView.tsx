@@ -298,6 +298,7 @@ import {
   ThreadPanelHeaderControl,
   WorkspaceTitlebarControls,
 } from "./chat/PanelLayoutControls";
+import { LampButton, LampHeaderEntry } from "./lamp/LampButton";
 import type { ExpandedImagePreview } from "./chat/ExpandedImagePreview";
 import { ThreadDetailsPanel } from "./chat/ThreadDetailsPanel";
 import { ComposerStatusStrip } from "./chat/ComposerStatusStrip";
@@ -3289,6 +3290,7 @@ export default function ChatView(props: ChatViewProps) {
       maximized={rightPanelMaximized}
       onToggleMaximized={toggleRightPanelMaximizedStable}
     >
+      {inlineRightPanelOwnsTitleBar ? null : <LampButton threadKey={displayedTimelineKey} />}
       {panelToggleControls}
     </WorkspaceTitlebarControls>
   );
@@ -3360,6 +3362,10 @@ export default function ChatView(props: ChatViewProps) {
                 ? { onOpenProjectSettings: handleOpenDraftProjectSettingsStable }
                 : {})}
               {...(threadFindEnabled ? { onFindInThread: openThreadFindStable } : {})}
+            />
+            <LampHeaderEntry
+              threadKey={displayedTimelineKey}
+              inHeader={inlineRightPanelOwnsTitleBar}
             />
           </header>
         )}

@@ -1,0 +1,54 @@
+/** The feature's working name, in the one place the interface reads it from. */
+export const LAMP_NAME = "Lamp";
+
+export interface LampLayerState {
+  /** The thread whose title bar shows the button; the shortcut and the palette act on it. */
+  readonly target: string | null;
+  /** The thread whose chat the layer covers. */
+  readonly openIn: string | null;
+}
+
+export const LAMP_LAYER_CLOSED: LampLayerState = { target: null, openIn: null };
+
+export function isLampLayerOpenIn(state: LampLayerState, threadKey: string | null): boolean {
+  return state.openIn !== null && state.openIn === threadKey;
+}
+
+/** The shortcut and the palette have something to act on: a thread on screen, or an open layer. */
+export function canToggleLampLayer(state: LampLayerState): boolean {
+  return state.target !== null || state.openIn !== null;
+}
+
+/** A thread's button came on screen. A layer left open over another thread closes. */
+export function lampThreadShown(state: LampLayerState, threadKey: string): LampLayerState {
+  return { target: threadKey, openIn: state.openIn === threadKey ? threadKey : null };
+}
+
+/**
+ * A thread's button left the screen. Its layer stays as it was: the button also leaves when
+ * the right panel moves it between the title bar and the chat header.
+ */
+export function lampThreadHidden(state: LampLayerState, threadKey: string): LampLayerState {
+  return state.target === threadKey ? { ...state, target: null } : state;
+}
+
+export function lampLayerToggled(state: LampLayerState): LampLayerState {
+  if (state.openIn !== null) return { ...state, openIn: null };
+  return state.target === null ? state : { ...state, openIn: state.target };
+}
+
+export function lampLayerClosed(state: LampLayerState): LampLayerState {
+  return state.openIn === null ? state : { ...state, openIn: null };
+}
+
+/**
+ * Find reads and scrolls the list the layer covers, so the two never share a thread: whichever
+ * opens second closes the other. This is the find that an opening layer closes, and the find
+ * whose opening closes the layer.
+ */
+export function lampLayerSharesThreadWithFind(
+  state: LampLayerState,
+  findThreadKey: string | null,
+): boolean {
+  return isLampLayerOpenIn(state, findThreadKey);
+}
