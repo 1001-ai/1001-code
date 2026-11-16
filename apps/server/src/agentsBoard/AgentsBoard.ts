@@ -1,16 +1,20 @@
 import {
   AGENTS_BOARD_DEFAULT_BRANCH,
   AGENTS_BOARD_INBOX_DIRECTORY,
+  AGENTS_BOARD_INBOX_EVERYONE,
   AGENTS_BOARD_MEDIA_MAX_BYTES,
   AGENTS_BOARD_REPORTS_DIRECTORY,
   type AgentsBoardData,
   AgentsBoardError,
+  type AgentsBoardInboxMessageInput,
+  type AgentsBoardInboxMessageSent,
   type AgentsBoardMedia,
   type AgentsBoardMediaInput,
   type AgentsBoardProject,
   type AgentsBoardSetBranchInput,
   type AgentsBoardSnapshot,
   agentsBoardMediaType,
+  isAgentsBoardAgentId,
   isAgentsBoardBranch,
   type ProjectId,
   teamCatalogRepositoryKey,
@@ -44,6 +48,9 @@ import {
   type AgentsBoardFile,
   agentsBoardFileKind,
   buildAgentsBoard,
+  inboxMessageText,
+  inboxSignerName,
+  withInboxEntry,
 } from "./agentsBoardFiles.ts";
 import { imageTypeOf } from "./agentsBoardMedia.ts";
 
@@ -69,6 +76,14 @@ export class AgentsBoard extends Context.Service<
     readonly media: (
       input: AgentsBoardMediaInput,
     ) => Effect.Effect<AgentsBoardMedia, AgentsBoardError>;
+    /**
+     * Adds a message to an agent's inbox file on the branch, signed with the GitHub CLI login's
+     * first name, and pushes it. A push the remote rejects is rebuilt on the new tip; it is never
+     * forced.
+     */
+    readonly sendInboxMessage: (
+      input: AgentsBoardInboxMessageInput,
+    ) => Effect.Effect<AgentsBoardInboxMessageSent, AgentsBoardError>;
   }
 >()("t3/agentsBoard/AgentsBoard") {}
 
@@ -77,6 +92,8 @@ const FRESH_FOR_MS = 30_000;
 const MAX_FAILURE_LENGTH = 300;
 const MAX_LISTING_BYTES = 1024 * 1024;
 const REGULAR_FILE_MODES: ReadonlySet<string> = new Set(["100644", "100755"]);
+const MAX_PUSH_ATTEMPTS = 3;
+const GITHUB_LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
 
 // Branch names by repository key. Kept beside the cache, not in the server settings, so no
 // settings schema changes.
@@ -611,7 +628,198 @@ const make = Effect.gen(function* () {
     return { mimeType, base64: bytes.toString("base64") };
   });
 
-  return AgentsBoard.of({ read, changes, refresh, setBranch, media });
+  /** Who signs a message: the GitHub CLI login, with its profile's first name when it has one. */
+  const signer = Effect.fn("AgentsBoard.signer")(function* () {
+    const output = yield* processRunner
+      .run({
+        command: "gh",
+        args: ["api", "user", "--jq", '[.login, (.id | tostring), (.name // "")] | @tsv'],
+        env: { ...env, GH_PROMPT_DISABLED: "1", GH_NO_UPDATE_NOTIFIER: "1" },
+        timeout: "15 seconds",
+      })
+      .pipe(Effect.option);
+    const [login = "", id = "", name = ""] = Option.isSome(output)
+      ? output.value.stdout.trim().split("\t")
+      : [];
+    if (Option.isNone(output) || output.value.code !== 0 || !GITHUB_LOGIN.test(login)) {
+      return yield* new AgentsBoardError({ reason: "not-signed-in" });
+    }
+    return {
+      name: inboxSignerName(name, login),
+      // The commit is the login's, as the catalog's proposals are.
+      author: {
+        name: login,
+        email: /^\d+$/.test(id)
+          ? `${id}+${login}@users.noreply.github.com`
+          : `${login}@users.noreply.github.com`,
+      },
+    };
+  });
+
+  const gitOutput = Effect.fn("AgentsBoard.gitOutput")(function* (
+    args: ReadonlyArray<string>,
+    options: { readonly stdin?: string; readonly env?: Record<string, string> } = {},
+  ) {
+    const output = yield* processRunner
+      .run({
+        command: "git",
+        args,
+        env: { ...env, ...options.env },
+        timeout: GIT_TIMEOUT,
+        outputMode: "truncate",
+        ...(options.stdin === undefined ? {} : { stdin: options.stdin }),
+      })
+      .pipe(Effect.mapError((cause) => new GitFailure({ detail: cause.message })));
+    if (output.code !== 0) {
+      return yield* new GitFailure({ detail: failureText(output.stderr, "git failed.") });
+    }
+    return output.stdout.trim();
+  });
+
+  /** One commit on the fetched tip that adds the entry; the caller holds the state's lock. */
+  const commitInboxEntry = Effect.fn("AgentsBoard.commitInboxEntry")(function* (
+    target: Target,
+    file: string,
+    entry: Parameters<typeof withInboxEntry>[1],
+    author: { readonly name: string; readonly email: string },
+  ) {
+    const cache = target.cache;
+    const tip = yield* gitOutput(["--git-dir", cache, "rev-parse", "--verify", refOf(target)]);
+    const listing = yield* run(["--git-dir", cache, "ls-tree", "-l", "-z", tip, "--", file]);
+    const existing = treeEntries(listing.stdout).find((candidate) => candidate.path === file);
+    let text: string | null = null;
+    if (existing !== undefined) {
+      // A symlink or a folder at the inbox path is not a file to append to.
+      if (existing.type !== "blob" || !REGULAR_FILE_MODES.has(existing.mode)) {
+        return yield* new GitFailure({ detail: "The inbox file is not a regular file." });
+      }
+      const bytes = yield* gitBytes(
+        ["--git-dir", cache, "cat-file", "blob", existing.sha],
+        AGENTS_BOARD_LIMITS.maxFileBytes,
+      );
+      if (bytes === null) return yield* new GitFailure({ detail: "The inbox file is too large." });
+      text = new TextDecoder().decode(bytes);
+    }
+    const index = path.join(root, `inbox-${tip.slice(0, 12)}.index`);
+    const indexEnv = { GIT_INDEX_FILE: index };
+    return yield* Effect.gen(function* () {
+      const blob = yield* gitOutput(["--git-dir", cache, "hash-object", "-w", "--stdin"], {
+        stdin: withInboxEntry(text, entry),
+      });
+      yield* gitOutput(["--git-dir", cache, "read-tree", tip], { env: indexEnv });
+      yield* gitOutput(
+        ["--git-dir", cache, "update-index", "--add", "--cacheinfo", `100644,${blob},${file}`],
+        { env: indexEnv },
+      );
+      const tree = yield* gitOutput(["--git-dir", cache, "write-tree"], { env: indexEnv });
+      // No terminal can unlock a signing key.
+      return yield* gitOutput(
+        ["--git-dir", cache, "commit-tree", "--no-gpg-sign", tree, "-p", tip, "-F", "-"],
+        {
+          stdin: `Message to ${entry.to} from ${entry.from}\n`,
+          env: {
+            GIT_AUTHOR_NAME: author.name,
+            GIT_AUTHOR_EMAIL: author.email,
+            GIT_COMMITTER_NAME: author.name,
+            GIT_COMMITTER_EMAIL: author.email,
+          },
+        },
+      );
+    }).pipe(Effect.ensuring(fileSystem.remove(index).pipe(Effect.ignore)));
+  });
+
+  const sendInboxMessage: AgentsBoard["Service"]["sendInboxMessage"] = Effect.fn(
+    "AgentsBoard.sendInboxMessage",
+  )(function* (input) {
+    const text = inboxMessageText(input.text);
+    if (text === "") return yield* new AgentsBoardError({ reason: "empty-message" });
+    if (text.length > input.maxLength) {
+      return yield* new AgentsBoardError({ reason: "message-too-long" });
+    }
+    const everyone = input.to === AGENTS_BOARD_INBOX_EVERYONE;
+    if (!everyone && !isAgentsBoardAgentId(input.to)) {
+      return yield* new AgentsBoardError({ reason: "unknown-agent" });
+    }
+    const target = yield* resolveTarget(input.projectId);
+    if (typeof target === "string") {
+      return yield* new AgentsBoardError({ reason: "not-a-team-project" });
+    }
+    const person = yield* signer();
+    const state = yield* stateOf(target);
+    // Only ever this folder and this file name: both parts are checked above.
+    const file = `${AGENTS_BOARD_INBOX_DIRECTORY}/${input.to}.md`;
+    const via = inboxMessageText(input.via).slice(0, 60);
+    const ref = refOf(target);
+    const sent = yield* state.lock.withPermits(1)(
+      Effect.gen(function* () {
+        for (let attempt = 1; attempt <= MAX_PUSH_ATTEMPTS; attempt += 1) {
+          // The newest tip: the message goes on top of what other agents pushed meanwhile.
+          const fetched = yield* fetchBranch(target);
+          if (fetched === "missing") return yield* new AgentsBoardError({ reason: "not-fetched" });
+          const board = yield* readCache(target);
+          // The agent must have a report on the branch: a made-up id gets no inbox file.
+          if (!everyone && board?.agents.some((agent) => agent.id === input.to) !== true) {
+            return yield* new AgentsBoardError({ reason: "unknown-agent" });
+          }
+          const at = DateTime.formatIso(DateTime.makeUnsafe(yield* Clock.currentTimeMillis));
+          const entry = { to: input.to, at, from: person.name, text, via };
+          const commit = yield* commitInboxEntry(target, file, entry, person.author);
+          // Never forced: a tip that moved since the fetch rejects the push, and the loop rebuilds.
+          const pushed = yield* run([
+            "--git-dir",
+            target.cache,
+            "push",
+            "--quiet",
+            "--",
+            target.cloneUrl,
+            `${commit}:${ref}`,
+          ]);
+          if (pushed.code === 0) {
+            yield* gitOutput(["--git-dir", target.cache, "update-ref", ref, commit]);
+            const now = yield* Clock.currentTimeMillis;
+            const data = yield* readCache(target);
+            if (data !== null) state.board = { data, fetchedAtMs: now };
+            state.missing = false;
+            state.failure = null;
+            state.loaded = true;
+            return { entry, commit };
+          }
+          if (!/non-fast-forward|fetch first|\[rejected\]|stale info/i.test(pushed.stderr)) {
+            return yield* new GitFailure({
+              detail: failureText(pushed.stderr, "git push failed."),
+            });
+          }
+        }
+        return yield* new GitFailure({ detail: "The agents branch kept changing." });
+      }).pipe(
+        Effect.catchTags({
+          GitFailure: (failure) =>
+            Effect.logWarning("agents board inbox message not sent", {
+              detail: failure.detail,
+            }).pipe(Effect.andThen(Effect.fail(new AgentsBoardError({ reason: "not-sent" })))),
+        }),
+      ),
+    );
+    yield* publish;
+    // The words are the person's own and stay out of the log.
+    yield* Effect.logInfo("agents board inbox message sent", {
+      project: target.project.key,
+      branch: target.branch,
+      to: input.to,
+      from: person.name,
+      via,
+      length: text.length,
+      commit: sent.commit,
+    });
+    return {
+      to: everyone ? null : input.to,
+      from: person.name,
+      at: sent.entry.at,
+      text,
+    };
+  });
+
+  return AgentsBoard.of({ read, changes, refresh, setBranch, media, sendInboxMessage });
 });
 
 export const layer = Layer.effect(AgentsBoard, make);

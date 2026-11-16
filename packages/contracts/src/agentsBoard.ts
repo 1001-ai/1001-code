@@ -18,6 +18,8 @@ export const AGENTS_BOARD_INBOX_EVERYONE = "all";
 export const AGENTS_BOARD_MEDIA_MAX_BYTES = 500 * 1024;
 export const AGENTS_BOARD_TEXT_MAX_LENGTH = 2_000;
 export const AGENTS_BOARD_FIELD_MAX_LENGTH = 300;
+/** How a message sent from the voice agent says where it came from. */
+export const AGENTS_BOARD_VIA_VOICE_AGENT = "voice agent";
 
 const BRANCH_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9._/-]{0,98}[A-Za-z0-9])?$/;
 
@@ -199,6 +201,25 @@ export const AgentsBoardMediaInput = Schema.Struct({
 });
 export type AgentsBoardMediaInput = typeof AgentsBoardMediaInput.Type;
 
+/** A message for an agent's inbox, or for every agent's, written on the signed-in person's behalf. */
+export interface AgentsBoardInboxMessageInput {
+  readonly projectId: ProjectId;
+  /** An agent on the board, or `AGENTS_BOARD_INBOX_EVERYONE`. */
+  readonly to: string;
+  readonly text: string;
+  readonly maxLength: number;
+  readonly via: string;
+}
+
+export interface AgentsBoardInboxMessageSent {
+  /** The agent it went to; null for every agent. */
+  readonly to: string | null;
+  /** The name it is signed with. */
+  readonly from: string;
+  readonly at: string;
+  readonly text: string;
+}
+
 export const AgentsBoardMedia = Schema.Struct({
   mimeType: Schema.Literals(["image/png", "image/jpeg", "image/webp", "image/gif"]),
   /** At most `AGENTS_BOARD_MEDIA_MAX_BYTES` before encoding. */
@@ -213,6 +234,11 @@ export const AgentsBoardErrorReason = Schema.Literals([
   "too-large",
   "not-an-image",
   "settings-unsaved",
+  "empty-message",
+  "message-too-long",
+  "unknown-agent",
+  "not-signed-in",
+  "not-sent",
 ]);
 export type AgentsBoardErrorReason = typeof AgentsBoardErrorReason.Type;
 
@@ -223,6 +249,11 @@ const ERROR_MESSAGES: Record<AgentsBoardErrorReason, string> = {
   "too-large": "The file is larger than 500 KB.",
   "not-an-image": "The file is not the kind of image its name says.",
   "settings-unsaved": "The branch name could not be saved.",
+  "empty-message": "The message is empty.",
+  "message-too-long": "The message is too long.",
+  "unknown-agent": "The agents board has no such agent.",
+  "not-signed-in": "The GitHub CLI is not signed in, so the message cannot be signed.",
+  "not-sent": "The message could not be pushed to the agents branch.",
 };
 
 export class AgentsBoardError extends Schema.TaggedError<AgentsBoardError>()("AgentsBoardError", {
