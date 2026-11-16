@@ -75,6 +75,7 @@ import { changeRequestsCreatedBy } from "../../apps/server/src/orchestration-v2/
 import { DeviceExpect, gradeDevice } from "./device-grading.ts";
 import { FileLinksExpect, gradeFileLinks } from "./file-link-grading.ts";
 import { QuestionCardsExpect, gradeQuestionCards } from "./question-card-grading.ts";
+import { ReplyMarkersExpect, gradeReplyMarkers } from "./reply-marker-grading.ts";
 import { ShellInOrderExpect, gradeShellInOrder, withLiveAppCheckout } from "./live-checkout.ts";
 import {
   AGENT_DEVICE_SHELL,
@@ -238,6 +239,8 @@ const McpToolUseExpect = Schema.Struct({
   fileLinks: Schema.optional(FileLinksExpect),
   /** Question cards chat renders from the agent's text. See question-card-grading.ts. */
   questionCards: Schema.optional(QuestionCardsExpect),
+  /** `Re:` lines chat links from the final answer. See reply-marker-grading.ts. */
+  replyMarkers: Schema.optional(ReplyMarkersExpect),
 });
 
 /**
@@ -1946,6 +1949,7 @@ export const gradeSample = (
   );
   checks.push(...gradeSecret(expect.secret, run, pasted));
   checks.push(...gradeQuestionCards(expect.questionCards, run));
+  checks.push(...gradeReplyMarkers(expect.replyMarkers, run));
   checks.push(...gradeShellInOrder(expect.shellInOrder, shell));
   return checks;
 };

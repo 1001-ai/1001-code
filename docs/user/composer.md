@@ -96,11 +96,14 @@ On web and desktop, a reply that answers more than the message right above it, s
 after a steer, shows a faded quote of the earlier message it answers, and that message
 shows **1 reply**. When a reply answers several of your messages, or you wrote while the
 agent worked, the agent opens it with `Re:` lines quoting the messages it answers, shown
-small and grey. Click a message, its quote, **1 reply** or a `Re:` line to see just that
-exchange: your messages and the reply that answered them, together. Messages you send
-while it is open reply to that exchange and join it. Press `Esc` or click outside the
-messages to return to the full conversation where you left it. Turn the quotes off under
-**Settings → Chat → Reply markers**.
+small and grey; a line whose words appear in one of those messages is a link. Click a
+message's **View thread** button, its quote, **1 reply** or a `Re:` link to see just that
+exchange: your messages and the reply that answered them, together. Right-click a message
+for **View thread**, **Copy message**, and **Copy prompt link** or **Reply to this
+response**. Messages you send while it is open reply to that exchange and join it. Press
+`Esc` or click outside the messages to return to the full conversation where you left it.
+Turn the quotes off under **Settings → Chat → Reply markers**. To open the exchange by
+clicking a message itself, turn on **Settings → Chat → Open thread on message click**.
 
 ## Queue messages offline on mobile
 
