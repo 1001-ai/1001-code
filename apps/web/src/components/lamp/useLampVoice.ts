@@ -14,13 +14,7 @@ import { useClientSettings } from "../../hooks/useSettings";
 import { useDictationShortcut } from "../../speech/useDictationShortcut";
 import { useEnvironmentSpeechInput } from "../../speech/useEnvironmentSpeechInput";
 import { primaryServerKeybindingsAtom } from "../../state/server";
-import {
-  LAMP_AGENT_FEED_EMPTY,
-  lampInterruptionContext,
-  lampSpeechDropped,
-  nextLampSpeech,
-  unsaidLampSpeech,
-} from "./lampAgent.logic";
+import { LAMP_AGENT_FEED_EMPTY, lampSpokenOver, nextLampSpeech } from "./lampAgent.logic";
 import { openLampAudio, suspendLampAudio } from "./lampAudio";
 import { closeLampLayer, lampLayerHoldsKeyboard } from "./lampLayer.state";
 import {
@@ -94,21 +88,33 @@ export function useLampVoice(input: {
   const cutSent = useRef<LampInterruption | null>(null);
   // False from the commit that closes the layer: what a press of Space waits on asks it again.
   const open = useRef(false);
+  // Counts the opens: words still on their way when the layer closes change nothing in the next.
+  const opens = useRef(0);
+  // Counts the answers handed back to the voice, which then has something to say again.
+  const [handedBack, setHandedBack] = useState(0);
 
   const tell = useStableCallback(async (text: string) => {
+    const opening = opens.current;
     const cut = lampVoice.session().interruption;
-    const context = lampInterruptionContext({
-      saidBefore: saidBefore.current,
+    const over = lampSpokenOver(
+      { feed: feed.current, saidBefore: saidBefore.current },
+      agent.messages,
       // A cut already sent stays in the session until the agent speaks again: it is sent once.
-      cut: cut !== null && cut !== cutSent.current ? cut : null,
-      unsaid: unsaidLampSpeech(feed.current, agent.messages),
-    });
+      cut !== null && cut !== cutSent.current ? cut : null,
+    );
     cutSent.current = cut;
     // Whatever else arrives of the old answer is not said: the agent picks its point back up itself.
-    feed.current = lampSpeechDropped(feed.current, agent.messages);
-    saidBefore.current = "";
+    feed.current = over.answer.feed;
+    saidBefore.current = over.answer.saidBefore;
     setNotHeard(false);
-    if (!(await agent.say(text, context)) && open.current) setNotHeard(true);
+    const delivered = await agent.say(text, over.interruption);
+    if (delivered || !open.current || opening !== opens.current) return;
+    // The agent was never steered and goes on with its answer, so the voice goes on with it.
+    const back = over.undone({ feed: feed.current, saidBefore: saidBefore.current });
+    feed.current = back.feed;
+    saidBefore.current = back.saidBefore;
+    setNotHeard(true);
+    setHandedBack((count) => count + 1);
   });
 
   const speech = useEnvironmentSpeechInput({
@@ -167,6 +173,7 @@ export function useLampVoice(input: {
   useLayoutEffect(() => {
     if (closing) return;
     open.current = true;
+    opens.current += 1;
     feed.current = LAMP_AGENT_FEED_EMPTY;
     saidBefore.current = "";
     lineSaid.current = false;
@@ -246,7 +253,18 @@ export function useLampVoice(input: {
       lampVoice.progressed(progress);
     });
     speaking.current = current;
-  }, [opened, closing, listening, session.speaking, session.preparing, speaker, link, messages]);
+  }, [
+    opened,
+    closing,
+    listening,
+    session.speaking,
+    session.preparing,
+    speaker,
+    link,
+    messages,
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- An answer handed back to the voice changes nothing else here, so the count runs this again.
+    handedBack,
+  ]);
 
   const voiceSettings = {
     label: "Voice settings",

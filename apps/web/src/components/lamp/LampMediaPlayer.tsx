@@ -1,9 +1,10 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import type { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 import { AsyncResult } from "effect/reactivity";
 import { ChevronLeftIcon, ChevronRightIcon, XIcon } from "lucide-react";
 import { useState } from "react";
 
+import { useComposerDraftStore } from "~/composerDraftStore";
 import { useAgentsBoardMedia } from "~/state/agentsBoard";
 import { useThreadShell } from "~/state/entities";
 import { useAtomCommand } from "~/state/use-atom-command";
@@ -14,6 +15,7 @@ import { ExpandedImageDialog } from "../chat/ExpandedImageDialog";
 import type { ExpandedImagePreview } from "../chat/ExpandedImagePreview";
 import { Button } from "../ui/button";
 import { Skeleton } from "../ui/skeleton";
+import { lampChatProjectId } from "./lampAgent.logic";
 
 const FRAME = "h-56 w-full max-w-xl";
 
@@ -27,8 +29,11 @@ export function LampMediaPlayer(props: {
   readonly threadId: ThreadId;
 }) {
   const media = useVoiceAgentState(props.environmentId, props.threadId)?.media ?? null;
-  const projectId =
-    useThreadShell(scopeThreadRef(props.environmentId, props.threadId))?.projectId ?? null;
+  const chat = scopeThreadRef(props.environmentId, props.threadId);
+  const projectId = lampChatProjectId(
+    useThreadShell(chat),
+    useComposerDraftStore((store) => store.getDraftSessionByRef(chat)),
+  );
   const step = useAtomCommand(voiceAgentMediaStep, { reportFailure: false });
   const [preview, setPreview] = useState<ExpandedImagePreview | null>(null);
   const item = media?.items[media.index];
@@ -85,7 +90,7 @@ export function LampMediaPlayer(props: {
 
 function LampMediaImage(props: {
   readonly environmentId: EnvironmentId;
-  readonly projectId: NonNullable<ReturnType<typeof useThreadShell>>["projectId"];
+  readonly projectId: ProjectId;
   readonly path: string;
   readonly onOpen: (preview: ExpandedImagePreview) => void;
 }) {

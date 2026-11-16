@@ -16,9 +16,13 @@ export interface LampAgentFeed {
   readonly given: Readonly<Record<string, number>>;
   /** Messages the user spoke over: whatever else arrives in them is never said. */
   readonly dropped: ReadonlySet<string>;
+  /** Words the voice was given and the user cut off, in an answer that goes on: said first. */
+  readonly cutOff: string;
 }
 
-export const LAMP_AGENT_FEED_EMPTY: LampAgentFeed = { given: {}, dropped: new Set() };
+const join = (...parts: ReadonlyArray<string>) => parts.filter((part) => part !== "").join(" ");
+
+export const LAMP_AGENT_FEED_EMPTY: LampAgentFeed = { given: {}, dropped: new Set(), cutOff: "" };
 
 /** Where a sentence that is still being written may be cut: after its end and a space. */
 const SENTENCE_BREAK = /[.!?…]+["'”’)\]]*\s+|\n+/g;
@@ -42,6 +46,7 @@ export function nextLampSpeech(
   feed: LampAgentFeed,
   messages: ReadonlyArray<LampAgentMessage>,
 ): { readonly text: string; readonly feed: LampAgentFeed } | null {
+  if (feed.cutOff !== "") return { text: feed.cutOff, feed: { ...feed, cutOff: "" } };
   const given: Record<string, number> = { ...feed.given };
   for (const message of messages) {
     if (feed.dropped.has(message.id)) continue;
@@ -61,19 +66,19 @@ export function nextLampSpeech(
   return null;
 }
 
-/** What the agent has written and the voice has not been given. */
+/** What is still to say: the words the user cut off, then what the voice has not been given. */
 export function unsaidLampSpeech(
   feed: LampAgentFeed,
   messages: ReadonlyArray<LampAgentMessage>,
 ): string {
-  return messages
-    .flatMap((message) =>
+  return join(
+    feed.cutOff,
+    ...messages.flatMap((message) =>
       feed.dropped.has(message.id)
         ? []
         : [speakable(message.text.slice(feed.given[message.id] ?? 0))],
-    )
-    .filter((text) => text !== "")
-    .join(" ");
+    ),
+  );
 }
 
 /** The user has spoken: nothing more of the answer so far is said, however it goes on. */
@@ -84,11 +89,11 @@ export function lampSpeechDropped(
   return {
     given: feed.given,
     dropped: new Set([...feed.dropped, ...messages.map((message) => message.id)]),
+    cutOff: "",
   };
 }
 
 const CONTEXT_MAX = 8_000;
-const join = (...parts: ReadonlyArray<string>) => parts.filter((part) => part !== "").join(" ");
 
 /**
  * What the agent is told when the user speaks before it had finished: what had been said aloud
@@ -109,6 +114,59 @@ export function lampInterruptionContext(input: {
     spoken: spoken.slice(-CONTEXT_MAX),
     unspoken: unspoken.slice(0, CONTEXT_MAX),
   };
+}
+
+/** The answer in progress, as the voice has it. */
+export interface LampAnswer {
+  readonly feed: LampAgentFeed;
+  /** What the voice finished of the answer, and all of it when no voice can speak. */
+  readonly saidBefore: string;
+}
+
+/**
+ * The user has spoken over the answer: `answer` says nothing more of it, and `interruption`
+ * goes to the agent with their words. If those never reach the agent it goes on with its answer,
+ * and `undone` gives the voice back what this took, starting at the words the user cut off.
+ */
+export function lampSpokenOver(
+  answer: LampAnswer,
+  messages: ReadonlyArray<LampAgentMessage>,
+  cut: { readonly spoken: string; readonly unspoken: string } | null,
+): {
+  readonly answer: LampAnswer;
+  readonly interruption: VoiceAgentInterruption | undefined;
+  readonly undone: (now: LampAnswer) => LampAnswer;
+} {
+  const taken = new Set(
+    messages.flatMap((message) => (answer.feed.dropped.has(message.id) ? [] : [message.id])),
+  );
+  return {
+    answer: { feed: lampSpeechDropped(answer.feed, messages), saidBefore: "" },
+    interruption: lampInterruptionContext({
+      saidBefore: answer.saidBefore,
+      cut,
+      unsaid: unsaidLampSpeech(answer.feed, messages),
+    }),
+    undone: (now) => ({
+      feed: {
+        given: now.feed.given,
+        dropped: new Set([...now.feed.dropped].filter((id) => !taken.has(id))),
+        cutOff: join(cut?.unspoken ?? "", answer.feed.cutOff, now.feed.cutOff),
+      },
+      saidBefore: join(answer.saidBefore, cut?.spoken ?? "", now.saidBefore),
+    }),
+  };
+}
+
+/**
+ * The project of the chat the layer covers. A new chat has no thread on the server until its
+ * first message, so its project is its draft's.
+ */
+export function lampChatProjectId<Id>(
+  thread: { readonly projectId: Id } | null,
+  draft: { readonly projectId: Id } | null,
+): Id | null {
+  return thread?.projectId ?? draft?.projectId ?? null;
 }
 
 const ACTIVE_RUN_STATUSES: ReadonlySet<string> = new Set([

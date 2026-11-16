@@ -3,8 +3,10 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   LAMP_AGENT_FEED_EMPTY,
   lampAgentRunning,
+  lampChatProjectId,
   lampInterruptionContext,
   lampSpeechDropped,
+  lampSpokenOver,
   nextLampSpeech,
   speakable,
   unsaidLampSpeech,
@@ -95,6 +97,54 @@ describe("feeding the agent's streamed answer to the voice", () => {
   });
 });
 
+describe("the user's words not reaching the agent", () => {
+  // The voice was given all three sentences, and the user cut in after the first.
+  const cut = { spoken: "One.", unspoken: "Two. Three." };
+  const heard = [message("a", "One. Two. Three. Fo", true)];
+  const whole = [message("a", "One. Two. Three. Four.")];
+  const given = nextLampSpeech(LAMP_AGENT_FEED_EMPTY, heard)!.feed;
+
+  it("says nothing while they are on their way, then goes on from the words the user cut", () => {
+    const over = lampSpokenOver({ feed: given, saidBefore: "Zero." }, heard, cut);
+    expect(over.interruption).toEqual({ spoken: "Zero. One.", unspoken: "Two. Three. Fo" });
+    expect(over.answer.saidBefore).toBe("");
+    expect(spoken(over.answer.feed, whole).said).toEqual([]);
+
+    const back = over.undone(over.answer);
+    expect(back.saidBefore).toBe("Zero. One.");
+    expect(spoken(back.feed, whole).said).toEqual(["Two. Three.", "Four."]);
+    // Said again before the voice goes on, the agent is told what the lost words would have told it.
+    expect(lampSpokenOver(back, heard, null).interruption).toEqual(over.interruption);
+    // Said again and delivered, the answer is spoken over as it would have been.
+    expect(spoken(lampSpokenOver(back, whole, null).answer.feed, whole).said).toEqual([]);
+  });
+
+  it("gives back only what each lost say took, in whichever order they are lost", () => {
+    const later = [...heard, message("b", "Five.")];
+    for (const firstLost of ["first", "second"] as const) {
+      const first = lampSpokenOver({ feed: given, saidBefore: "" }, heard, cut);
+      const second = lampSpokenOver(first.answer, later, null);
+      const [one, two] = firstLost === "first" ? [first, second] : [second, first];
+      const back = two.undone(one.undone(second.answer));
+      expect(back.saidBefore).toBe("One.");
+      expect(spoken(back.feed, [...whole, message("b", "Five.")]).said).toEqual([
+        "Two. Three.",
+        "Four.",
+        "Five.",
+      ]);
+    }
+    // The second say arrived: only what it took stays unsaid, and what came after it is said.
+    const first = lampSpokenOver({ feed: given, saidBefore: "" }, heard, cut);
+    const second = lampSpokenOver(first.answer, later, null);
+    const answered = [...whole, message("b", "Five."), message("c", "You asked.")];
+    expect(spoken(first.undone(second.answer).feed, answered).said).toEqual([
+      "Two. Three.",
+      "Four.",
+      "You asked.",
+    ]);
+  });
+});
+
 describe("telling the agent where the user cut in", () => {
   it("joins what was said aloud and what was not, across the stretches of one answer", () => {
     expect(
@@ -126,6 +176,12 @@ describe("telling the agent where the user cut in", () => {
       }),
     ).toBeUndefined();
   });
+});
+
+it("takes a new chat's project from its draft, and a sent chat's from its thread", () => {
+  expect(lampChatProjectId(null, { projectId: "drafted" })).toBe("drafted");
+  expect(lampChatProjectId({ projectId: "sent" }, { projectId: "drafted" })).toBe("sent");
+  expect(lampChatProjectId(null, null)).toBeNull();
 });
 
 it("is working while a run of the voice thread is under way", () => {
