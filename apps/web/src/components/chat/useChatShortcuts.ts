@@ -13,6 +13,7 @@ import type { ComposerHandleRef } from "../../composerHandleContext";
 import type { BranchToolbarHandle } from "../BranchToolbar";
 import { shouldTypeToFocusComposer } from "./composerFocusRedirect";
 import { composerShortcutCommands } from "./composerShortcuts";
+import { lampLayerOwnsKey } from "../lamp/lampLayer.state";
 
 /** Returning false lets the key event through untouched. */
 type ChatShortcutHandler = (context: {
@@ -65,6 +66,7 @@ export function useChatShortcuts(input: ChatShortcutsInput) {
       return;
     }
     if (!input.enabled || isCommandPaletteOpen() || isInSideChatPane(event.target)) return;
+    if (lampLayerOwnsKey(event)) return;
     const terminalFocusOwner = getTerminalFocusOwner();
     if (event.defaultPrevented && terminalFocusOwner === null) return;
     const shortcutContext = input.getShortcutContext(event.target);

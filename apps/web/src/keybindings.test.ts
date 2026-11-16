@@ -755,6 +755,22 @@ describe("resolveShortcutCommand", () => {
       ),
       "rightPanel.toggle",
     );
+    assert.strictEqual(
+      resolveShortcutCommand(
+        event({ key: "¬", code: "KeyL", metaKey: true, altKey: true }),
+        DEFAULT_RESOLVED_KEYBINDINGS,
+        { platform: "MacIntel" },
+      ),
+      "lamp.toggle",
+    );
+    assert.strictEqual(
+      resolveShortcutCommand(
+        event({ key: "L", code: "KeyL", metaKey: true, shiftKey: true }),
+        DEFAULT_RESOLVED_KEYBINDINGS,
+        { platform: "MacIntel" },
+      ),
+      "composer.previousWorktree",
+    );
   });
 
   it("matches non-Latin layout letters using the physical key code", () => {
