@@ -267,8 +267,9 @@ model through that sign-in. When it cannot start, it says why in one line.
   at the top of the layer opens that section. If the chosen voice cannot speak, the system
   voice takes over for the rest of the conversation and the layer says so in one line.
 - **Talking.** Hold **Space** and speak; release to send. You can cut in while it speaks: it
-  finishes its word, answers you, and then picks its earlier point back up. Ask it about the
-  agents, such as how many are running or who is blocked.
+  finishes its word, answers you, and then picks its earlier point back up. If what you said
+  does not reach it, the layer says so in one line and it goes on from where you cut in: say it
+  again. Ask it about the agents, such as how many are running or who is blocked.
 - **Preferences.** Tell it how you want updates (how much detail, what to leave out, what to
   always include) and it proposes a [voice agent memory](#voice-agent-memories) for you to
   accept. A subject you left out is still mentioned when it is blocked on you, breaks the shared
