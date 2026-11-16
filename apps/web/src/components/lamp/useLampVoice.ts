@@ -121,9 +121,11 @@ export function useLampVoice(input: {
     const started = lampSayStarted(says.current);
     says.current = started.says;
     const delivered = await agent.say(text, over.interruption);
+    // A send from before the layer was reopened belongs to a tracker that is gone.
+    if (opening !== opens.current) return;
     const settled = lampSaySettled(says.current, started.order, delivered, over.undone);
     says.current = settled.says;
-    if (!open.current || opening !== opens.current || settled.undo.length === 0) return;
+    if (!open.current || settled.undo.length === 0) return;
     // The agent was never steered and goes on with its answer, so the voice goes on with it.
     let back: LampAnswer = { feed: feed.current, saidBefore: saidBefore.current };
     for (const undone of settled.undo) back = undone(back);
