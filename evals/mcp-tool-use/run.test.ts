@@ -43,6 +43,10 @@ import {
 } from "./run.ts";
 import { briefRoute, gradeDevice, shellInvocations } from "./device-grading.ts";
 import { boardMemory } from "./board.ts";
+import {
+  VOICE_AGENT_INSTRUCTIONS,
+  parseVoiceAgentUserMessage,
+} from "@t3tools/provider-core/server/runtimeInstructions";
 import { taskPrompt } from "../../apps/server/src/mcp/delegatedTaskModes.ts";
 
 it("grades Codex shell and subagent calls with the shared rules", () => {
@@ -759,27 +763,62 @@ it("gives a voice agent case its memories and memory_propose, and grades a repla
     .map((line) => decodeDeviceCase(line));
   const replace = cases.find((c) => c.id === "voice-memory-detail-contradiction-replaces")!;
   const ordinary = cases.find((c) => c.id === "memory-ordinary-thread-leaves-category-out")!;
-  const systemOf = (memory: (typeof replace)["setup"]["memory"]) => {
+  const threadOf = (memory: (typeof replace)["setup"]["memory"]) => {
     const base = buildBase(template, {
       model: "claude-haiku-5-5",
       keepUserInstructions: false,
       memory,
     });
-    assert.include(
-      base.deferred.map((tool) => tool.name),
-      "mcp__t3-code__memory_propose",
-    );
-    return base.system.map((block) => String(block.text)).join("\n");
+    return {
+      system: base.system.map((block) => String(block.text)).join("\n"),
+      loaded: base.nativeTools.map((tool) => tool.name),
+      deferred: base.deferred.map((tool) => tool.name),
+    };
   };
-  const voice = systemOf(replace.setup.memory);
-  assert.include(voice, "<voice_agent_memories>");
+  // The voice agent's thread: its instructions, its memories and its own tools from the start.
+  const voice = threadOf(replace.setup.memory);
+  assert.include(voice.system, VOICE_AGENT_INSTRUCTIONS);
   assert.include(
-    voice,
+    voice.system,
     "- Keep updates to one sentence per agent.\n- Leave out dependency updates.",
   );
-  assert.isBelow(voice.indexOf("</memory>"), voice.indexOf("<voice_agent_memories>"));
-  assert.include(systemOf(ordinary.setup.memory), "call memory_propose");
-  assert.notInclude(systemOf(ordinary.setup.memory), "<voice_agent_memories>");
+  assert.isBelow(
+    voice.system.indexOf(VOICE_AGENT_INSTRUCTIONS),
+    voice.system.indexOf("<voice_agent_memories>"),
+  );
+  assert.notInclude(voice.system, "<memory>");
+  assert.includeMembers(voice.loaded, [
+    "mcp__t3-code__voice_board",
+    "mcp__t3-code__voice_send_message",
+    "mcp__t3-code__voice_show_media",
+    "mcp__t3-code__memory_propose",
+  ]);
+  // Every other thread: the project's memory block, `memory_propose` behind tool search, and
+  // nothing of the voice agent's.
+  const other = threadOf(ordinary.setup.memory);
+  assert.include(other.system, "call memory_propose");
+  assert.notInclude(other.system, "<voice_agent_memories>");
+  assert.include(other.deferred, "mcp__t3-code__memory_propose");
+  assert.isEmpty([...other.loaded, ...other.deferred].filter((tool) => tool.includes("voice_")));
+
+  // The voice agent's cases speak to it the way the server does: in its own envelopes.
+  const spoken = NodeFS.readFileSync(new URL("./cases/voice-agent.ndjson", import.meta.url), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => decodeDeviceCase(line));
+  assert.isAtLeast(spoken.length, 6);
+  for (const testCase of spoken) {
+    assert.isDefined(testCase.setup.memory?.voiceAgent, testCase.id);
+    const said = [
+      testCase.prompt,
+      ...(testCase.setup.priorTurns ?? []).flatMap((turn) =>
+        turn.role === "user" && turn.text !== undefined ? [turn.text] : [],
+      ),
+    ];
+    for (const text of said) {
+      assert.notEqual(parseVoiceAgentUserMessage(text).kind, "other", testCase.id);
+    }
+  }
 
   const run = (...inputs: ReadonlyArray<Record<string, string>>): SampleRun => ({
     calls: inputs.map((input, step) => ({ step, tool: "memory_propose", input })),

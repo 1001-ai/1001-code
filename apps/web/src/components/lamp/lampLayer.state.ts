@@ -104,3 +104,41 @@ export function useLampThread(threadKey: string, covered: boolean): void {
     return () => useLampLayerStore.setState((state) => lampThreadHidden(state, threadKey));
   }, [threadKey, covered]);
 }
+
+/** The closed voice conversation whose transcript covers a chat, as `{ threadKey, sessionId }`. */
+const useLampTranscriptStore = create<{
+  readonly open: { readonly threadKey: string; readonly sessionId: string } | null;
+}>(() => ({ open: null }));
+
+/** Shows a closed conversation's transcript over its chat. The layer and find give way to it. */
+export function openLampTranscript(threadKey: string, sessionId: string): void {
+  if (useThreadFindStore.getState().threadKey === threadKey) closeThreadFind();
+  if (useLampLayerStore.getState().openIn === threadKey) closeLampLayer();
+  useLampTranscriptStore.setState({ open: { threadKey, sessionId } });
+}
+
+export function closeLampTranscript(): void {
+  useLampTranscriptStore.setState({ open: null });
+}
+
+/** The conversation whose transcript covers this thread's chat, or null. */
+export function useLampTranscriptOpen(threadKey: string): string | null {
+  return useLampTranscriptStore((state) =>
+    state.open?.threadKey === threadKey ? state.open.sessionId : null,
+  );
+}
+
+// One layer has the timeline at a time: the voice layer or a find that opens closes a transcript.
+useLampLayerStore.subscribe((state) => {
+  if (state.openIn !== null && useLampTranscriptStore.getState().open?.threadKey === state.openIn) {
+    closeLampTranscript();
+  }
+});
+useThreadFindStore.subscribe((find) => {
+  if (
+    find.threadKey !== null &&
+    useLampTranscriptStore.getState().open?.threadKey === find.threadKey
+  ) {
+    closeLampTranscript();
+  }
+});

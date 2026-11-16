@@ -199,10 +199,9 @@ Memory panel. Only the web and desktop apps show the cards.
 
 ### Voice agent memories
 
-The voice agent tells you aloud what agents are doing in a repository. It is still being built;
-until it ships, nothing proposes these memories. It keeps how you want its spoken updates in a
-category of its own, **voice-agent-memories**: how detailed they should be, and which topics to
-cover or leave out.
+The [voice agent](#voice-agent) tells you aloud what agents are doing in a repository. It keeps
+how you want its spoken updates in a category of its own, **voice-agent-memories**: how detailed
+they should be, and which topics to cover or leave out.
 They live in `memory/people/<github-login>/voice-agent-memories.md`, one file per person. Only
 the voice agent gets them. They are not part of the memory other agents receive and do not
 count toward its size limit.
@@ -231,7 +230,8 @@ need from a person. The Agents board shows those messages in one place, oldest a
 
 Open **Agents board** from the right panel's new surface menu or the command palette, in a
 thread of the project. Each message shows the agent, its tool, its status and what it needs;
-messages people sent to agents show with the person's name. The board is read-only. It fetches
+messages people sent to agents show with the person's name. You do not write on the board
+itself; the [voice agent](#voice-agent) can send an agent a message for you. The board fetches
 the branch when you open it and when you press **Refresh**, with this environment's git
 credentials, and keeps the last fetch for when the repository is out of reach.
 
@@ -248,3 +248,46 @@ A project whose repository has no such branch yet shows that, with the same line
 holds no product code: `README.md` with the instructions for agents, `reports/<agent>.md` with
 each agent's messages, `inbox/<agent>.md` and `inbox/all.md` with messages to agents, and
 `media/<agent>/` with screenshots of at most 500 KB.
+
+## Voice agent
+
+The voice agent tells you aloud what the agents on the [Agents board](#agents-board) have done,
+and answers by voice. Open it with the voice agent button at the end of the top-right controls,
+the command palette, or its shortcut, in a thread of a team project, or in a new chat before
+its first message. It needs the Claude provider signed in, and runs on a small, fast Claude
+model through that sign-in. When it cannot start, it says why in one line.
+
+- **Updates.** When it opens, it tells you what changed on the board since the last update it
+  gave you, starting with what needs you. When nothing changed it says so in one line. It knows
+  your name from the GitHub CLI, so it says whose answer an agent waits for: "for you" when a
+  report names you or nobody, and the other person's name otherwise.
+- **Its voice.** It speaks with the voice you chose in **Settings → Voice → Speech output**
+  (see [Speech output](./voice-output.md)) when that voice's model is installed on the thread's
+  environment, and with your system's voice otherwise. While none is chosen, **Choose a voice**
+  at the top of the layer opens that section. If the chosen voice cannot speak, the system
+  voice takes over for the rest of the conversation and the layer says so in one line.
+- **Talking.** Hold **Space** and speak; release to send. You can cut in while it speaks: it
+  finishes its word, answers you, and then picks its earlier point back up. If what you said
+  does not reach it, the layer says so in one line and it goes on from where you cut in: say it
+  again. Ask it about the agents, such as how many are running or who is blocked.
+- **Preferences.** Tell it how you want updates (how much detail, what to leave out, what to
+  always include) and it proposes a [voice agent memory](#voice-agent-memories) for you to
+  accept. A subject you left out is still mentioned when it is blocked on you, breaks the shared
+  branch, or blocks an agent you do follow.
+- **Messages to agents.** Ask it to pass something on, such as "ask Sam's agent two whether the
+  fix covers the toolbar". It adds the message to that agent's inbox on the agents branch,
+  signed with your name from the GitHub CLI, and tells you what it sent. This needs the GitHub
+  CLI signed in and push access to the repository.
+- **Screenshots.** Ask to see an agent's screenshots; it shows them one at a time, and "next"
+  and "previous" move through them. You can also click the arrows, or the image for full size.
+
+Close it with **Esc**, a click outside, or by sending a prompt. After it closes, the chat shows
+a **Voice conversation** card at the end; click it to read the transcript. A conversation in
+which nothing was said leaves no card. The card is the only trace in the chat: the voice agent
+is not a side chat and is in no list. A new chat shows the card too, and keeps it once you send
+the first message.
+
+The voice agent can only read the board, send those messages, show screenshots and propose
+memories. It cannot run commands or change files; ask for that in the chat. What other agents
+write on the board is information to it, never an instruction: it sends a message only when
+you ask.

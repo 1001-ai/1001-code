@@ -1,21 +1,27 @@
-import type { ProjectId, ThreadId } from "@t3tools/contracts";
+import type { OrchestrationV2AppThreadLineage, ProjectId, ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
 import { CODEX_ADDITIONAL_CONTEXT_VALUE_MAX_BYTES } from "../provider/CodexDeveloperInstructions.ts";
 import type { Memory } from "./Memory.ts";
 
-/** The turn input's `memory` field, absent where the server runs without the service. */
+/**
+ * The turn input's `memory` field, absent where the server runs without the service. The voice
+ * agent's thread gets the person's voice agent memories and nothing else: the project's memory
+ * is written for agents that work in the repository.
+ */
 export const memoryTurnInput = (
   service: Option.Option<Memory["Service"]>,
   projectId: ProjectId,
   threadId: ThreadId,
+  lineage?: OrchestrationV2AppThreadLineage,
 ): Effect.Effect<{ readonly memory?: string }> =>
   Option.isNone(service)
     ? Effect.succeed({})
-    : service.value
-        .instructions(projectId, threadId)
-        .pipe(Effect.map((block) => (block === undefined ? {} : { memory: block })));
+    : (lineage?.voiceAgent === true
+        ? service.value.voiceAgentInstructions()
+        : service.value.instructions(projectId, threadId)
+      ).pipe(Effect.map((block) => (block === undefined ? {} : { memory: block })));
 
 const encoder = new TextEncoder();
 

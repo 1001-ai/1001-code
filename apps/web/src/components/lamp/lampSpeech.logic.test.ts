@@ -6,11 +6,14 @@ import {
   lampListeningBegan,
   lampSpeechBegan,
   lampSpeechInterrupted,
+  lampSpeechPreparing,
   lampSpeechProgressed,
   lampSpeechQueued,
+  lampSpeechSilenced,
   lampStatus,
   lampTalk,
   lampUserHeard,
+  lampVoiceChoice,
   lampVoiceReadiness,
   splitSentences,
   stoppedAfterLine,
@@ -153,6 +156,15 @@ describe("lamp speech", () => {
     const early = lampSpeechInterrupted(lampSpeechQueued(TEXT));
     expect(early.interruption).toEqual({ spoken: "", unspoken: TEXT, transcript: null });
     expect(stoppedAfterLine(early.interruption!)).toBe("Stopped before the first word.");
+    // A text the voice is still making is not shown or spoken: the captions keep the text before it.
+    const before = speakingAt(1, 5);
+    const preparing = lampSpeechPreparing(before, "Next up.");
+    expect(preparing.said).toBe(before.said);
+    expect(lampSpeechSilenced(preparing).preparing).toBeNull();
+    const unheard = lampSpeechInterrupted(preparing);
+    expect(unheard.preparing).toBeNull();
+    expect(unheard.interruption).toEqual({ spoken: "", unspoken: "Next up.", transcript: null });
+    expect(captionParts(unheard.said!).upcoming).toBe("Next up.");
     // Between sentences, the sentences already said are the spoken part.
     const between = lampSpeechProgressed(lampSpeechBegan(lampSpeechQueued(TEXT)), {
       sentenceIndex: 1,
@@ -209,11 +221,59 @@ describe("lamp speech", () => {
   });
 
   it("is listening until the user's words are transcribed, and speaking only while it talks", () => {
-    expect(lampStatus({ speaking: false, voicePhase: "idle" })).toBe("idle");
-    expect(lampStatus({ speaking: true, voicePhase: "idle" })).toBe("speaking");
-    expect(lampStatus({ speaking: true, voicePhase: "preparing" })).toBe("listening");
-    expect(lampStatus({ speaking: false, voicePhase: "transcribing" })).toBe("listening");
-    expect(lampStatus({ speaking: false, voicePhase: "error" })).toBe("idle");
+    const quiet = { thinking: false };
+    expect(lampStatus({ speaking: false, voicePhase: "idle", ...quiet })).toBe("idle");
+    expect(lampStatus({ speaking: true, voicePhase: "idle", ...quiet })).toBe("speaking");
+    expect(lampStatus({ speaking: true, voicePhase: "preparing", ...quiet })).toBe("listening");
+    expect(lampStatus({ speaking: false, voicePhase: "transcribing", ...quiet })).toBe("listening");
+    expect(lampStatus({ speaking: false, voicePhase: "error", ...quiet })).toBe("idle");
+    // The agent at work shows as Thinking only while nobody is talking.
+    const working = { thinking: true };
+    expect(lampStatus({ speaking: false, voicePhase: "idle", ...working })).toBe("thinking");
+    expect(lampStatus({ speaking: true, voicePhase: "idle", ...working })).toBe("speaking");
+    expect(lampStatus({ speaking: false, voicePhase: "recording", ...working })).toBe("listening");
+  });
+
+  it("speaks with the downloaded voice only when one is picked and its model is installed", () => {
+    const model = (id: string, state: "installed" | "downloadable") => ({
+      id,
+      name: id,
+      license: "Example licence",
+      licenseUrl: "https://example.com/licence",
+      sampleText: "A sample.",
+      voices: [{ id: "voice-a", name: "Voice A" }],
+      install: { state, size: 1 },
+    });
+    const catalog = {
+      unavailable: null,
+      runtime: { state: "installed" as const, size: 1 },
+      models: [model("model-a", "installed"), model("model-b", "downloadable")],
+      selection: { modelId: "model-a", voiceId: "voice-a" },
+    };
+    const system = { voice: "system", offerSettings: false };
+    expect(lampVoiceChoice(catalog)).toEqual({ voice: "downloaded", offerSettings: false });
+    // Picked, but the model is not installed, or has no such voice any more.
+    expect(
+      lampVoiceChoice({ ...catalog, selection: { modelId: "model-b", voiceId: "voice-a" } }),
+    ).toEqual(system);
+    expect(
+      lampVoiceChoice({ ...catalog, selection: { modelId: "model-a", voiceId: "voice-z" } }),
+    ).toEqual(system);
+    // None picked: the layer offers the way to the settings, when there is a voice to pick.
+    expect(lampVoiceChoice({ ...catalog, selection: null })).toEqual({
+      voice: "system",
+      offerSettings: true,
+    });
+    expect(lampVoiceChoice({ ...catalog, selection: null, models: [] })).toEqual(system);
+    expect(
+      lampVoiceChoice({
+        ...catalog,
+        selection: null,
+        unavailable: { reason: "no-voices-file", message: "No voice list." },
+      }),
+    ).toEqual(system);
+    // The catalog could not be read.
+    expect(lampVoiceChoice(null)).toEqual(system);
   });
 
   it("says why dictation cannot start", () => {

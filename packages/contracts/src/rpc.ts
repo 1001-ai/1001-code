@@ -398,6 +398,17 @@ import {
   AgentsBoardSnapshot,
 } from "./agentsBoard.ts";
 import {
+  VoiceAgentError,
+  VoiceAgentMediaStepInput,
+  VoiceAgentOpenResult,
+  VoiceAgentSayInput,
+  VoiceAgentSayResult,
+  VoiceAgentSessionInput,
+  VoiceAgentState,
+  VoiceAgentThreadInput,
+  VoiceAgentTranscript,
+} from "./voiceAgent.ts";
+import {
   StorageCleanupReport,
   DatabaseReclaimError,
   DatabaseStorageStatus,
@@ -608,6 +619,12 @@ export const WS_METHODS = {
   agentsBoardRefresh: "agentsBoard.refresh",
   agentsBoardSetBranch: "agentsBoard.setBranch",
   agentsBoardMedia: "agentsBoard.media",
+  voiceAgentSubscribe: "voiceAgent.subscribe",
+  voiceAgentOpen: "voiceAgent.open",
+  voiceAgentSay: "voiceAgent.say",
+  voiceAgentClose: "voiceAgent.close",
+  voiceAgentMediaStep: "voiceAgent.mediaStep",
+  voiceAgentTranscript: "voiceAgent.transcript",
 
   scheduledTasksSubscribe: "scheduledTasks.subscribe",
   scheduledTasksUpsert: "scheduledTasks.upsert",
@@ -1194,6 +1211,41 @@ const WsAgentsBoardMediaRpc = Rpc.make(WS_METHODS.agentsBoardMedia, {
   payload: AgentsBoardMediaInput,
   success: AgentsBoardMedia,
   error: Schema.Union([AgentsBoardError, EnvironmentAuthorizationError]),
+});
+
+const WsVoiceAgentSubscribeRpc = Rpc.make(WS_METHODS.voiceAgentSubscribe, {
+  payload: VoiceAgentThreadInput,
+  success: VoiceAgentState,
+  error: EnvironmentAuthorizationError,
+  stream: true,
+});
+
+const WsVoiceAgentOpenRpc = Rpc.make(WS_METHODS.voiceAgentOpen, {
+  payload: VoiceAgentThreadInput,
+  success: VoiceAgentOpenResult,
+  error: Schema.Union([VoiceAgentError, EnvironmentAuthorizationError]),
+});
+
+const WsVoiceAgentSayRpc = Rpc.make(WS_METHODS.voiceAgentSay, {
+  payload: VoiceAgentSayInput,
+  success: VoiceAgentSayResult,
+  error: Schema.Union([VoiceAgentError, EnvironmentAuthorizationError]),
+});
+
+const WsVoiceAgentCloseRpc = Rpc.make(WS_METHODS.voiceAgentClose, {
+  payload: VoiceAgentSessionInput,
+  error: Schema.Union([VoiceAgentError, EnvironmentAuthorizationError]),
+});
+
+const WsVoiceAgentMediaStepRpc = Rpc.make(WS_METHODS.voiceAgentMediaStep, {
+  payload: VoiceAgentMediaStepInput,
+  error: Schema.Union([VoiceAgentError, EnvironmentAuthorizationError]),
+});
+
+const WsVoiceAgentTranscriptRpc = Rpc.make(WS_METHODS.voiceAgentTranscript, {
+  payload: VoiceAgentSessionInput,
+  success: VoiceAgentTranscript,
+  error: Schema.Union([VoiceAgentError, EnvironmentAuthorizationError]),
 });
 
 const WsServerSignalProcessRpc = Rpc.make(WS_METHODS.serverSignalProcess, {
@@ -2339,6 +2391,12 @@ export const WsRpcGroup = RpcGroup.make(
   WsAgentsBoardRefreshRpc,
   WsAgentsBoardSetBranchRpc,
   WsAgentsBoardMediaRpc,
+  WsVoiceAgentSubscribeRpc,
+  WsVoiceAgentOpenRpc,
+  WsVoiceAgentSayRpc,
+  WsVoiceAgentCloseRpc,
+  WsVoiceAgentMediaStepRpc,
+  WsVoiceAgentTranscriptRpc,
   WsServerSignalProcessRpc,
   WsScheduledTasksSubscribeRpc,
   WsScheduledTasksUpsertRpc,

@@ -22,7 +22,9 @@ download.
 3. When it is installed, choose **Hear a sample** beside each of its voices.
 4. Choose **Use voice** on the one you want.
 
-There is no default voice: nothing speaks until you choose one.
+There is no default voice: nothing speaks until you choose one. The
+[voice agent](./team-projects.md#voice-agent) speaks with the voice you choose,
+and with your system's voice until then.
 
 A download is installed only after it matches the checksum your team's list
 gives for it. If it does not match, nothing is installed and the model shows
