@@ -90,25 +90,26 @@ export function useLampLayer(input: {
   readonly threadKey: string;
   readonly bottomInset: number;
   readonly topFadeEnabled: boolean;
-  /** The timeline has no rows, so it draws no list for the cards to end. */
+  /** The timeline has no rows, so it draws no list to place the voice conversation cards in. */
   readonly empty: boolean;
-}): { readonly open: boolean; readonly element: ReactNode; readonly cards: ReactNode } {
+}): { readonly open: boolean; readonly element: ReactNode } {
   const open = useLampLayerOpen(input.threadKey);
   // The thread's environment runs the agent, and dictation asks it for the user's vocabulary.
   const thread = parseScopedThreadKey(input.threadKey);
   const transcript = useLampTranscriptOpen(input.threadKey);
-  const cards = thread ? (
-    <LampTranscriptCards
-      environmentId={thread.environmentId}
-      threadId={thread.threadId}
-      threadKey={input.threadKey}
-    />
-  ) : null;
   return {
     open: open || transcript !== null,
     element: thread ? (
       <>
-        {input.empty ? <div className="absolute inset-x-0 top-0 pt-4">{cards}</div> : null}
+        {input.empty ? (
+          <div className="absolute inset-x-0 top-0 pt-4">
+            <LampTranscriptCards
+              environmentId={thread.environmentId}
+              threadId={thread.threadId}
+              threadKey={input.threadKey}
+            />
+          </div>
+        ) : null}
         {/* Keyed by thread, so a switch drops an open layer at once instead of playing its exit. */}
         <LampLayerPresence
           key={input.threadKey}
@@ -130,8 +131,6 @@ export function useLampLayer(input: {
         ) : null}
       </>
     ) : null,
-    /** The chat's closed voice conversations, for the end of its timeline's list. */
-    cards: input.empty ? null : cards,
   };
 }
 
