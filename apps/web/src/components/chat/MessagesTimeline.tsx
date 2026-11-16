@@ -831,6 +831,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     threadKey: listIdentityKey,
     bottomInset: showsEmptyState ? emptyPlaceholderInset : contentInsetEndAdjustment,
     topFadeEnabled,
+    empty: showsEmptyState,
   });
   const exchangeThread = useExchangeThread({
     rows,
@@ -1376,6 +1377,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
       composerInset={anchoredEndSpace ? 0 : contentInsetEndAdjustment}
       onGrow={onFooterGrow}
     >
+      {lampLayer.cards}
       {footer}
       {unmatchedPendingApprovals.length > 0 ? (
         <TimelineRowCtx value={sharedState}>

@@ -265,13 +265,18 @@ export const LAMP_STATUS_LABEL: Record<LampStatus, string> = {
   thinking: "Thinking",
 };
 
-/** Listening lasts until the user's words are transcribed. No agent thinks yet. */
+/**
+ * Listening lasts until the user's words are transcribed, and wins over the rest: the user has
+ * the floor. Thinking is the agent at work on an answer it is not saying yet.
+ */
 export function lampStatus(input: {
   readonly speaking: boolean;
   readonly voicePhase: VoiceInputPhase;
+  readonly thinking: boolean;
 }): LampStatus {
   if (input.voicePhase !== "idle" && input.voicePhase !== "error") return "listening";
-  return input.speaking ? "speaking" : "idle";
+  if (input.speaking) return "speaking";
+  return input.thinking ? "thinking" : "idle";
 }
 
 export type LampVoiceReadiness = "ready" | "not-set-up" | "missing-model" | "unavailable";

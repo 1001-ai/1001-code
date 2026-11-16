@@ -37,8 +37,3 @@ export const lampVoice = {
 export function useLampVoiceSession(): LampVoiceSession {
   return useLampVoiceStore();
 }
-
-/** What the agent says when nothing is queued. A stub: the agent's own words replace it. */
-export function nextLampSpeech(): string {
-  return "Nothing new to report. What do you want to build?";
-}

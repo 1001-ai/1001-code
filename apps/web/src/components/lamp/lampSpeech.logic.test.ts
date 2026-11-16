@@ -209,11 +209,17 @@ describe("lamp speech", () => {
   });
 
   it("is listening until the user's words are transcribed, and speaking only while it talks", () => {
-    expect(lampStatus({ speaking: false, voicePhase: "idle" })).toBe("idle");
-    expect(lampStatus({ speaking: true, voicePhase: "idle" })).toBe("speaking");
-    expect(lampStatus({ speaking: true, voicePhase: "preparing" })).toBe("listening");
-    expect(lampStatus({ speaking: false, voicePhase: "transcribing" })).toBe("listening");
-    expect(lampStatus({ speaking: false, voicePhase: "error" })).toBe("idle");
+    const quiet = { thinking: false };
+    expect(lampStatus({ speaking: false, voicePhase: "idle", ...quiet })).toBe("idle");
+    expect(lampStatus({ speaking: true, voicePhase: "idle", ...quiet })).toBe("speaking");
+    expect(lampStatus({ speaking: true, voicePhase: "preparing", ...quiet })).toBe("listening");
+    expect(lampStatus({ speaking: false, voicePhase: "transcribing", ...quiet })).toBe("listening");
+    expect(lampStatus({ speaking: false, voicePhase: "error", ...quiet })).toBe("idle");
+    // The agent at work shows as Thinking only while nobody is talking.
+    const working = { thinking: true };
+    expect(lampStatus({ speaking: false, voicePhase: "idle", ...working })).toBe("thinking");
+    expect(lampStatus({ speaking: true, voicePhase: "idle", ...working })).toBe("speaking");
+    expect(lampStatus({ speaking: false, voicePhase: "recording", ...working })).toBe("listening");
   });
 
   it("says why dictation cannot start", () => {

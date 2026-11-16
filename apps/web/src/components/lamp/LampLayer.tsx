@@ -1,5 +1,5 @@
 import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import {
   useEffect,
   useEffectEvent,
@@ -25,8 +25,10 @@ import { Button } from "../ui/button";
 import { Kbd } from "../ui/kbd";
 import { LampIcon } from "./LampIcon";
 import { LAMP_NAME } from "./lampLayer.logic";
-import { closeLampLayer, useLampLayerOpen } from "./lampLayer.state";
+import { closeLampLayer, useLampLayerOpen, useLampTranscriptOpen } from "./lampLayer.state";
+import { LampMediaPlayer } from "./LampMediaPlayer";
 import { LAMP_STATUS_LABEL, captionParts, stoppedAfterLine } from "./lampSpeech.logic";
+import { LampTranscriptCards, LampTranscriptView } from "./LampTranscript";
 import { useLampVoice } from "./useLampVoice";
 
 /** Clicks on these are not clicks on the backdrop. */
@@ -88,23 +90,48 @@ export function useLampLayer(input: {
   readonly threadKey: string;
   readonly bottomInset: number;
   readonly topFadeEnabled: boolean;
-}): { readonly open: boolean; readonly element: ReactNode } {
+  /** The timeline has no rows, so it draws no list for the cards to end. */
+  readonly empty: boolean;
+}): { readonly open: boolean; readonly element: ReactNode; readonly cards: ReactNode } {
   const open = useLampLayerOpen(input.threadKey);
-  // The thread's environment: dictation asks it for the user's vocabulary and transcript cleanup.
-  const environmentId = parseScopedThreadKey(input.threadKey)?.environmentId;
+  // The thread's environment runs the agent, and dictation asks it for the user's vocabulary.
+  const thread = parseScopedThreadKey(input.threadKey);
+  const transcript = useLampTranscriptOpen(input.threadKey);
+  const cards = thread ? (
+    <LampTranscriptCards
+      environmentId={thread.environmentId}
+      threadId={thread.threadId}
+      threadKey={input.threadKey}
+    />
+  ) : null;
   return {
-    open,
-    element: environmentId ? (
-      // Keyed by thread, so a switch drops an open layer at once instead of playing its exit.
-      <LampLayerPresence
-        key={input.threadKey}
-        open={open}
-        threadKey={input.threadKey}
-        environmentId={environmentId}
-        bottomInset={input.bottomInset}
-        topFadeEnabled={input.topFadeEnabled}
-      />
+    open: open || transcript !== null,
+    element: thread ? (
+      <>
+        {input.empty ? <div className="absolute inset-x-0 top-0 pt-4">{cards}</div> : null}
+        {/* Keyed by thread, so a switch drops an open layer at once instead of playing its exit. */}
+        <LampLayerPresence
+          key={input.threadKey}
+          open={open}
+          threadKey={input.threadKey}
+          environmentId={thread.environmentId}
+          threadId={thread.threadId}
+          bottomInset={input.bottomInset}
+          topFadeEnabled={input.topFadeEnabled}
+        />
+        {transcript !== null && !open ? (
+          <LampTranscriptView
+            key={transcript}
+            environmentId={thread.environmentId}
+            sessionId={transcript}
+            bottomInset={input.bottomInset}
+            topFadeEnabled={input.topFadeEnabled}
+          />
+        ) : null}
+      </>
     ) : null,
+    /** The chat's closed voice conversations, for the end of its timeline's list. */
+    cards: input.empty ? null : cards,
   };
 }
 
@@ -112,6 +139,7 @@ function LampLayerPresence(props: {
   readonly open: boolean;
   readonly threadKey: string;
   readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
   readonly bottomInset: number;
   readonly topFadeEnabled: boolean;
 }) {
@@ -125,6 +153,7 @@ function LampLayerPresence(props: {
       onClosed={() => setMounted(false)}
       threadKey={props.threadKey}
       environmentId={props.environmentId}
+      threadId={props.threadId}
       bottomInset={props.bottomInset}
       topFadeEnabled={props.topFadeEnabled}
     />
@@ -135,16 +164,17 @@ function LampLayerPresence(props: {
 const CAPTION_SCROLL_MARGIN = 48;
 
 /**
- * A frosted layer over the chat, where a voice agent speaks with live captions and listens
- * while Space is held. No agent answers yet: it says one stub line and shows what it heard.
- * Like the thread view, it sits beside the message list, which stays mounted and untouched
- * underneath, and it moves only while it opens and closes.
+ * A frosted layer over the chat, where the voice agent speaks with live captions, listens while
+ * Space is held, and shows the screenshots it is asked for. Like the thread view, it sits beside
+ * the message list, which stays mounted and untouched underneath, and it moves only while it
+ * opens and closes.
  */
 function LampLayerView({
   closing,
   onClosed,
   threadKey,
   environmentId,
+  threadId,
   bottomInset,
   topFadeEnabled,
 }: {
@@ -152,6 +182,7 @@ function LampLayerView({
   readonly onClosed: () => void;
   readonly threadKey: string;
   readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
   readonly bottomInset: number;
   readonly topFadeEnabled: boolean;
 }) {
@@ -160,7 +191,13 @@ function LampLayerView({
   const contentRef = useRef<HTMLDivElement>(null);
   const spokenWordRef = useRef<HTMLSpanElement>(null);
   const focusBeforeOpenRef = useRef<HTMLElement | null>(null);
-  const voice = useLampVoice({ environmentId, threadKey, closing, openDurationMs: motionDuration });
+  const voice = useLampVoice({
+    environmentId,
+    threadId,
+    threadKey,
+    closing,
+    openDurationMs: motionDuration,
+  });
   const { said, interruption, heard } = voice.session;
   const { speech } = voice;
   const caption = said ? captionParts(said) : null;
@@ -342,6 +379,7 @@ function LampLayerView({
             <span role="status">{LAMP_STATUS_LABEL[voice.status]}</span>
           </div>
           <div className="flex flex-1 flex-col items-center justify-center gap-8">
+            {closing ? null : <LampMediaPlayer environmentId={environmentId} threadId={threadId} />}
             {caption ? (
               <div data-lamp-layer-content="" className="flex flex-col items-center gap-3">
                 {/* Said, being said, still to come. Only the word's place changes as it speaks. */}
@@ -390,11 +428,6 @@ function LampLayerView({
                 ) : (
                   <p className="text-foreground text-lg">{heard}</p>
                 )}
-                {heard !== null && !listening ? (
-                  <p className="text-muted-foreground text-xs">
-                    No agent is connected yet, so nothing answers.
-                  </p>
-                ) : null}
               </div>
             ) : null}
           </div>
@@ -405,11 +438,13 @@ function LampLayerView({
             {voice.notice ? (
               <span role="status" className="flex min-w-0 items-center gap-2">
                 <span className="min-w-0">{voice.notice.text}</span>
-                <span className="shrink-0">
-                  <Button variant="outline" size="compact" onClick={voice.notice.action.run}>
-                    {voice.notice.action.label}
-                  </Button>
-                </span>
+                {voice.notice.action ? (
+                  <span className="shrink-0">
+                    <Button variant="outline" size="compact" onClick={voice.notice.action.run}>
+                      {voice.notice.action.label}
+                    </Button>
+                  </span>
+                ) : null}
               </span>
             ) : listening ? (
               <span className="flex items-center gap-1.5">
