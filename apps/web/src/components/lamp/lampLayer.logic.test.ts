@@ -4,6 +4,7 @@ import {
   LAMP_LAYER_CLOSED,
   afterLampMotion,
   canToggleLampLayer,
+  coverLampSiblings,
   isLampLayerOpenIn,
   isLampTalkKey,
   lampHoldsKeyboard,
@@ -120,8 +121,57 @@ describe("lamp layer", () => {
   });
 });
 
+/** One of the chat's layers, as far as covering it goes: its attributes and its animations. */
+function chatLayer(attribute?: string) {
+  const attributes = new Set(attribute === undefined ? [] : [attribute]);
+  const animations: Array<{
+    keyframes: Keyframe[];
+    options: KeyframeAnimationOptions;
+    cancelled: boolean;
+  }> = [];
+  return {
+    attributes,
+    animations,
+    hasAttribute: (name: string) => attributes.has(name),
+    setAttribute: (name: string) => void attributes.add(name),
+    removeAttribute: (name: string) => void attributes.delete(name),
+    animate: (keyframes: Keyframe[], options: KeyframeAnimationOptions) => {
+      const animation = { keyframes, options, cancelled: false };
+      animations.push(animation);
+      return { cancel: () => void (animation.cancelled = true) };
+    },
+  };
+}
+
 describe("lamp layer motion", () => {
   const never = { finished: new Promise<never>(() => {}) };
+
+  it("covers the chat's layers, fades out the ones above the glass, and gives each back", () => {
+    const list = chatLayer();
+    const minimap = chatLayer();
+    const coveredAlready = chatLayer("inert");
+    const timing = { duration: 240, easing: "ease-out" };
+    const uncover = coverLampSiblings(
+      [list, minimap, coveredAlready],
+      (layer) => layer === minimap,
+      timing,
+    );
+    expect([list.attributes.has("inert"), minimap.attributes.has("inert")]).toEqual([true, true]);
+    expect(list.animations).toEqual([]);
+    const hidden = { keyframes: [{}, { opacity: 0 }], options: { ...timing, fill: "forwards" } };
+    expect(minimap.animations).toEqual([{ ...hidden, cancelled: false }]);
+
+    uncover();
+    expect([list.attributes.has("inert"), minimap.attributes.has("inert")]).toEqual([false, false]);
+    // Back to its own CSS opacity, which for hover-only chrome is hidden.
+    expect(minimap.animations).toEqual([
+      { ...hidden, cancelled: true },
+      { keyframes: [{ opacity: 0 }, {}], options: timing, cancelled: false },
+    ]);
+    // What was inert before is not this layer's to give back.
+    expect(coveredAlready.attributes.has("inert")).toBe(true);
+    expect(coveredAlready.animations).toEqual([]);
+  });
 
   it("leaves once: after the motion's time in a tab that never paints, or when it settles", async () => {
     vi.useFakeTimers();

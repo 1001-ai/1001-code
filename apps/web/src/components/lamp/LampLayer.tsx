@@ -24,7 +24,7 @@ import { VoiceInputSetup } from "../chat/VoiceInputSetup";
 import { Button } from "../ui/button";
 import { Kbd } from "../ui/kbd";
 import { LampIcon } from "./LampIcon";
-import { LAMP_NAME, afterLampMotion } from "./lampLayer.logic";
+import { LAMP_NAME, afterLampMotion, coverLampChat } from "./lampLayer.logic";
 import { closeLampLayer, useLampLayerOpen, useLampTranscriptOpen } from "./lampLayer.state";
 import { LampMediaPlayer } from "./LampMediaPlayer";
 import { LAMP_STATUS_LABEL, captionParts, stoppedAfterLine } from "./lampSpeech.logic";
@@ -250,16 +250,7 @@ function LampLayerView({
     overlay.focus({ preventScroll: true });
     const promptBox = promptBoxUnder(overlay);
     promptBox?.classList.add(...PROMPT_BOX_RECEDED_CLASSES);
-    const covered = [...chat.children].flatMap((child) => {
-      if (child === overlay || child === glass || !(child instanceof HTMLElement)) return [];
-      child.setAttribute("inert", "");
-      // Layers stacked above the glass, such as the timeline minimap, would stay sharp on top of it.
-      const above = Number.parseInt(getComputedStyle(child).zIndex, 10) > VIEW_Z_INDEX;
-      const hidden = above
-        ? child.animate([{}, { opacity: 0 }], { ...timing, fill: "forwards" })
-        : null;
-      return [{ element: child, hidden }];
-    });
+    const uncover = coverLampChat(chat, [overlay, glass], VIEW_Z_INDEX, timing);
     const moves = [
       glass.animate([{ opacity: 0 }, { opacity: 1 }], timing),
       content.animate(
@@ -273,14 +264,7 @@ function LampLayerView({
     return () => {
       promptBox?.classList.remove(...PROMPT_BOX_RECEDED_CLASSES);
       for (const animation of moves) animation.cancel();
-      for (const { element, hidden } of covered) {
-        if (hidden) {
-          hidden.cancel();
-          // An empty keyframe is the element's own CSS opacity: it fades back in as the glass clears.
-          element.animate([{ opacity: 0 }, {}], timing);
-        }
-        element.removeAttribute("inert");
-      }
+      uncover();
     };
   }, [closing]);
 

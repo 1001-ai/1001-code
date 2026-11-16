@@ -11,12 +11,13 @@ import {
   LIST_LANE_PADDING_CLASS,
   MOTION_EASING,
   MOTION_MS,
+  VIEW_Z_INDEX,
 } from "../chat/ExchangeThread";
 import { Button } from "../ui/button";
 import { Kbd } from "../ui/kbd";
 import { Spinner } from "../ui/spinner";
 import { LampIcon } from "./LampIcon";
-import { LAMP_NAME } from "./lampLayer.logic";
+import { LAMP_NAME, coverLampChat } from "./lampLayer.logic";
 import { closeLampTranscript, openLampTranscript } from "./lampLayer.state";
 import { lampTranscriptCards, lampTranscriptSummary } from "./lampTranscript.logic";
 
@@ -89,7 +90,7 @@ export function LampTranscriptView(props: {
   const result = useVoiceAgentTranscript(props.environmentId, props.sessionId);
   const transcript = AsyncResult.getOrElse(result, () => null);
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- frosts the chat under the view, makes it inert and takes focus before the first paint, and gives all of it back on close
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- frosts the chat under the view, makes it inert, fades the layers above the glass and takes focus before the first paint, and gives all of it back on close
   useLayoutEffect(() => {
     const overlay = overlayRef.current;
     const glass = glassRef.current;
@@ -97,21 +98,17 @@ export function LampTranscriptView(props: {
     if (!overlay || !glass || !chat) return;
     const before = document.activeElement;
     overlay.focus({ preventScroll: true });
-    const duration = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : MOTION_MS;
+    const timing = {
+      duration: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : MOTION_MS,
+      easing: MOTION_EASING,
+    };
     const fades = [glass, overlay].map((element) =>
-      element.animate([{ opacity: 0 }, { opacity: 1 }], { duration, easing: MOTION_EASING }),
+      element.animate([{ opacity: 0 }, { opacity: 1 }], timing),
     );
-    const covered = [...chat.children].filter(
-      (child): child is HTMLElement =>
-        child instanceof HTMLElement &&
-        child !== overlay &&
-        child !== glass &&
-        !child.hasAttribute("inert"),
-    );
-    for (const element of covered) element.setAttribute("inert", "");
+    const uncover = coverLampChat(chat, [overlay, glass], VIEW_Z_INDEX, timing);
     return () => {
       for (const fade of fades) fade.cancel();
-      for (const element of covered) element.removeAttribute("inert");
+      uncover();
       if (before instanceof HTMLElement && before.isConnected) {
         before.focus({ preventScroll: true });
       }
