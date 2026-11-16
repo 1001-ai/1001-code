@@ -66,9 +66,13 @@ it("speaks in an isolated process that sees a minimal environment", async () => 
     });
     expect(loaded.environment).not.toContain("VOICE_OUTPUT_TEST_SECRET");
     const allowed = Object.keys(voiceOutputWorkerEnvironment(process.env));
-    // Node and macOS add a few names of their own to every process.
+    // Node and macOS add a few names of their own to every process, and the test runner's file
+    // tracer re-injects itself into every child it sees start.
+    const injected = ["FSPY_PAYLOAD", "LD_PRELOAD", "DYLD_INSERT_LIBRARIES"];
     expect(
-      loaded.environment.filter((name) => !allowed.includes(name) && !name.startsWith("__")),
+      loaded.environment.filter(
+        (name) => !allowed.includes(name) && !injected.includes(name) && !name.startsWith("__"),
+      ),
     ).toEqual([]);
     const audio = await model.speak({ text: "Hello.", voiceId: "amber" });
     expect(audio.sampleRate).toBe(24000);

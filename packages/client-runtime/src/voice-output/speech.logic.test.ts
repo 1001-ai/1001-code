@@ -17,6 +17,18 @@ it("cuts a reply into sentences and remembers where each starts", () => {
     expect(text.slice(sentence.start, sentence.start + sentence.text.length)).toBe(sentence.text);
 });
 
+it("does not end a sentence at marks with no space after, however long the run", () => {
+  const run = "!".repeat(50_000);
+  expect(splitVoiceOutputSentences(`wow${run}x. Next.`, 100_000).map(({ text }) => text)).toEqual([
+    `wow${run}x.`,
+    "Next.",
+  ]);
+  expect(splitVoiceOutputSentences('He said "stop!")] now', 200).map(({ text }) => text)).toEqual([
+    'He said "stop!")]',
+    "now",
+  ]);
+});
+
 it("drops blank text and cuts an overlong sentence at a space, never inside a surrogate pair", () => {
   expect(splitVoiceOutputSentences("  \n\n  ", 50)).toEqual([]);
   const text = `one two three four ${"🙂".repeat(6)} five`;

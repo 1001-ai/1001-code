@@ -6,7 +6,26 @@ export type VoiceOutputSentence = {
   readonly start: number;
 };
 
-const SENTENCE_END = /[.!?。！？…]+["'”’)\]]*(?=\s|$)|\n+/gu;
+const SENTENCE_MARKS = new Set([".", "!", "?", "。", "！", "？", "…"]);
+const CLOSING_MARKS = new Set(['"', "'", "”", "’", ")", "]"]);
+
+// One pass, not a regular expression: one backtracks on a long run of marks with no space after.
+function* sentenceEnds(text: string): Generator<number> {
+  let at = 0;
+  while (at < text.length) {
+    const character = text[at]!;
+    if (character === "\n") {
+      while (text[at] === "\n") at += 1;
+      yield at;
+    } else if (SENTENCE_MARKS.has(character)) {
+      while (at < text.length && SENTENCE_MARKS.has(text[at]!)) at += 1;
+      while (at < text.length && CLOSING_MARKS.has(text[at]!)) at += 1;
+      if (at === text.length || /\s/.test(text[at]!)) yield at;
+    } else {
+      at += 1;
+    }
+  }
+}
 
 /**
  * Cuts a text into the sentences the server speaks one at a time, so playback starts after the
@@ -35,8 +54,7 @@ export function splitVoiceOutputSentences(text: string, limit: number): VoiceOut
     if (rest.length > 0) sentences.push({ text: rest, start });
   };
   let from = 0;
-  for (const match of text.matchAll(SENTENCE_END)) {
-    const to = match.index + match[0].length;
+  for (const to of sentenceEnds(text)) {
     push(from, to);
     from = to;
   }
