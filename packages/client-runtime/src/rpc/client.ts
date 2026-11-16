@@ -77,6 +77,7 @@ export type EnvironmentSubscriptionRpcTag =
   | typeof WS_METHODS.boardSubscribeConnection
   | typeof WS_METHODS.memorySubscribe
   | typeof WS_METHODS.agentsBoardSubscribe
+  | typeof WS_METHODS.voiceAgentSubscribe
   | typeof WS_METHODS.terminalAttach
   | typeof WS_METHODS.terminalObserve;
 
