@@ -12,7 +12,7 @@ import { useLampThinking } from "./lampVoice.state";
 
 /**
  * Opens and closes the layer over one thread's chat. As tall as the toggles beside it and two
- * and a half times as wide, icon centred, in the page's colours swapped. Only hover moves it.
+ * and a half times as wide, icon centred, in the page's colours swapped. Hover grows its glow.
  * `covered` is a maximized panel over the chat: the button keeps its place and does nothing.
  */
 export function LampButton({
@@ -40,7 +40,7 @@ export function LampButton({
           disabled={covered}
           onClick={toggleLampLayer}
           className={cn(
-            "group/lamp relative isolate inline-flex h-8 w-20 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-foreground text-background outline-none select-none sm:h-7 sm:w-17.5 [-webkit-app-region:no-drag]",
+            "relative isolate inline-flex h-8 w-20 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-foreground text-background outline-none select-none sm:h-7 sm:w-17.5 [-webkit-app-region:no-drag]",
             "hover:bg-foreground/90 motion-safe:transition-colors motion-safe:duration-200 motion-safe:ease-out",
             "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background focus-visible:ring-inset",
             "aria-pressed:bg-foreground/80 aria-pressed:inset-shadow-sm aria-pressed:inset-shadow-background/40",
@@ -52,10 +52,7 @@ export function LampButton({
             "hover:before:scale-125 hover:before:opacity-100 aria-pressed:before:opacity-100",
           )}
         >
-          <LampIcon
-            thinking={open && thinking}
-            className="size-5 shrink-0 motion-safe:transition-transform motion-safe:duration-200 motion-safe:ease-out motion-safe:group-hover/lamp:scale-110 motion-safe:group-hover/lamp:-rotate-6"
-          />
+          <LampIcon thinking={open && thinking} className="size-5 shrink-0" />
         </button>
       </TooltipTrigger>
       <TooltipPopup side="bottom">
