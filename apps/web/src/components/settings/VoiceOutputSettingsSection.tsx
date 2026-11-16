@@ -37,10 +37,17 @@ const errorText = (error: unknown) => (error instanceof Error ? error.message : 
 // Every sample plays through this one context; browsers cap how many a page may open.
 let audioContext: AudioContext | undefined;
 
-/** Starts playback and returns how to stop it. `onEnded` runs only when the audio ends by itself. */
-function playSpeech(speech: VoiceOutputSpeech, onEnded: () => void): () => void {
+// Called inside the click: a browser leaves a context suspended when it is first resumed after
+// the wait for the audio, with the click long over.
+function openAudio(): AudioContext {
   audioContext ??= new AudioContext();
   void audioContext.resume();
+  return audioContext;
+}
+
+/** Starts playback and returns how to stop it. `onEnded` runs only when the audio ends by itself. */
+function playSpeech(speech: VoiceOutputSpeech, onEnded: () => void): () => void {
+  const audioContext = openAudio();
   const samples = pcm16ToFloat32(speech.pcm);
   const buffer = audioContext.createBuffer(1, Math.max(1, samples.length), speech.sampleRate);
   buffer.copyToChannel(samples, 0);
@@ -155,6 +162,7 @@ function useVoiceSample(prepared: PreparedConnection | null) {
   const hear = (model: VoiceOutputModel, voiceId: string) => {
     if (!prepared) return;
     stop();
+    openAudio();
     const key = `${model.id}/${voiceId}`;
     const request = new AbortController();
     let active = true;
