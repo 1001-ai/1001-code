@@ -39,13 +39,16 @@ import {
 import type { MessagesTimelineRow } from "./MessagesTimeline.logic";
 import { TimelineRowCtx } from "./timelineRowContext";
 
-const MOTION_MS = 240;
-const MOTION_EASING = "cubic-bezier(0.25, 0.8, 0.25, 1)";
+// Exported so another layer over the timeline opens, frosts and lines up like the thread view.
+export const MOTION_MS = 240;
+export const MOTION_EASING = "cubic-bezier(0.25, 0.8, 0.25, 1)";
 /** The glass and the view's z-index; list layers stacked above it would paint over the frost. */
-const VIEW_Z_INDEX = 10;
+export const VIEW_Z_INDEX = 10;
+export const GLASS_CLASS =
+  "bg-card/60 backdrop-blur-(--glass-blur) backdrop-saturate-(--glass-saturation)";
 // The view is not inside `.messages-timeline-scroll`, so it copies that list's lane padding from
 // index.css: the content then sits where the list's does, beside the details card and preview player.
-const LIST_LANE_PADDING_CLASS =
+export const LIST_LANE_PADDING_CLASS =
   "scrollbar-gutter-both [--exchange-lane-pad:--spacing(3)] sm:[--exchange-lane-pad:--spacing(12)] [--exchange-lane-start:calc(var(--exchange-lane-pad)+var(--chat-lane-inset-start,0px)-var(--chat-timeline-gutter,0px))] [--exchange-lane-end:calc(var(--exchange-lane-pad)+var(--chat-lane-inset-end,0px)-var(--chat-timeline-gutter,0px))] in-data-[chat-canvas]:ps-(--exchange-lane-start) in-data-[chat-canvas]:pe-(--exchange-lane-end)";
 /** A bubble click waits this long, so a double click that selects a word does not open the view. */
 const BUBBLE_CLICK_DELAY_MS = 250;
@@ -745,7 +748,7 @@ export function ExchangeThreadView({
       <div
         ref={glassRef}
         aria-hidden
-        className="pointer-events-none absolute inset-0 z-10 bg-card/60 backdrop-blur-(--glass-blur) backdrop-saturate-(--glass-saturation)"
+        className={cn("pointer-events-none absolute inset-0 z-10", GLASS_CLASS)}
       />
       <div
         ref={overlayRef}

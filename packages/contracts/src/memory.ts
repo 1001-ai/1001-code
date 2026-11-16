@@ -1,6 +1,6 @@
 import * as Schema from "effect/Schema";
 
-import { ProjectId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { IsoDateTime, ProjectId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { TeamCatalogViewer } from "./teamCatalog.ts";
 
 /**
@@ -143,6 +143,8 @@ export const MemoryView = Schema.Struct({
   /** The team catalog's git URL; null when the environment has none. */
   source: Schema.NullOr(TrimmedNonEmptyString),
   revision: Schema.NullOr(TrimmedNonEmptyString),
+  /** When the team catalog was last fetched; null before the first fetch. */
+  fetchedAt: Schema.NullOr(IsoDateTime),
   refreshing: Schema.Boolean,
   /** The last catalog fetch's failure; the documents stay those of the last good fetch. */
   error: Schema.NullOr(Schema.String),

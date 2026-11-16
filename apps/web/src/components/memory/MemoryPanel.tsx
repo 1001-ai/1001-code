@@ -26,6 +26,7 @@ import { teamCatalogRefresh } from "~/state/teamCatalog";
 import { memoryPropose, useMemory } from "~/state/memory";
 import { useAtomCommand } from "~/state/use-atom-command";
 import ChatMarkdown from "../ChatMarkdown";
+import { RelativeTime } from "../RelativeTime";
 import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
@@ -211,7 +212,17 @@ function MemoryDocuments(props: {
             </Toggle>
           ))}
         </ToggleGroup>
-        <div className="min-w-0 flex-1" />
+        <span className="min-w-0 flex-1 truncate whitespace-nowrap text-end text-xs text-muted-foreground">
+          {view.refreshing ? (
+            "Fetching…"
+          ) : view.fetchedAt === null ? (
+            "Not fetched yet"
+          ) : (
+            <>
+              Updated <RelativeTime timestamp={view.fetchedAt} />
+            </>
+          )}
+        </span>
         <Tooltip>
           <TooltipTrigger
             render={
