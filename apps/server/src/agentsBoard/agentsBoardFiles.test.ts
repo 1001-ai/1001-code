@@ -291,6 +291,8 @@ describe("paths and names from the branch", () => {
     ["inbox/sam-2.md", { kind: "inbox", to: "sam-2" }],
     ["inbox/all.md", { kind: "inbox", to: null }],
     ["reports/sam-2.txt", null],
+    ["reports/README.md", null],
+    ["inbox/readme.md", null],
     ["reports/.md", null],
     ["reports/a/b.md", null],
     ["reports/..md", null],

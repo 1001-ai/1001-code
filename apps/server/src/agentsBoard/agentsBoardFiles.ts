@@ -54,6 +54,8 @@ export function agentsBoardFileKind(path: string): AgentsBoardFileKind | null {
   const match = /^([a-z]+)\/([^/]+)\.md$/.exec(path);
   const name = match?.[2];
   if (match === null || name === undefined || !isAgentsBoardAgentId(name)) return null;
+  // Each folder's README documents the format, with example entries; it is not an agent's file.
+  if (name.toLowerCase() === "readme") return null;
   if (match[1] === AGENTS_BOARD_REPORTS_DIRECTORY) return { kind: "report", agentId: name };
   if (match[1] === AGENTS_BOARD_INBOX_DIRECTORY) {
     return { kind: "inbox", to: name === AGENTS_BOARD_INBOX_EVERYONE ? null : name };
