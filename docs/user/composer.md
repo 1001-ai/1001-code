@@ -143,11 +143,11 @@ Leaving reasoning level or service tier unset uses the provider's own configurat
 
 ## Quote an assistant response
 
-On web and desktop, select text within one assistant response and choose **Cite**. The
-text becomes an annotation: it stays highlighted in the reply, with a numbered marker beside
-it, and a comment box opens above it. Press **Enter** to save the comment, or **Escape** to keep
-the annotation without one. Select the highlight or its marker to edit the comment or remove the
-annotation.
+On web and desktop, select text within one assistant response and choose **Cite**, or press
+`mod+l` (the `chat.citeSelection` keybinding). The text becomes an annotation: it stays
+highlighted in the reply, with a numbered marker beside it, and a comment box opens above it.
+Press **Enter** to save the comment, or **Escape** to keep the annotation without one. Select
+the highlight or its marker to edit the comment or remove the annotation.
 
 The composer lists your annotations as one **N annotations** button above the message; open it
 to jump to an annotation or remove it. Annotations are sent after your message text, and the

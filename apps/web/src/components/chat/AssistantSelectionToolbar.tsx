@@ -19,6 +19,7 @@ import {
 } from "~/lib/selectionActions";
 import { Button } from "../ui/button";
 import { BackgroundThreadContext } from "./backgroundThread";
+import { CiteSelectionShortcut } from "./CiteSelectionShortcut";
 
 export function AssistantSelectionToolbar({
   viewport,
@@ -210,6 +211,7 @@ export function AssistantSelectionToolbar({
     >
       <QuoteIcon aria-hidden="true" className="size-3.5" />
       {tooLong ? "Shorten selection" : "Cite"}
+      <CiteSelectionShortcut onCite={cite} hideHint={tooLong} />
     </Button>,
     document.body,
   );
