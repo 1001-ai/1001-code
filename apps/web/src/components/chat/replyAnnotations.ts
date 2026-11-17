@@ -7,7 +7,7 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import type { DraftId } from "~/composerDraftStore";
 import { resolveStorage } from "~/lib/storage";
 import { randomUUID } from "~/lib/utils";
-import { appendAnnotationCitations, splitReplyAnnotations } from "./replyAnnotations.logic";
+import { appendAnnotationCitations, sentAnnotationCitations } from "./replyAnnotations.logic";
 
 export interface ReplyAnnotation {
   readonly id: string;
@@ -159,7 +159,9 @@ export function appendReplyAnnotations(target: Target, prompt: string): string {
 }
 
 /** Puts the annotations a failed send carried back into the store. */
-export function restoreReplyAnnotations(target: Target, messageText: string): void {
-  const { citations } = splitReplyAnnotations(messageText);
-  for (const citation of citations) addReplyAnnotation(target, citation);
+export function restoreReplyAnnotations(
+  target: Target,
+  snapshot: { readonly messageText: string; readonly draftText: string },
+): void {
+  for (const citation of sentAnnotationCitations(snapshot)) addReplyAnnotation(target, citation);
 }

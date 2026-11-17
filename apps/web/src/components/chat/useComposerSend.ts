@@ -105,6 +105,7 @@ import {
 } from "./composerSend.logic";
 import { useMultipleModelSend } from "./useMultipleModelSend";
 import { appendReplyAnnotations, readReplyAnnotations } from "./replyAnnotations";
+import { withoutSentAnnotations } from "./replyAnnotations.logic";
 import { type ComposerDispatchMode } from "@t3tools/client-runtime/state/composer-dispatch";
 import {
   awaitAttachmentUploads,
@@ -597,6 +598,7 @@ export function useComposerSend(input: ComposerSendInput) {
       });
     // A direct "send annotation" writes the draft and sends in the same tick; the reference
     // must be in the text now, not after the next render.
+    const sentAnnotationCount = readReplyAnnotations(composerDraftTarget).length;
     const draftPrompt = appendReplyAnnotations(
       composerDraftTarget,
       directAnnotation
@@ -768,18 +770,21 @@ export function useComposerSend(input: ComposerSendInput) {
       return;
     }
     const threadIdForSend = activeThread.id;
-    const sendSnapshot = snapshotComposerSend({
-      prompt: promptForSend,
-      images: composerImages,
-      files: composerFiles,
-      terminalContexts: composerTerminalContexts,
-      sendableTerminalContexts: sendableComposerTerminalContexts,
-      previewAnnotations: composerPreviewAnnotations,
-      reviewComments: composerReviewComments,
-      threadContexts: composerThreadContexts,
-      environmentContexts: composerEnvironmentContexts,
-      replyTo,
-    });
+    const sendSnapshot = withoutSentAnnotations(
+      snapshotComposerSend({
+        prompt: promptForSend,
+        images: composerImages,
+        files: composerFiles,
+        terminalContexts: composerTerminalContexts,
+        sendableTerminalContexts: sendableComposerTerminalContexts,
+        previewAnnotations: composerPreviewAnnotations,
+        reviewComments: composerReviewComments,
+        threadContexts: composerThreadContexts,
+        environmentContexts: composerEnvironmentContexts,
+        replyTo,
+      }),
+      sentAnnotationCount,
+    );
     const {
       files: composerFilesSnapshot,
       attachments: composerAttachmentsSnapshot,

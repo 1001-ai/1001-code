@@ -95,7 +95,6 @@ import { derivePhase, type TimelineEntry } from "../session-logic";
 import type { PreviewMiniPlayerSource } from "../previewMiniPlayerStore";
 import type { DesktopPreviewOverlay } from "../previewStateStore";
 import type { RightPanelSurface } from "../rightPanelStore";
-import { splitReplyAnnotations } from "./chat/replyAnnotations.logic";
 import {
   NO_PROVIDER_MODEL_SELECTION,
   resolveSelectableProviderInstanceEntry,
@@ -1284,11 +1283,9 @@ export function snapshotComposerSend(contents: ComposerSendContents) {
     replyTo: contents.replyTo,
     messageText,
     /** What a failed send puts back in the composer: the reply returns above it, not in the text. */
-    draftText: splitReplyAnnotations(
-      contents.replyTo
-        ? removeInlineContextReference(messageText, contents.replyTo.contextId).prompt.trimStart()
-        : messageText,
-    ).text,
+    draftText: contents.replyTo
+      ? removeInlineContextReference(messageText, contents.replyTo.contextId).prompt.trimStart()
+      : messageText,
   };
 }
 

@@ -1,5 +1,6 @@
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { useEffect, useRef, useState } from "react";
+import { useStableCallback } from "~/hooks/useStableCallback";
 import { resolveAssistantCitationRange } from "~/lib/assistantTextSelection";
 import { Popover, PopoverPopup } from "../ui/popover";
 import { ReplyAnnotationCommentBox } from "./ReplyAnnotationCommentBox";
@@ -9,7 +10,6 @@ import {
   setReplyAnnotationComment,
   useEditingReplyAnnotationId,
   useThreadReplyAnnotations,
-  type NumberedReplyAnnotation,
 } from "./replyAnnotations";
 
 const HIGHLIGHT = "reply-annotation";
@@ -27,11 +27,17 @@ function publishRanges(owner: symbol, ranges: ReadonlyArray<Range> | null) {
   else CSS.highlights.delete(HIGHLIGHT);
 }
 
+type MarkerLayer = "list" | "thread";
+
 interface Placement {
-  readonly annotation: NumberedReplyAnnotation;
+  readonly id: string;
   readonly range: Range;
-  /** Null while the quote is scrolled out of the timeline. */
-  readonly marker: { readonly top: number; readonly left: number } | null;
+  /** Null while the quote is out of view or its list copy is under the thread view's glass. */
+  readonly marker: {
+    readonly top: number;
+    readonly left: number;
+    readonly layer: MarkerLayer;
+  } | null;
 }
 
 function samePlacements(left: ReadonlyArray<Placement>, right: ReadonlyArray<Placement>) {
@@ -40,10 +46,11 @@ function samePlacements(left: ReadonlyArray<Placement>, right: ReadonlyArray<Pla
     left.every((placement, index) => {
       const other = right[index]!;
       return (
-        placement.annotation === other.annotation &&
+        placement.id === other.id &&
         placement.range === other.range &&
         placement.marker?.top === other.marker?.top &&
-        placement.marker?.left === other.marker?.left
+        placement.marker?.left === other.marker?.left &&
+        placement.marker?.layer === other.marker?.layer
       );
     })
   );
@@ -62,15 +69,21 @@ export function ReplyAnnotationsOverlay({
   const [placements, setPlacements] = useState<ReadonlyArray<Placement>>([]);
   const draftRef = useRef<{ id: string; comment: string } | null>(null);
   const markersRef = useRef<HTMLDivElement>(null);
+  const readAnnotations = useStableCallback(() => annotations);
+  // A comment never moves a quote, so only a changed range re-runs the measuring effect.
+  const rangeKey = annotations
+    .map(({ id, citation }) => `${id}:${citation.messageId}:${citation.start}:${citation.end}`)
+    .join("|");
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- measures quote ranges in the virtualized timeline DOM, which React does not own, as it scrolls and re-renders
   useEffect(() => {
-    if (!viewport || annotations.length === 0) return;
+    if (!viewport || rangeKey.length === 0) return;
     const owner = Symbol("reply-annotations");
     let resolved: Array<{
-      annotation: NumberedReplyAnnotation;
+      id: string;
       range: Range;
       source: HTMLElement;
+      layer: MarkerLayer | "covered";
     }> = [];
     let stale = true;
     let frame = 0;
@@ -78,16 +91,20 @@ export function ReplyAnnotationsOverlay({
       const sources = [
         ...viewport.querySelectorAll<HTMLElement>("[data-assistant-citation-source]"),
       ];
-      resolved = annotations.flatMap((annotation) => {
-        const { citation } = annotation;
-        const source = sources.find(
+      const threadView = viewport.querySelector<HTMLElement>("[data-exchange-thread-view]");
+      resolved = readAnnotations().flatMap(({ id, citation }) => {
+        const matches = sources.filter(
           (element) =>
             element.dataset.assistantCitationSource === citation.messageId &&
             element.dataset.assistantCitationEnvironment === citation.environmentId &&
             element.dataset.assistantCitationThread === citation.threadId,
         );
+        // The thread view draws its own copy of an exchange over the list; that copy is in view.
+        const source = matches.find((element) => threadView?.contains(element)) ?? matches[0];
         const range = source ? resolveAssistantCitationRange(source, citation) : null;
-        return source && range ? [{ annotation, range, source }] : [];
+        if (!source || !range) return [];
+        const layer = threadView ? (threadView.contains(source) ? "thread" : "covered") : "list";
+        return [{ id, range, source, layer }];
       });
       publishRanges(
         owner,
@@ -101,11 +118,12 @@ export function ReplyAnnotationsOverlay({
         resolve();
       }
       const bounds = viewport.getBoundingClientRect();
-      const next = resolved.map(({ annotation, range, source }): Placement => {
+      const next = resolved.map(({ id, range, source, layer }): Placement => {
         const line = range.getClientRects()[0];
-        const visible = line && line.bottom > bounds.top && line.top < bounds.bottom;
+        const visible =
+          layer !== "covered" && line && line.bottom > bounds.top && line.top < bounds.bottom;
         return {
-          annotation,
+          id,
           range,
           marker: visible
             ? {
@@ -113,6 +131,7 @@ export function ReplyAnnotationsOverlay({
                 left: Math.round(
                   Math.max(8, source.getBoundingClientRect().left - bounds.left - MARKER_SIZE - 12),
                 ),
+                layer,
               }
             : null,
         };
@@ -134,16 +153,18 @@ export function ReplyAnnotationsOverlay({
     // A click on highlighted text opens its comment, unless it ended a text selection.
     const openFromHighlight = (event: MouseEvent) => {
       if (window.getSelection()?.isCollapsed === false) return;
-      const hit = resolved.find(({ range }) =>
-        Array.from(range.getClientRects()).some(
-          (rect) =>
-            event.clientX >= rect.left &&
-            event.clientX <= rect.right &&
-            event.clientY >= rect.top &&
-            event.clientY <= rect.bottom,
-        ),
+      const hit = resolved.find(
+        ({ range, layer }) =>
+          layer !== "covered" &&
+          Array.from(range.getClientRects()).some(
+            (rect) =>
+              event.clientX >= rect.left &&
+              event.clientX <= rect.right &&
+              event.clientY >= rect.top &&
+              event.clientY <= rect.bottom,
+          ),
       );
-      if (hit) editReplyAnnotation(hit.annotation.id);
+      if (hit) editReplyAnnotation(hit.id);
     };
     viewport.addEventListener("click", openFromHighlight);
     schedule(true);
@@ -155,45 +176,56 @@ export function ReplyAnnotationsOverlay({
       viewport.removeEventListener("click", openFromHighlight);
       publishRanges(owner, null);
     };
-  }, [annotations, viewport]);
+  }, [rangeKey, readAnnotations, viewport]);
 
   if (annotations.length === 0) return null;
-  const editing = placements.find((placement) => placement.annotation.id === editingId) ?? null;
+  const annotationsById = new Map(annotations.map((annotation) => [annotation.id, annotation]));
+  const editing = placements.find((placement) => placement.id === editingId) ?? null;
+  const editingAnnotation = editing ? annotationsById.get(editing.id) : undefined;
   const closeEditing = (save: boolean) => {
     const draft = draftRef.current;
     if (save && draft && draft.id === editingId) setReplyAnnotationComment(draft.id, draft.comment);
     draftRef.current = null;
     editReplyAnnotation(null);
   };
+  const markers = (layer: MarkerLayer) =>
+    placements.map(({ id, marker }) => {
+      const annotation = annotationsById.get(id);
+      if (!annotation || marker?.layer !== layer) return null;
+      return (
+        <button
+          key={id}
+          type="button"
+          aria-label={`Annotation ${annotation.number}${annotation.citation.comment ? `: ${annotation.citation.comment}` : ""}`}
+          aria-expanded={id === editingId}
+          className="pointer-events-auto absolute flex size-6 items-center justify-center rounded-full rounded-br-sm bg-info font-semibold text-white text-xs shadow-sm focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white"
+          style={{ top: marker.top, left: marker.left }}
+          onPointerDown={(event) => event.preventDefault()}
+          onClick={() => {
+            const wasOpen = id === editingId;
+            closeEditing(true);
+            if (!wasOpen) editReplyAnnotation(id);
+          }}
+        >
+          {annotation.number}
+        </button>
+      );
+    });
 
-  // Markers stay inside the timeline, under the thread view's glass; the comment box is a popover.
+  // List markers sit under the thread view's glass (z-10); its own copy's markers sit above it.
   return (
     <>
-      <div ref={markersRef} className="pointer-events-none absolute inset-0 z-[1] overflow-hidden">
-        {placements.map(({ annotation, marker }) =>
-          marker ? (
-            <button
-              key={annotation.id}
-              type="button"
-              aria-label={`Annotation ${annotation.number}${annotation.citation.comment ? `: ${annotation.citation.comment}` : ""}`}
-              aria-expanded={annotation.id === editingId}
-              className="pointer-events-auto absolute flex size-6 items-center justify-center rounded-full rounded-br-sm bg-info font-semibold text-white text-xs shadow-sm focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white"
-              style={{ top: marker.top, left: marker.left }}
-              onPointerDown={(event) => event.preventDefault()}
-              onClick={() => {
-                const wasOpen = annotation.id === editingId;
-                closeEditing(true);
-                if (!wasOpen) editReplyAnnotation(annotation.id);
-              }}
-            >
-              {annotation.number}
-            </button>
-          ) : null,
-        )}
+      <div ref={markersRef} className="contents">
+        <div className="pointer-events-none absolute inset-0 z-[1] overflow-hidden">
+          {markers("list")}
+        </div>
+        <div className="pointer-events-none absolute inset-0 z-[11] overflow-hidden">
+          {markers("thread")}
+        </div>
       </div>
       <style>{HIGHLIGHT_STYLE}</style>
       <Popover
-        open={editing !== null}
+        open={editing !== null && editingAnnotation !== undefined}
         onOpenChange={(open, details) => {
           if (open) return;
           // A marker click is handled by the marker, which saves before it switches.
@@ -202,7 +234,7 @@ export function ReplyAnnotationsOverlay({
           closeEditing(details.reason !== "escape-key");
         }}
       >
-        {editing ? (
+        {editing && editingAnnotation ? (
           <PopoverPopup
             anchor={editing.range}
             side="top"
@@ -211,20 +243,20 @@ export function ReplyAnnotationsOverlay({
             width="lg"
           >
             <ReplyAnnotationCommentBox
-              key={editing.annotation.id}
-              citation={editing.annotation.citation}
+              key={editing.id}
+              citation={editingAnnotation.citation}
               onDraftChange={(comment) => {
-                draftRef.current = { id: editing.annotation.id, comment };
+                draftRef.current = { id: editing.id, comment };
               }}
               onSave={(comment) => {
-                setReplyAnnotationComment(editing.annotation.id, comment);
+                setReplyAnnotationComment(editing.id, comment);
                 draftRef.current = null;
                 editReplyAnnotation(null);
               }}
               onCancel={() => closeEditing(false)}
               onRemove={() => {
                 draftRef.current = null;
-                removeReplyAnnotation(editing.annotation.id);
+                removeReplyAnnotation(editing.id);
               }}
             />
           </PopoverPopup>

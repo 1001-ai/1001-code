@@ -270,7 +270,7 @@ export function restoreComposerDraft(
   store.setReviewComments(draftTarget, snapshot.reviewComments);
   store.setThreadContexts(draftTarget, snapshot.threadContexts);
   store.setEnvironmentContexts(draftTarget, snapshot.environmentContexts);
-  restoreReplyAnnotations(draftTarget, snapshot.messageText);
+  restoreReplyAnnotations(draftTarget, snapshot);
   return images;
 }
 

@@ -9,7 +9,7 @@ import {
   readReplyAnnotations,
   restoreReplyAnnotations,
 } from "./replyAnnotations";
-import { splitReplyAnnotations } from "./replyAnnotations.logic";
+import { splitReplyAnnotations, withoutSentAnnotations } from "./replyAnnotations.logic";
 
 const citation = (start: number, comment?: string): AssistantCitation => ({
   version: 1,
@@ -25,23 +25,23 @@ const citation = (start: number, comment?: string): AssistantCitation => ({
 });
 
 describe("reply annotations", () => {
-  it("sends annotations after the text and splits them back off a failed send", () => {
+  it("sends annotations after the text and restores only them after a failed send", () => {
     const target = DraftId.make("draft-roundtrip");
     addReplyAnnotation(target, citation(0, "Is this verified?"));
     addReplyAnnotation(target, citation(20));
     addReplyAnnotation(target, citation(0));
+    const pasted = serializeAssistantCitation(citation(40));
+    const draft = `Fix these.\n${pasted}\n`;
 
-    const sent = appendReplyAnnotations(target, "Fix these.\n");
+    const sent = appendReplyAnnotations(target, draft);
     expect(sent).toBe(
-      `Fix these.\n\n${serializeAssistantCitation(citation(0, "Is this verified?"))}\n${serializeAssistantCitation(citation(20))}`,
+      `Fix these.\n${pasted}\n\n${serializeAssistantCitation(citation(0, "Is this verified?"))}\n${serializeAssistantCitation(citation(20))}`,
     );
-    expect(splitReplyAnnotations(sent)).toEqual({
-      text: "Fix these.",
-      citations: [citation(0, "Is this verified?"), citation(20)],
-    });
+    const snapshot = withoutSentAnnotations({ messageText: sent, draftText: sent }, 2);
+    expect(snapshot.draftText).toBe(`Fix these.\n${pasted}`);
 
     clearReplyAnnotations(target);
-    restoreReplyAnnotations(target, sent);
+    restoreReplyAnnotations(target, snapshot);
     expect(readReplyAnnotations(target).map((annotation) => annotation.citation)).toEqual([
       citation(0, "Is this verified?"),
       citation(20),
@@ -52,9 +52,9 @@ describe("reply annotations", () => {
     const target = DraftId.make("draft-alone");
     addReplyAnnotation(target, citation(0));
     const sent = appendReplyAnnotations(target, "  ");
-    expect(splitReplyAnnotations(sent)).toEqual({ text: "", citations: [citation(0)] });
+    expect(splitReplyAnnotations(sent, 1)).toEqual({ text: "", citations: [citation(0)] });
 
     const inline = `See ${serializeAssistantCitation(citation(0))}`;
-    expect(splitReplyAnnotations(inline)).toEqual({ text: inline, citations: [] });
+    expect(splitReplyAnnotations(inline, 1)).toEqual({ text: inline, citations: [] });
   });
 });
