@@ -27,17 +27,16 @@ function publishRanges(owner: symbol, ranges: ReadonlyArray<Range> | null) {
   else CSS.highlights.delete(HIGHLIGHT);
 }
 
-type MarkerLayer = "list" | "thread";
+// The thread view draws its own copy of an exchange over the list and marks the rest of the
+// timeline inert, so only list copies get markers; a click on a thread copy's highlight still works.
+type QuoteCopy = "list" | "thread" | "covered";
 
 interface Placement {
   readonly id: string;
   readonly range: Range;
-  /** Null while the quote is out of view or its list copy is under the thread view's glass. */
-  readonly marker: {
-    readonly top: number;
-    readonly left: number;
-    readonly layer: MarkerLayer;
-  } | null;
+  readonly copy: QuoteCopy;
+  /** Null while the quote is out of view, or is not a list copy. */
+  readonly marker: { readonly top: number; readonly left: number } | null;
 }
 
 function samePlacements(left: ReadonlyArray<Placement>, right: ReadonlyArray<Placement>) {
@@ -48,9 +47,9 @@ function samePlacements(left: ReadonlyArray<Placement>, right: ReadonlyArray<Pla
       return (
         placement.id === other.id &&
         placement.range === other.range &&
+        placement.copy === other.copy &&
         placement.marker?.top === other.marker?.top &&
-        placement.marker?.left === other.marker?.left &&
-        placement.marker?.layer === other.marker?.layer
+        placement.marker?.left === other.marker?.left
       );
     })
   );
@@ -79,12 +78,7 @@ export function ReplyAnnotationsOverlay({
   useEffect(() => {
     if (!viewport || rangeKey.length === 0) return;
     const owner = Symbol("reply-annotations");
-    let resolved: Array<{
-      id: string;
-      range: Range;
-      source: HTMLElement;
-      layer: MarkerLayer | "covered";
-    }> = [];
+    let resolved: Array<{ id: string; range: Range; source: HTMLElement; copy: QuoteCopy }> = [];
     let stale = true;
     let frame = 0;
     const resolve = () => {
@@ -99,12 +93,12 @@ export function ReplyAnnotationsOverlay({
             element.dataset.assistantCitationEnvironment === citation.environmentId &&
             element.dataset.assistantCitationThread === citation.threadId,
         );
-        // The thread view draws its own copy of an exchange over the list; that copy is in view.
         const source = matches.find((element) => threadView?.contains(element)) ?? matches[0];
         const range = source ? resolveAssistantCitationRange(source, citation) : null;
         if (!source || !range) return [];
-        const layer = threadView ? (threadView.contains(source) ? "thread" : "covered") : "list";
-        return [{ id, range, source, layer }];
+        const inThreadView = threadView?.contains(source) ?? false;
+        const copy: QuoteCopy = threadView ? (inThreadView ? "thread" : "covered") : "list";
+        return [{ id, range, source, copy }];
       });
       publishRanges(
         owner,
@@ -118,20 +112,20 @@ export function ReplyAnnotationsOverlay({
         resolve();
       }
       const bounds = viewport.getBoundingClientRect();
-      const next = resolved.map(({ id, range, source, layer }): Placement => {
+      const next = resolved.map(({ id, range, source, copy }): Placement => {
         const line = range.getClientRects()[0];
         const visible =
-          layer !== "covered" && line && line.bottom > bounds.top && line.top < bounds.bottom;
+          copy === "list" && line && line.bottom > bounds.top && line.top < bounds.bottom;
         return {
           id,
           range,
+          copy,
           marker: visible
             ? {
                 top: Math.round(line.top - bounds.top + line.height / 2 - MARKER_SIZE / 2),
                 left: Math.round(
                   Math.max(8, source.getBoundingClientRect().left - bounds.left - MARKER_SIZE - 12),
                 ),
-                layer,
               }
             : null,
         };
@@ -154,8 +148,8 @@ export function ReplyAnnotationsOverlay({
     const openFromHighlight = (event: MouseEvent) => {
       if (window.getSelection()?.isCollapsed === false) return;
       const hit = resolved.find(
-        ({ range, layer }) =>
-          layer !== "covered" &&
+        ({ range, copy }) =>
+          copy !== "covered" &&
           Array.from(range.getClientRects()).some(
             (rect) =>
               event.clientX >= rect.left &&
@@ -188,40 +182,33 @@ export function ReplyAnnotationsOverlay({
     draftRef.current = null;
     editReplyAnnotation(null);
   };
-  const markers = (layer: MarkerLayer) =>
-    placements.map(({ id, marker }) => {
-      const annotation = annotationsById.get(id);
-      if (!annotation || marker?.layer !== layer) return null;
-      return (
-        <button
-          key={id}
-          type="button"
-          aria-label={`Annotation ${annotation.number}${annotation.citation.comment ? `: ${annotation.citation.comment}` : ""}`}
-          aria-expanded={id === editingId}
-          className="pointer-events-auto absolute flex size-6 items-center justify-center rounded-full rounded-br-sm bg-info font-semibold text-white text-xs shadow-sm focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white"
-          style={{ top: marker.top, left: marker.left }}
-          onPointerDown={(event) => event.preventDefault()}
-          onClick={() => {
-            const wasOpen = id === editingId;
-            closeEditing(true);
-            if (!wasOpen) editReplyAnnotation(id);
-          }}
-        >
-          {annotation.number}
-        </button>
-      );
-    });
 
-  // List markers sit under the thread view's glass (z-10); its own copy's markers sit above it.
+  // Markers stay inside the timeline, under the thread view's glass; the comment box is a popover.
   return (
     <>
-      <div ref={markersRef} className="contents">
-        <div className="pointer-events-none absolute inset-0 z-[1] overflow-hidden">
-          {markers("list")}
-        </div>
-        <div className="pointer-events-none absolute inset-0 z-[11] overflow-hidden">
-          {markers("thread")}
-        </div>
+      <div ref={markersRef} className="pointer-events-none absolute inset-0 z-[1] overflow-hidden">
+        {placements.map(({ id, marker }) => {
+          const annotation = annotationsById.get(id);
+          if (!annotation || !marker) return null;
+          return (
+            <button
+              key={id}
+              type="button"
+              aria-label={`Annotation ${annotation.number}${annotation.citation.comment ? `: ${annotation.citation.comment}` : ""}`}
+              aria-expanded={id === editingId}
+              className="pointer-events-auto absolute flex size-6 items-center justify-center rounded-full rounded-br-sm bg-info font-semibold text-white text-xs shadow-sm focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white"
+              style={{ top: marker.top, left: marker.left }}
+              onPointerDown={(event) => event.preventDefault()}
+              onClick={() => {
+                const wasOpen = id === editingId;
+                closeEditing(true);
+                if (!wasOpen) editReplyAnnotation(id);
+              }}
+            >
+              {annotation.number}
+            </button>
+          );
+        })}
       </div>
       <style>{HIGHLIGHT_STYLE}</style>
       <Popover
