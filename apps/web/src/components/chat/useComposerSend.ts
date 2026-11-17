@@ -104,6 +104,8 @@ import {
   referencedThreadContexts,
 } from "./composerSend.logic";
 import { useMultipleModelSend } from "./useMultipleModelSend";
+import { appendReplyAnnotations, readReplyAnnotations } from "./replyAnnotations";
+import { withoutSentAnnotations } from "./replyAnnotations.logic";
 import { type ComposerDispatchMode } from "@t3tools/client-runtime/state/composer-dispatch";
 import {
   awaitAttachmentUploads,
@@ -504,6 +506,7 @@ export function useComposerSend(input: ComposerSendInput) {
         sendCtx.reviewComments.length > 0 ||
         sendCtx.threadContexts.length > 0 ||
         sendCtx.environmentContexts.length > 0 ||
+        readReplyAnnotations(composerDraftTarget).length > 0 ||
         useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.replyTo
       ) {
         toastManager.add(
@@ -595,11 +598,15 @@ export function useComposerSend(input: ComposerSendInput) {
       });
     // A direct "send annotation" writes the draft and sends in the same tick; the reference
     // must be in the text now, not after the next render.
-    const draftPrompt = directAnnotation
-      ? ensureInlineContextReferences(promptRef.current, [
-          previewAnnotationContextReference(directAnnotation.annotation),
-        ])
-      : promptRef.current;
+    const sentAnnotationCount = readReplyAnnotations(composerDraftTarget).length;
+    const draftPrompt = appendReplyAnnotations(
+      composerDraftTarget,
+      directAnnotation
+        ? ensureInlineContextReferences(promptRef.current, [
+            previewAnnotationContextReference(directAnnotation.annotation),
+          ])
+        : promptRef.current,
+    );
     const replyTo =
       useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.replyTo ?? null;
     // The reply leads the message, so its card sits above the text it is about. Text that
@@ -763,18 +770,21 @@ export function useComposerSend(input: ComposerSendInput) {
       return;
     }
     const threadIdForSend = activeThread.id;
-    const sendSnapshot = snapshotComposerSend({
-      prompt: promptForSend,
-      images: composerImages,
-      files: composerFiles,
-      terminalContexts: composerTerminalContexts,
-      sendableTerminalContexts: sendableComposerTerminalContexts,
-      previewAnnotations: composerPreviewAnnotations,
-      reviewComments: composerReviewComments,
-      threadContexts: composerThreadContexts,
-      environmentContexts: composerEnvironmentContexts,
-      replyTo,
-    });
+    const sendSnapshot = withoutSentAnnotations(
+      snapshotComposerSend({
+        prompt: promptForSend,
+        images: composerImages,
+        files: composerFiles,
+        terminalContexts: composerTerminalContexts,
+        sendableTerminalContexts: sendableComposerTerminalContexts,
+        previewAnnotations: composerPreviewAnnotations,
+        reviewComments: composerReviewComments,
+        threadContexts: composerThreadContexts,
+        environmentContexts: composerEnvironmentContexts,
+        replyTo,
+      }),
+      sentAnnotationCount,
+    );
     const {
       files: composerFilesSnapshot,
       attachments: composerAttachmentsSnapshot,
