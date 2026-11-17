@@ -78,7 +78,6 @@ import {
   composerStateAtPromptEnd,
   detectComposerTrigger,
   expandCollapsedComposerCursor,
-  formatAssistantCitationForComposer,
   isPathSuggestionCurrent,
   extendReplacementRangeForTrailingSpace,
   replaceTextRange,
@@ -281,6 +280,14 @@ import { ComposerControlsBar } from "./ComposerControlsBar";
 import { composerCommandKeyHandler } from "./composerCommandKey";
 import { usePromptSuggestion } from "./usePromptSuggestion";
 import { useFreshSessionArmed } from "./freshSessionArms";
+import {
+  addReplyAnnotation,
+  appendReplyAnnotations,
+  editReplyAnnotation,
+  useReplyAnnotations,
+} from "./replyAnnotations";
+import { appendAnnotationCitations } from "./replyAnnotations.logic";
+import { ReplyAnnotationsPill } from "./ReplyAnnotationsPill";
 
 function consumePasteAsTextShortcut(deadline: { current: number }): boolean {
   const armed = Date.now() <= deadline.current;
@@ -1090,12 +1097,18 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     };
   }, [backgroundThread]);
 
+  const replyAnnotations = useReplyAnnotations(composerDraftTarget);
+  const annotatedPrompt = appendAnnotationCitations(
+    prompt,
+    replyAnnotations.map((annotation) => annotation.citation),
+  );
   const composerSendState = deriveComposerSendState({
     prompt,
     imageCount: composerImages.length + composerFiles.length,
     existingAttachmentCount: editingQueuedAttachments?.length ?? 0,
     terminalContexts: composerTerminalContexts,
-    elementContextCount: composerPreviewAnnotations.length + composerReviewComments.length,
+    elementContextCount:
+      composerPreviewAnnotations.length + composerReviewComments.length + replyAnnotations.length,
   });
   const composerTriggerKind = composerTrigger?.kind ?? null;
   const compactSlashCommandAvailable =
@@ -1107,7 +1120,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     composerDraft.persistedAttachments.length === 0 &&
     composerTerminalContexts.length === 0 &&
     composerPreviewAnnotations.length === 0 &&
-    composerReviewComments.length === 0;
+    composerReviewComments.length === 0 &&
+    replyAnnotations.length === 0;
   const linkedEnvironments = useLinkedEnvironments(environmentId);
   const {
     items: composerMenuItems,
@@ -1382,7 +1396,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   }
 
   if (composerSubmissionError !== null) {
-    const nextError = getComposerPromptLengthValidationMessage(prompt);
+    const nextError = getComposerPromptLengthValidationMessage(annotatedPrompt);
     if (nextError !== composerSubmissionError) {
       setComposerSubmissionError(nextError);
     }
@@ -1392,7 +1406,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     composerPreviewAnnotations,
     composerReviewComments,
     composerTerminalContexts,
-    prompt,
+    annotatedPrompt,
     selectedModel,
     selectedPromptEffort,
     selectedProvider,
@@ -2149,7 +2163,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       return false;
     }
     const submission = submitComposerDraft({
-      prompt: promptRef.current,
+      prompt: appendReplyAnnotations(composerDraftTarget, promptRef.current),
       submissionTarget,
       event,
       onSend: (sendEvent) => {
@@ -2984,12 +2998,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         focusComposer();
         return true;
       },
-      citeAssistantText: (citation, sourceAnchor) =>
-        insertComposerTextStable(
-          formatAssistantCitationForComposer(citation, citation.comment),
-          "cursor",
-          { ensureLeadingBoundary: true, citationCommentAnchor: sourceAnchor },
-        ),
+      citeAssistantText: (citation) => {
+        if (pendingUserInputs.length > 0 || projectSelectionRequired) return false;
+        editReplyAnnotation(addReplyAnnotation(composerDraftTarget, citation));
+        return true;
+      },
       replyToResponse: (response) => {
         // An open question owns the composer, and its answer would not carry the reply.
         if (pendingUserInputs.length > 0 || projectSelectionRequired) return false;
@@ -3164,7 +3177,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       setMultipleModelSelections,
       validateProviderInput: (providerInput: string) => {
         const validationMessage = getComposerSubmissionValidationMessage({
-          prompt: promptRef.current,
+          prompt: appendReplyAnnotations(composerDraftTarget, promptRef.current),
           providerInput,
           submissionTarget: "provider-turn",
         });
@@ -3511,6 +3524,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     onRemove={onRemoveEditingQueuedAttachment}
                   />
                 )}
+
+              <ReplyAnnotationsPill target={composerDraftTarget} />
 
               {composerAttachmentMediaRow}
 
