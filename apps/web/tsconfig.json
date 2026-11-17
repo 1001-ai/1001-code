@@ -10,7 +10,8 @@
     "lib": ["ES2023", "ESNext.Disposable", "DOM", "DOM.Iterable"],
     "paths": {
       "~/*": ["./src/*"],
-      "@1001-private/lamp": ["./src/components/lamp/lampGlyphFallback.tsx"]
+      "@1001-private/lamp": ["./src/components/lamp/lampGlyphFallback.tsx"],
+      "@1001-private/wordmark": ["./src/components/wordmarkFallback.tsx"]
     },
     "plugins": [
       {
@@ -38,7 +39,7 @@
     "scripts/verify-built-boot.ts",
     "scripts/warm-dep-cache.ts",
     "../../scripts/lib/public-config.ts",
-    "../../scripts/lib/private-lamp.ts",
+    "../../scripts/lib/private-modules.ts",
     "../../scripts/lib/third-party-licenses.ts"
   ]
 }
