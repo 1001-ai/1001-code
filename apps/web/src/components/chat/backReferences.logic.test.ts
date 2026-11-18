@@ -125,7 +125,7 @@ describe("searchBackReferenceHistory", () => {
 });
 
 describe("backReferenceSources", () => {
-  it("keeps finished messages, without a reply's Re: lines or a Re:-only reply, and reuses them per item", () => {
+  it("keeps finished messages, without a reply's Re: lines, a Re:-only reply, an automation prompt or a workflow opening, and reuses them per item", () => {
     const user = { item: { id: "1", type: "user_message", text: "hi there", messageId: "u1" } };
     const reply = {
       item: {
@@ -142,7 +142,33 @@ describe("backReferenceSources", () => {
     const reOnly = {
       item: { id: "5", type: "assistant_message", text: '**Re:** "hi there"', messageId: "a3" },
     };
-    const first = backReferenceSources([user, reply, streaming, work, reOnly]);
+    const automation = {
+      item: {
+        id: "6",
+        type: "user_message",
+        text: "hi there",
+        messageId: "u2",
+        scheduledTaskId: "t",
+      },
+    };
+    const workflow = {
+      item: {
+        id: "7",
+        type: "user_message",
+        text: "hi there",
+        messageId: "u3",
+        workflowScript: true,
+      },
+    };
+    const first = backReferenceSources([
+      user,
+      reply,
+      streaming,
+      work,
+      reOnly,
+      automation,
+      workflow,
+    ]);
     expect(first).toEqual([
       { itemId: "1", messageId: "u1", text: "hi there" },
       { itemId: "2", messageId: "a1", text: "Hello back." },

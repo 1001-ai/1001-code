@@ -1430,6 +1430,34 @@ describe("MessagesTimeline back-references", () => {
     );
   });
 
+  it("highlights words inside a mention chip", async () => {
+    setup();
+    const mention = {
+      version: 1 as const,
+      kind: "mention" as const,
+      contextId: ComposerContextId.make("mention_table"),
+      label: "@the old table",
+      path: "src/oldTable.ts",
+    };
+    await using _screen = await renderTimeline(
+      [
+        message(
+          "Keep [@the old table](t3-context://v1/mention/mention_table) until the freeze ends.",
+          { context: { version: 1, records: [mention] } },
+          "quoted",
+        ),
+        message("Answer", { role: "assistant" }, "answer"),
+      ],
+      {
+        citationRequest: backReference("quoted", "keep the old table until the freeze"),
+        citationHistory: { _tag: "found" },
+      },
+    );
+    await vi.waitFor(() =>
+      expect(citationHighlightText()).toBe("Keep @the old table until the freeze"),
+    );
+  });
+
   it("says the earlier text is gone instead of that the quote changed", async () => {
     setup();
     using toast = vi.spyOn(toastManager, "add");

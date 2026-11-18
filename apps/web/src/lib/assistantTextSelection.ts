@@ -37,6 +37,9 @@ export function findAssistantCitationSourceAnchor(
 
 const CONTROL_SELECTOR = "button, input, textarea, select, [role=button], [contenteditable]";
 const EXCLUDED_SELECTOR = `${CONTROL_SELECTOR}, [hidden], [aria-hidden=true], script, style, template, noscript, svg`;
+// Back-references match chip and option labels, which render inside buttons.
+const BACK_REFERENCE_EXCLUDED_SELECTOR =
+  "input, textarea, select, [contenteditable], [hidden], [aria-hidden=true], script, style, template, noscript, svg";
 const BLOCK_SELECTOR =
   "address, article, aside, blockquote, dd, div, dl, dt, figcaption, figure, footer, h1, h2, h3, h4, h5, h6, header, hr, li, main, nav, ol, p, pre, section, table, td, th, tr, ul";
 
@@ -126,7 +129,7 @@ type TextChunk = { node: Text | Element; start: number; end: number };
 
 const isText = (node: Node): node is Text => node.nodeType === 3;
 
-function readAssistantText(root: HTMLElement) {
+function readAssistantText(root: HTMLElement, excluded = EXCLUDED_SELECTOR) {
   const parts: string[] = [];
   const chunks: TextChunk[] = [];
   let length = 0;
@@ -151,7 +154,7 @@ function readAssistantText(root: HTMLElement) {
     }
     if (node.nodeType !== 1) return;
     const element = node as Element;
-    if (element.matches(EXCLUDED_SELECTOR)) return;
+    if (element.matches(excluded)) return;
     const block = element.matches(BLOCK_SELECTOR);
     if (block || element.tagName === "BR") separator = true;
     if (element.matches("[data-markdown-math]")) {
@@ -166,18 +169,18 @@ function readAssistantText(root: HTMLElement) {
   return { text: parts.join(""), chunks };
 }
 
-function excludedAncestor(node: Node): Element | null {
+function excludedAncestor(node: Node, excluded = EXCLUDED_SELECTOR): Element | null {
   const element = node.nodeType === 1 ? (node as Element) : node.parentElement;
-  return element?.closest(EXCLUDED_SELECTOR) ?? null;
+  return element?.closest(excluded) ?? null;
 }
 
-function isUsableRange(root: HTMLElement, range: Range): boolean {
+function isUsableRange(root: HTMLElement, range: Range, excluded = EXCLUDED_SELECTOR): boolean {
   if (
     range.collapsed ||
     !root.contains(range.startContainer) ||
     !root.contains(range.endContainer) ||
-    excludedAncestor(range.startContainer) !== null ||
-    excludedAncestor(range.endContainer) !== null
+    excludedAncestor(range.startContainer, excluded) !== null ||
+    excludedAncestor(range.endContainer, excluded) !== null
   ) {
     return false;
   }
@@ -286,9 +289,11 @@ export function resolveAssistantCitationRange(
   root: HTMLElement,
   selector: AssistantTextSelector,
 ): Range | null {
-  if (excludedAncestor(root) !== null) return null;
-  const stream = readAssistantText(root);
-  const match = isBackReferenceCitation(selector)
+  const backReference = isBackReferenceCitation(selector);
+  const excluded = backReference ? BACK_REFERENCE_EXCLUDED_SELECTOR : EXCLUDED_SELECTOR;
+  if (excludedAncestor(root, excluded) !== null) return null;
+  const stream = readAssistantText(root, excluded);
+  const match = backReference
     ? findBackReferenceText(normalizeWhitespace(stream.text), selector.text)
     : findAssistantCitationText(stream.text, selector);
   if (match === null) return null;
@@ -305,5 +310,5 @@ export function resolveAssistantCitationRange(
   else range.setStartBefore(first.node);
   if (isText(last.node)) range.setEnd(last.node, Math.min(last.node.length, end - last.start));
   else range.setEndAfter(last.node);
-  return isUsableRange(root, range) ? range : null;
+  return isUsableRange(root, range, excluded) ? range : null;
 }

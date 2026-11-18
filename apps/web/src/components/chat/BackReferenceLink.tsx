@@ -4,7 +4,7 @@ import { parseScopedThreadKey, scopedThreadKey } from "@t3tools/client-runtime/e
 import { runAtomCommand } from "@t3tools/client-runtime/state/runtime";
 import type { AssistantCitation, MessageId, ScopedThreadRef } from "@t3tools/contracts";
 import { findBackReferences } from "@t3tools/shared/backReferences";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate, useRouter } from "@tanstack/react-router";
 import { Atom, type AtomRegistry } from "effect/reactivity";
 import {
   createContext,
@@ -212,6 +212,7 @@ function BackReferenceLink({
   readonly target: MarkerTarget;
 }) {
   const navigate = useNavigate();
+  const router = useRouter();
   const registry = use(RegistryContext);
   const sourceThread = useQuietThreadShell(threadRef);
   const route =
@@ -225,10 +226,16 @@ function BackReferenceLink({
           sourceThread,
         );
   const open = async () => {
+    // The row may unmount while the user stays, so leaving the page is what ends a search.
+    const pathname = router.state.location.pathname;
+    const stayed = () => router.state.location.pathname === pathname;
     const sourcesAtom = backReferenceSourcesAtomFamily(scopedThreadKey(threadRef));
     const result = await searchBackReferenceHistory({
       find: () => findBackReferenceTarget(registry.get(sourcesAtom), itemId, excerpt),
-      readHistory: () => settledHistory(registry, threadRef),
+      readHistory: async () => {
+        const history = await settledHistory(registry, threadRef);
+        return stayed() ? history : null;
+      },
       loadPage: async () => {
         const loaded = await runAtomCommand(
           registry,
@@ -239,7 +246,7 @@ function BackReferenceLink({
         return loaded._tag === "Success" ? loaded.value : { _tag: "error" };
       },
     });
-    if (result._tag === "aborted") return;
+    if (result._tag === "aborted" || !stayed()) return;
     if (result._tag === "not-found") {
       toastManager.add({ type: "warning", ...BACK_REFERENCE_NOT_FOUND });
       return;

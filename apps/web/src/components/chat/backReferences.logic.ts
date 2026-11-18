@@ -31,12 +31,17 @@ interface TurnItemLike<M extends string> {
     readonly text?: unknown;
     readonly messageId?: M;
     readonly streaming?: unknown;
+    readonly scheduledTaskId?: unknown;
+    readonly workflowScript?: unknown;
   };
 }
 
 const sourceByItem = new WeakMap<object, BackReferenceSource | null>();
 
-/** The finished user and assistant messages of a thread's visible items. Reads each item once. */
+/**
+ * The finished user and assistant messages of a thread's visible items, without automation
+ * prompts and workflow openings, whose rows a reveal cannot open. Reads each item once.
+ */
 export function backReferenceSources<M extends string>(
   items: ReadonlyArray<TurnItemLike<M>>,
 ): ReadonlyArray<BackReferenceSource<M>> {
@@ -44,14 +49,15 @@ export function backReferenceSources<M extends string>(
   for (const { item } of items) {
     let source = sourceByItem.get(item) as BackReferenceSource<M> | null | undefined;
     if (source === undefined) {
-      const { id, type, text, messageId, streaming } = item;
+      const { id, type, text, messageId, streaming, scheduledTaskId, workflowScript } = item;
       // Re: lines render above the reply, outside the text the reveal searches.
       const shown =
         typeof text === "string" && type === "assistant_message"
           ? (splitReLines(text)?.body ?? text)
           : text;
       source =
-        (type === "user_message" || (type === "assistant_message" && streaming !== true)) &&
+        ((type === "user_message" && scheduledTaskId === undefined && workflowScript !== true) ||
+          (type === "assistant_message" && streaming !== true)) &&
         typeof shown === "string" &&
         shown.trim() !== "" &&
         messageId !== undefined
