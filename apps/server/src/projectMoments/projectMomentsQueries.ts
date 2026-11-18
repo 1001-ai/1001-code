@@ -112,6 +112,7 @@ interface RawMessageRow {
   readonly linked_sender_title: string | null;
   readonly internal: number;
   readonly notification: number;
+  readonly opens_thread: number;
 }
 
 /**
@@ -145,8 +146,20 @@ export const recentMessages = Effect.fn("ProjectMoments.recentMessages")(functio
         OR json_type(payload_json, '$.delegatedCompletion') = 'object'
         OR json_extract(payload_json, '$.workflowScript') IS 1
       ) AS internal,
-      (json_type(payload_json, '$.notification') = 'object') AS notification
-    FROM orchestration_v2_projection_messages
+      (json_type(payload_json, '$.notification') = 'object') AS notification,
+      (
+        role = 'user'
+        AND NOT EXISTS (
+          SELECT 1 FROM orchestration_v2_projection_messages earlier
+          WHERE earlier.thread_id = message.thread_id
+            AND earlier.role = 'user'
+            AND (
+              earlier.created_at < message.created_at
+              OR (earlier.created_at = message.created_at AND earlier.message_id < message.message_id)
+            )
+        )
+      ) AS opens_thread
+    FROM orchestration_v2_projection_messages message
     WHERE thread_id IN ${sql.in(threadIds)}
       AND created_at >= ${since}
       AND (
@@ -168,7 +181,23 @@ export const recentMessages = Effect.fn("ProjectMoments.recentMessages")(functio
     linkedSenderTitle: row.linked_sender_title,
     internal: row.internal === 1,
     notification: row.notification === 1,
+    opensThread: row.opens_thread === 1,
   }));
+});
+
+/** The thread's earliest user-role message, by the same order the page uses. */
+export const firstUserMessageId = Effect.fn("ProjectMoments.firstUserMessageId")(function* (
+  threadId: ThreadId,
+) {
+  const sql = yield* SqlClient.SqlClient;
+  const rows = yield* sql<{ readonly message_id: string }>`
+    SELECT message_id
+    FROM orchestration_v2_projection_messages
+    WHERE thread_id = ${threadId} AND role = 'user'
+    ORDER BY created_at, message_id
+    LIMIT 1
+  `;
+  return (rows[0]?.message_id ?? null) as MessageId | null;
 });
 
 export const pendingRuntimeRequests = Effect.fn("ProjectMoments.pendingRuntimeRequests")(function* (

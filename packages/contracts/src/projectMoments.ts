@@ -23,8 +23,8 @@ export const ProjectMomentKind = Schema.Literals([
   "question",
   /** A provider question still waiting for an answer. */
   "input-request",
-  /** A prompt a person or a scheduled task sent. */
-  "prompt",
+  /** A thread's first prompt, sent by a person or a scheduled task; later prompts are not moments. */
+  "thread-started",
   /** A message another agent sent to this thread's agent. */
   "agent-in",
   /** A message this thread's agent sent to an agent in a linked environment. */

@@ -46,6 +46,8 @@ export interface MomentMessage {
   readonly internal: boolean;
   /** Set on wakes: a background task, command, monitor or pull request reporting in. */
   readonly notification: boolean;
+  /** Set when this is the thread's earliest user-role message. */
+  readonly opensThread: boolean;
 }
 
 function momentSnippet(text: string): string {
@@ -86,7 +88,9 @@ export function messageMoment(
   if (message.role === "user") {
     const sender = classifyPromptSender(message, senderThreadTitle);
     if (sender === null) return null;
-    const kind = sender.kind === "agent" || sender.kind === "linked-agent" ? "agent-in" : "prompt";
+    const kind =
+      sender.kind === "agent" || sender.kind === "linked-agent" ? "agent-in" : "thread-started";
+    if (kind === "thread-started" && !message.opensThread) return null;
     return {
       id: `${kind}:${message.id}`,
       kind,

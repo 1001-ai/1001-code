@@ -251,7 +251,7 @@ thread** from its long-press menu on mobile.
 
 On web and desktop, when the window leaves a wide margin left of the chat, that margin lists the
 project's moments from the last seven days as small cards, newest at the bottom: questions agents
-asked, new prompts, messages between agents, finished work, and pull requests in testing or
+asked, threads started, messages between agents, finished work, and pull requests in testing or
 merged. It covers every thread of the project, not just the open one. A narrower window shows the
 chat's turn markers there instead. Hover a card for details; click it, or **Jump to it**, to
 scroll to that point in this thread, or **Open thread** for a moment in another thread. **Open

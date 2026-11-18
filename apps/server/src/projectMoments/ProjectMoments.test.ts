@@ -102,7 +102,7 @@ const thread = (
 };
 const created = (payload: OrchestrationV2AppThread) =>
   event({ type: "thread.created", threadId: payload.id, occurredAt: payload.createdAt, payload });
-const prompt = (threadId: ThreadId, key: string, at: DateTime.Utc) =>
+const prompt = (threadId: ThreadId, key: string, at: DateTime.Utc, senderThreadId?: ThreadId) =>
   event({
     type: "message.updated",
     threadId,
@@ -120,6 +120,7 @@ const prompt = (threadId: ThreadId, key: string, at: DateTime.Utc) =>
       streaming: false,
       createdAt: at,
       updatedAt: at,
+      ...(senderThreadId ? { senderThreadId } : {}),
     },
   });
 
@@ -170,9 +171,11 @@ describe("ProjectMoments", () => {
           },
         });
         const deleted = thread("deleted", projectId);
+        const opened = thread("opened", projectId);
+        const late = thread("late", projectId);
         yield* eventSink.write({
           events: [
-            ...[main, other, subagent, sideChat, deleted].map(created),
+            ...[main, other, subagent, sideChat, deleted, opened, late].map(created),
             event({
               type: "thread.deleted",
               threadId: deleted.id,
@@ -185,13 +188,16 @@ describe("ProjectMoments", () => {
             prompt(subagent.id, "subagent", hoursAgo(2)),
             prompt(sideChat.id, "side", hoursAgo(2)),
             prompt(deleted.id, "deleted", hoursAgo(6)),
+            prompt(opened.id, "first", hoursAgo(3)),
+            prompt(opened.id, "second", hoursAgo(2)),
           ],
         });
 
         const fiber = yield* subscribe(projectId, 3);
         yield* eventSink.write({
           events: [
-            prompt(main.id, "live", hoursAgo(0)),
+            prompt(late.id, "live", hoursAgo(0)),
+            prompt(opened.id, "live-third", hoursAgo(0)),
             prompt(other.id, "live-other", hoursAgo(0)),
           ],
         });
@@ -209,16 +215,17 @@ describe("ProjectMoments", () => {
 
         assert.deepStrictEqual(
           snapshotOf(items).moments.map((moment) => [moment.id, moment.threadTitle]),
-          [["prompt:message:moments:recent", "Thread main"]],
+          // main's first prompt is older than the window, so its recent one is not a start.
+          [["thread-started:message:moments:first", "Thread opened"]],
         );
         assert.deepStrictEqual(items.slice(1), [
           {
             kind: "upsert",
             moment: {
-              id: "prompt:message:moments:live",
-              kind: "prompt",
-              threadId: main.id,
-              threadTitle: "Thread main",
+              id: "thread-started:message:moments:live",
+              kind: "thread-started",
+              threadId: late.id,
+              threadTitle: "Thread late",
               at: DateTime.formatIso(hoursAgo(0)),
               messageId: MessageId.make("message:moments:live"),
               snippet: "Prompt live",
@@ -240,7 +247,7 @@ describe("ProjectMoments", () => {
           events: [
             created(busy),
             ...Array.from({ length: 301 }, (_, index) =>
-              prompt(busy.id, `busy:${index}`, hoursAgo(100 - index * 0.25)),
+              prompt(busy.id, `busy:${index}`, hoursAgo(100 - index * 0.25), busy.id),
             ),
           ],
         });
@@ -248,8 +255,8 @@ describe("ProjectMoments", () => {
         const snapshot = snapshotOf([...(yield* Fiber.join(fiber))]);
         assert.equal(snapshot.truncated, true);
         assert.equal(snapshot.moments.length, 300);
-        assert.equal(snapshot.moments[0]?.id, "prompt:message:moments:busy:1");
-        assert.equal(snapshot.moments.at(-1)?.id, "prompt:message:moments:busy:300");
+        assert.equal(snapshot.moments[0]?.id, "agent-in:message:moments:busy:1");
+        assert.equal(snapshot.moments.at(-1)?.id, "agent-in:message:moments:busy:300");
       }),
     );
   });

@@ -31,16 +31,17 @@ const message = (overrides: Partial<MomentMessage>): MomentMessage => ({
   linkedSenderTitle: null,
   internal: false,
   notification: false,
+  opensThread: true,
   ...overrides,
 });
 
 describe("messageMoment", () => {
   it.each([
-    ["a person's prompt", {}, "prompt", { kind: "user", title: null }],
+    ["a person's prompt", {}, "thread-started", { kind: "user", title: null }],
     [
       "a scheduled task",
       { createdBy: "agent", scheduledTaskId: "task:1" },
-      "prompt",
+      "thread-started",
       {
         kind: "scheduled-task",
         title: null,
@@ -64,6 +65,7 @@ describe("messageMoment", () => {
   });
 
   it.each([
+    ["prompts after a thread's first", { opensThread: false }],
     ["T3 Code's own messages", { internal: true }],
     ["wakes", { createdBy: "agent", notification: true }],
     ["agent messages with no sender", { createdBy: "agent" }],

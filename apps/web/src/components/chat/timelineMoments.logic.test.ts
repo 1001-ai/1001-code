@@ -21,7 +21,7 @@ const moment = (
   overrides: Partial<ProjectMoment> = {},
 ): ProjectMoment => ({
   id,
-  kind: "prompt",
+  kind: "thread-started",
   threadId,
   threadTitle: "Exports",
   at: when,
@@ -157,7 +157,7 @@ describe("mergeMomentCards", () => {
   it("orders this project's and teammates' cards together, indenting only personal ones", () => {
     const cards = mergeMomentCards({ ...input, showTeammates: true });
     expect(cards.map((card) => [card.label, card.personal])).toEqual([
-      ["New prompt", true],
+      ["Thread started", true],
       ["Sam's agent is done", false],
       ["PR #4 is in testing", true],
     ]);

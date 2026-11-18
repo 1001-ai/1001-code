@@ -72,8 +72,8 @@ function momentLabel(moment: ProjectMoment): string {
     case "question":
     case "input-request":
       return "Agent asked a question";
-    case "prompt":
-      return "New prompt";
+    case "thread-started":
+      return "Thread started";
     case "agent-out":
       return `Your agent messaged ${moment.sender?.title ?? "another machine"}`;
     case "agent-in":
@@ -90,7 +90,7 @@ function momentLabel(moment: ProjectMoment): string {
 const TONE_BY_KIND: Record<ProjectMoment["kind"], MomentTone> = {
   question: "ask",
   "input-request": "ask",
-  prompt: "prompt",
+  "thread-started": "prompt",
   "agent-in": "agent",
   "agent-out": "agent",
   done: "done",

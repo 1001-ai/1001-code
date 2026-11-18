@@ -5,6 +5,7 @@ import {
   type ProjectMoment,
   type ProjectMomentsStreamItem,
   type ProjectMomentsSubscribeInput,
+  type MessageId,
   type ThreadId,
 } from "@t3tools/contracts";
 import { resolveT3McpToolId } from "@t3tools/shared/t3McpToolPresentation";
@@ -209,6 +210,17 @@ const make = Effect.gen(function* () {
       foreignThreads.add(threadId);
     };
 
+    // A thread's first user message never changes, so one lookup per thread is enough.
+    const firstUserMessages = new Map<ThreadId, MessageId>();
+    const opensThread = Effect.fnUntraced(function* (threadId: ThreadId, messageId: MessageId) {
+      let first = firstUserMessages.get(threadId) ?? null;
+      if (first === null) {
+        first = yield* query(Queries.firstUserMessageId(threadId), null);
+        if (first !== null) firstUserMessages.set(threadId, first);
+      }
+      return first === messageId;
+    });
+
     /** This project's title for the thread, or null for a thread whose moments do not show. */
     const resolveThread = Effect.fnUntraced(function* (threadId: ThreadId) {
       const known = projectThreads.get(threadId);
@@ -277,6 +289,8 @@ const make = Effect.gen(function* () {
                   message.delegatedCompletion !== undefined ||
                   message.workflowScript === true,
                 notification: message.notification !== undefined,
+                opensThread:
+                  message.role === "user" && (yield* opensThread(message.threadId, message.id)),
               },
               threadTitle,
               sender,
