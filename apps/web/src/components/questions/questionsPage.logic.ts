@@ -2,7 +2,12 @@ import type { MessageId } from "@t3tools/contracts";
 import { questionCardsInMarkdown, type QuestionBlock } from "@t3tools/shared/questionCards";
 import * as DateTime from "effect/DateTime";
 
-import { findQuestionAnswer, readAnswerLine, writeAnswerLine } from "../chat/questionBlock.logic";
+import {
+  findQuestionAnswer,
+  isQuestionWithdrawn,
+  readAnswerLine,
+  writeAnswerLine,
+} from "../chat/questionBlock.logic";
 
 export interface WaitingShellInput {
   readonly archivedAt: string | null;
@@ -76,13 +81,15 @@ export function askedQuestionCards(
   return [...newest.values()];
 }
 
-/** The asked cards that no later `<id>: answer` line answers. */
+/** The asked cards that no later `<id>: answer` line answers and the agent has not withdrawn. */
 export function openQuestionCards(
   items: ReadonlyArray<TimelineItemLike>,
   asked: ReadonlyArray<OpenQuestionCard>,
 ): ReadonlyArray<OpenQuestionCard> {
   return asked.filter(
-    (card) => findQuestionAnswer(items, card.askedInItemId, card.question.id) === null,
+    (card) =>
+      findQuestionAnswer(items, card.askedInItemId, card.question.id) === null &&
+      !isQuestionWithdrawn(items, card.askedInItemId, card.question.id),
   );
 }
 

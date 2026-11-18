@@ -7,6 +7,12 @@ export const QUESTION_MULTI_SEPARATOR = ", ";
 /** The answer a card's Skip gives; agents stop the work that depends on that question. */
 export const QUESTION_SKIPPED_ANSWER = "skipped";
 
+/**
+ * What an agent writes after a card's id, as a whole `Q2: no longer needed` line, to withdraw one
+ * of its latest unanswered cards that a newer user message made pointless.
+ */
+export const QUESTION_WITHDRAWN_ANSWER = "no longer needed";
+
 export interface QuestionBlock {
   readonly id: string;
   readonly prompt: string;
@@ -137,4 +143,23 @@ export function questionCardsInMarkdown(text: string): ReadonlyArray<QuestionBlo
   }
   flush();
   return cards;
+}
+
+const WITHDRAW_LINE = /^[ \t]*(Q[1-9][0-9]{0,5})[ \t]*:[ \t]*(.*?)[ \t]*$/;
+
+/**
+ * The card ids an assistant message withdraws: each whole `Qn: no longer needed` line. They apply
+ * to the newest earlier message that asks cards; an answer the user gives still wins.
+ */
+export function questionWithdrawalsInMarkdown(text: string): ReadonlyArray<string> {
+  if (!text.includes(QUESTION_WITHDRAWN_ANSWER)) return [];
+  const ids: string[] = [];
+  for (const line of text.split(/\r\n|\r|\n/)) {
+    const match = WITHDRAW_LINE.exec(line);
+    const id = match?.[1];
+    if (id !== undefined && match?.[2] === QUESTION_WITHDRAWN_ANSWER && !ids.includes(id)) {
+      ids.push(id);
+    }
+  }
+  return ids;
 }

@@ -1,4 +1,8 @@
-import { questionCardsInMarkdown } from "@t3tools/shared/questionCards";
+import {
+  QUESTION_WITHDRAWN_ANSWER,
+  questionCardsInMarkdown,
+  questionWithdrawalsInMarkdown,
+} from "@t3tools/shared/questionCards";
 import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -11,56 +15,76 @@ import type * as SqlClient from "effect/sql/SqlClient";
 const QUESTION_WINDOW = 100;
 
 interface QuestionCandidate {
+  readonly id: string;
   readonly role: string;
   readonly text: string;
   readonly streaming: boolean;
+  readonly createdAt: DateTime.Utc;
   readonly updatedAt: DateTime.Utc;
 }
 
+function newestFirst<T extends QuestionCandidate>(messages: ReadonlyArray<T>): ReadonlyArray<T> {
+  return messages.toSorted(
+    (left, right) =>
+      DateTime.toEpochMillis(right.createdAt) - DateTime.toEpochMillis(left.createdAt) ||
+      (left.id < right.id ? 1 : left.id > right.id ? -1 : 0),
+  );
+}
+
 /**
- * When the newest assistant message that finished after the user's own latest message asked
- * question cards, or null. Cards exist once the message finishes, so a reply the user wrote into
- * mid-stream still asks. Any later message the user writes answers or passes on them; wakes do not.
+ * When the newest assistant message that finished after the user's own latest message asked cards
+ * it has not since withdrawn (a reply written mid-stream still asks; wakes don't answer), or null.
+ * A `Qn: no longer needed` line withdraws a card of the newest earlier message that asks cards.
  */
 function questionsAskedAt(
-  candidates: Iterable<QuestionCandidate>,
+  newestFirstCandidates: Iterable<QuestionCandidate>,
   latestUserAuthoredMessageAt: DateTime.Utc | null,
 ): DateTime.Utc | null {
   let newest: DateTime.Utc | null = null;
-  for (const message of candidates) {
+  // Ids that newer messages withdrew, waiting for the next older message that asks cards.
+  let withdrawn = new Set<string>();
+  for (const message of newestFirstCandidates) {
     if (message.role !== "assistant" || message.streaming) continue;
+    const withdrawals = questionWithdrawalsInMarkdown(message.text);
+    const cards = questionCardsInMarkdown(message.text);
+    if (cards.length === 0) {
+      for (const id of withdrawals) withdrawn.add(id);
+      continue;
+    }
+    const open = cards.some((card) => !withdrawn.has(card.id));
+    withdrawn = new Set(withdrawals);
+    if (!open) continue;
     if (
       latestUserAuthoredMessageAt !== null &&
       !DateTime.isGreaterThan(message.updatedAt, latestUserAuthoredMessageAt)
     ) {
       continue;
     }
-    if (newest !== null && !DateTime.isGreaterThan(message.updatedAt, newest)) continue;
-    if (questionCardsInMarkdown(message.text).length > 0) newest = message.updatedAt;
+    if (newest === null || DateTime.isGreaterThan(message.updatedAt, newest)) {
+      newest = message.updatedAt;
+    }
   }
   return newest;
 }
 
 /** `questionsAskedAt` over a projection's messages, within the window the SQL reads. */
 export function openQuestionsAt(input: {
-  readonly messages: ReadonlyArray<
-    QuestionCandidate & { readonly id: string; readonly createdAt: DateTime.Utc }
-  >;
+  readonly messages: ReadonlyArray<QuestionCandidate>;
   readonly latestUserAuthoredMessageAt: DateTime.Utc | null;
 }): DateTime.Utc | null {
-  const newestFirst = input.messages.toSorted(
-    (left, right) =>
-      DateTime.toEpochMillis(right.createdAt) - DateTime.toEpochMillis(left.createdAt) ||
-      (left.id < right.id ? 1 : left.id > right.id ? -1 : 0),
+  return questionsAskedAt(
+    newestFirst(input.messages).slice(0, QUESTION_WINDOW),
+    input.latestUserAuthoredMessageAt,
   );
-  return questionsAskedAt(newestFirst.slice(0, QUESTION_WINDOW), input.latestUserAuthoredMessageAt);
 }
 
 const decodeCandidates = Schema.decodeUnknownOption(
   Schema.fromJsonString(
     Schema.Array(
       Schema.Struct({
+        id: Schema.String,
         text: Schema.String,
+        createdAt: Schema.DateTimeUtcFromString,
         updatedAt: Schema.DateTimeUtcFromString,
       }),
     ),
@@ -75,24 +99,30 @@ export function openQuestionsAtFromCandidates(
   if (json === null) return null;
   const candidates = Option.getOrElse(decodeCandidates(json), () => []);
   return questionsAskedAt(
-    candidates.map((candidate) => ({ ...candidate, role: "assistant", streaming: false })),
+    newestFirst(
+      candidates.map((candidate) => ({ ...candidate, role: "assistant", streaming: false })),
+    ),
     latestUserAuthoredMessageAt,
   );
 }
 
 /**
- * The finished assistant messages in the window that may hold cards, as a JSON array; the shared
- * predicate in `openQuestionsAtFromCandidates` decides. `instr` keeps only messages whose text can
- * contain a card header, so the predicate sees every message it would accept.
+ * The finished assistant messages in the window that may ask or withdraw cards, as a JSON array;
+ * the shared predicate in `openQuestionsAtFromCandidates` decides. `instr` keeps only messages
+ * whose text can contain a card header or a withdraw line, so the predicate sees every message
+ * that could change its answer.
  */
 export function openQuestionCandidatesColumn(sql: SqlClient.SqlClient, threadId: string) {
   return sql`(
     SELECT json_group_array(json_object(
+      'id', candidate.message_id,
       'text', json_extract(candidate.payload_json, '$.text'),
+      'createdAt', candidate.created_at,
       'updatedAt', candidate.updated_at
     ))
     FROM (
-      SELECT recent.role, recent.streaming, recent.payload_json, recent.updated_at
+      SELECT recent.message_id, recent.role, recent.streaming, recent.payload_json,
+        recent.created_at, recent.updated_at
       FROM orchestration_v2_projection_messages recent
       WHERE recent.thread_id = ${sql.literal(threadId)}
       ORDER BY recent.created_at DESC, recent.message_id DESC
@@ -100,6 +130,9 @@ export function openQuestionCandidatesColumn(sql: SqlClient.SqlClient, threadId:
     ) candidate
     WHERE candidate.role = 'assistant'
       AND candidate.streaming = 0
-      AND instr(candidate.payload_json, '**Q') > 0
+      AND (
+        instr(candidate.payload_json, '**Q') > 0
+        OR instr(candidate.payload_json, ${sql.literal(`'${QUESTION_WITHDRAWN_ANSWER}'`)}) > 0
+      )
   )`;
 }

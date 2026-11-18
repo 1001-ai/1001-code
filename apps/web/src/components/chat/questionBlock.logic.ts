@@ -3,6 +3,7 @@ import { formatComposerContextHref } from "@t3tools/shared/composerContextRefere
 import {
   QUESTION_MULTI_SEPARATOR,
   questionCardsInMarkdown,
+  questionWithdrawalsInMarkdown,
   type QuestionBlock,
 } from "@t3tools/shared/questionCards";
 import type { PhrasingContent, Root, RootContent, Strong } from "mdast";
@@ -77,6 +78,7 @@ interface TurnItemLike {
     readonly type: string;
     readonly text?: unknown;
     readonly messageId?: string;
+    readonly streaming?: unknown;
   };
 }
 
@@ -118,6 +120,46 @@ export function findQuestionAnswer(
   return null;
 }
 
+const cardsByItem = new WeakMap<object, ReadonlyArray<QuestionBlock>>();
+
+function cardsOfItem(item: object, text: string): ReadonlyArray<QuestionBlock> {
+  let cards = cardsByItem.get(item);
+  if (cards === undefined) {
+    cards = questionCardsInMarkdown(text);
+    cardsByItem.set(item, cards);
+  }
+  return cards;
+}
+
+/**
+ * Whether the agent withdrew `questionId` with a `<id>: no longer needed` line in a finished
+ * assistant message after the item that asked it, while that item still held its latest cards,
+ * and no user message answers it, before or after. Queued answers are `findQuestionAnswer`'s.
+ */
+export function isQuestionWithdrawn(
+  items: ReadonlyArray<TurnItemLike>,
+  askedInItemId: string,
+  questionId: string,
+): boolean {
+  const askedAt = items.findIndex((entry) => entry.item.id === askedInItemId);
+  if (askedAt < 0) return false;
+  let withdrawn = false;
+  // A message that asks cards takes over every later withdrawal.
+  let superseded = false;
+  for (let index = askedAt + 1; index < items.length; index += 1) {
+    const { item } = items[index]!;
+    const { type, text, streaming } = item;
+    if (typeof text !== "string") continue;
+    if (type === "user_message") {
+      if (readAnswerLine(text, questionId) !== null) return false;
+    } else if (type === "assistant_message" && streaming !== true && !superseded) {
+      withdrawn ||= questionWithdrawalsInMarkdown(text).includes(questionId);
+      superseded = cardsOfItem(item, text).length > 0;
+    }
+  }
+  return withdrawn;
+}
+
 // An id the way prose mentions it: `(Q40)`, `Q40,` or `Q40:`, but not `Q40a`, `FAQ40` or `Q0`.
 const QUESTION_REF = /(?<![\p{L}\p{N}_])Q[1-9][0-9]{0,5}(?![\p{L}\p{N}_])/gu;
 
@@ -146,8 +188,6 @@ export interface QuestionCardTarget<M extends string = string> {
   readonly prompt: string;
 }
 
-const cardsByItem = new WeakMap<object, ReadonlyArray<QuestionBlock>>();
-
 /**
  * Each question id's newest card among finished assistant messages. A re-asked question keeps its
  * id, so the newest card is the live one. Parses each message once.
@@ -163,12 +203,8 @@ export function latestQuestionCards<M extends string>(
     }
     // A streaming message shows its quotes as written, so it has no card to land on yet.
     if (streaming === true) continue;
-    let cards = cardsByItem.get(item);
-    if (cards === undefined) {
-      cards = questionCardsInMarkdown(text);
-      cardsByItem.set(item, cards);
-    }
-    for (const card of cards) latest.set(card.id, { messageId, prompt: card.prompt });
+    for (const card of cardsOfItem(item, text))
+      latest.set(card.id, { messageId, prompt: card.prompt });
   }
   return latest;
 }
