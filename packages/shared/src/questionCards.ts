@@ -146,7 +146,7 @@ export function questionCardsInMarkdown(text: string): ReadonlyArray<QuestionBlo
 }
 
 // Up to three spaces of indent: four or a tab make an indented code block.
-const WITHDRAW_LINE = /^ {0,3}(Q[1-9][0-9]{0,5})[ \t]*:[ \t]*(.*?)[ \t]*$/;
+const WITHDRAW_LINE = /^ {0,3}(Q[1-9][0-9]{0,5})[ \t]*:(.*)$/;
 
 /**
  * The card ids an assistant message withdraws: each whole `Qn: no longer needed` line outside code.
@@ -168,7 +168,7 @@ export function questionWithdrawalsInMarkdown(text: string): ReadonlyArray<strin
     }
     const match = WITHDRAW_LINE.exec(line);
     const id = match?.[1];
-    if (id !== undefined && match?.[2] === QUESTION_WITHDRAWN_ANSWER && !ids.includes(id)) {
+    if (id !== undefined && match?.[2]?.trim() === QUESTION_WITHDRAWN_ANSWER && !ids.includes(id)) {
       ids.push(id);
     }
   }
