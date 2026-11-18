@@ -1,8 +1,9 @@
-import type {
-  AgentsBoardData,
-  ProjectMoment,
-  ProjectMomentsStreamItem,
-  ThreadId,
+import {
+  type AgentsBoardData,
+  PROJECT_MOMENTS_LIMIT,
+  type ProjectMoment,
+  type ProjectMomentsStreamItem,
+  type ThreadId,
 } from "@t3tools/contracts";
 
 import type { MessagesTimelineRow } from "./MessagesTimeline.logic";
@@ -31,10 +32,10 @@ export function applyProjectMomentsItem(
     case "upsert":
       return {
         ...state,
-        moments: [
-          ...state.moments.filter((moment) => moment.id !== item.moment.id),
-          item.moment,
-        ].toSorted(compareByTime),
+        // A long-lived subscription keeps adding; keep the newest a snapshot would hold.
+        moments: [...state.moments.filter((moment) => moment.id !== item.moment.id), item.moment]
+          .toSorted(compareByTime)
+          .slice(-PROJECT_MOMENTS_LIMIT),
       };
     case "remove":
       return { ...state, moments: state.moments.filter((moment) => moment.id !== item.id) };
@@ -46,7 +47,7 @@ export function applyProjectMomentsItem(
   }
 }
 
-/** Picks the border tint from the theme: warning, info, guest, success, update, primary. */
+/** Picks the card's icon and its colour. */
 export type MomentTone = "ask" | "prompt" | "agent" | "done" | "testing" | "merged" | "started";
 
 export interface MomentCard {
@@ -122,7 +123,9 @@ function isViewersBoardAgent(
   if (viewerLogin === null || viewerLogin.length === 0) return false;
   const login = viewerLogin.toLowerCase();
   const id = agentId.toLowerCase();
-  return owner?.toLowerCase() === login || id === login || id.startsWith(`${login}-`);
+  // The id prefix is only a fallback: `ada-power-9` belongs to ada-power, not ada.
+  if (owner !== null) return owner.toLowerCase() === login;
+  return id === login || id.startsWith(`${login}-`);
 }
 
 const PR_URL = /^https?:\/\/\S+$/;
@@ -192,10 +195,11 @@ export function mergeMomentCards(input: {
   readonly showTeammates: boolean;
   readonly sinceMillis: number;
 }): ReadonlyArray<MomentCard> {
-  const teammates = input.showTeammates
-    ? input.teammates.filter((card) => Date.parse(card.at) >= input.sinceMillis)
-    : [];
-  return [...input.moments.map(projectMomentCard), ...teammates].toSorted(compareByTime);
+  const recent = (card: MomentCard) => Date.parse(card.at) >= input.sinceMillis;
+  const teammates = input.showTeammates ? input.teammates.filter(recent) : [];
+  return [...input.moments.map(projectMomentCard).filter(recent), ...teammates].toSorted(
+    compareByTime,
+  );
 }
 
 export type MomentStackEntry =

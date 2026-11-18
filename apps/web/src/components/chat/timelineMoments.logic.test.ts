@@ -1,4 +1,10 @@
-import { type AgentsBoardData, MessageId, type ProjectMoment, ThreadId } from "@t3tools/contracts";
+import {
+  type AgentsBoardData,
+  MessageId,
+  PROJECT_MOMENTS_LIMIT,
+  type ProjectMoment,
+  ThreadId,
+} from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { MessagesTimelineRow } from "./MessagesTimeline.logic";
@@ -74,6 +80,16 @@ const board = (messages: AgentsBoardData["messages"]): AgentsBoardData => ({
       needs: null,
     },
     {
+      id: "ada-power-9",
+      owner: "ada-power",
+      tool: null,
+      task: null,
+      started: null,
+      latestStatus: null,
+      latestAt: null,
+      needs: null,
+    },
+    {
       id: "lin-3",
       owner: null,
       tool: null,
@@ -108,6 +124,20 @@ describe("applyProjectMomentsItem", () => {
     state = applyProjectMomentsItem(state, { kind: "remove-thread", threadId });
     expect(state.moments).toEqual([]);
   });
+
+  it("keeps only as many of the newest moments as a snapshot holds", () => {
+    let state = applyProjectMomentsItem(EMPTY_PROJECT_MOMENTS, {
+      kind: "snapshot",
+      moments: Array.from({ length: PROJECT_MOMENTS_LIMIT }, (_, index) =>
+        moment(`m${index}`, new Date(Date.parse(at(17, 9)) + index * 1000).toISOString()),
+      ),
+      truncated: false,
+    });
+    state = applyProjectMomentsItem(state, { kind: "upsert", moment: moment("new", at(17, 12)) });
+    expect(state.moments).toHaveLength(PROJECT_MOMENTS_LIMIT);
+    expect(state.moments[0]?.id).toBe("m1");
+    expect(state.moments.at(-1)?.id).toBe("new");
+  });
 });
 
 describe("teammateMomentCards", () => {
@@ -118,6 +148,7 @@ describe("teammateMomentCards", () => {
     agentMessage("m4", "sam-2", "done", at(17, 12)),
     agentMessage("m5", "lin-3", "started", at(17, 13)),
     agentMessage("m6", "ada-7", "blocked", at(17, 14)),
+    agentMessage("m7", "ada-power-9", "question", at(17, 15)),
   ];
 
   it("leaves out the viewer's own agents by owner or agent id, and working updates", () => {
@@ -126,11 +157,12 @@ describe("teammateMomentCards", () => {
       ["Sam's agent asked a question", false, null],
       ["Sam's agent is done", false, "https://github.com/acme/app/pull/7"],
       ["A teammate's agent started", false, null],
+      ["ada-power's agent asked a question", false, null],
     ]);
   });
 
   it("keeps every agent when no one is signed in", () => {
-    expect(teammateMomentCards(board(messages), null)).toHaveLength(5);
+    expect(teammateMomentCards(board(messages), null)).toHaveLength(6);
   });
 });
 
@@ -144,6 +176,7 @@ describe("mergeMomentCards", () => {
   );
   const input = {
     moments: [
+      moment("stale", at(1, 9)),
       moment("a", at(17, 9)),
       moment("b", at(17, 11), {
         kind: "pr-testing",
