@@ -23,6 +23,9 @@ describe("lockedAgents", () => {
     expect(
       isInboxThreadShell({ ...inbox, lineage: { ...lineage, parentThreadId: "chat" } } as never),
     ).toBe(false);
+    expect(isInboxThreadShell({ ...inbox, lineage: { ...lineage, sideChat: true } } as never)).toBe(
+      false,
+    );
     expect(isInboxThreadShell(null)).toBe(false);
   });
 

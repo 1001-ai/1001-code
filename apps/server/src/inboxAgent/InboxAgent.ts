@@ -140,7 +140,11 @@ const make = Effect.gen(function* () {
       .getThreadShell(threadId)
       .pipe(
         Effect.map(
-          (shell) => shell !== null && shell.deletedAt == null && shell.projectId === projectId,
+          (shell) =>
+            shell !== null &&
+            shell.deletedAt == null &&
+            shell.projectId === projectId &&
+            isInboxThreadShell(shell),
         ),
       );
 

@@ -31,7 +31,8 @@ export function isInboxThreadShell(
     thread.title === INBOX_AGENT_THREAD_TITLE &&
     thread.createdBy === "system" &&
     thread.creationSource === "server" &&
-    thread.lineage.parentThreadId === null
+    thread.lineage.parentThreadId === null &&
+    thread.lineage.sideChat !== true
   );
 }
 

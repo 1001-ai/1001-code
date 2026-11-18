@@ -228,6 +228,15 @@ it.effect("makes a new Inbox after the recorded one is deleted", () =>
       expect(secondId).not.toBe(firstId);
       expect(service.isInboxThread(secondId!)).toBe(true);
       expect(service.isInboxThread(firstId!)).toBe(false);
+      // A recorded thread that no longer looks like an Inbox (an earlier build's hidden side chat).
+      const secondShell = shells.get(secondId!)!;
+      shells.set(secondId!, {
+        ...secondShell,
+        lineage: { ...secondShell.lineage, sideChat: true },
+      });
+      yield* service.ensure(PROJECT);
+      expect(created).toHaveLength(3);
+      expect(service.isInboxThread(secondId!)).toBe(false);
     }),
   ),
 );
