@@ -14,7 +14,7 @@ import * as McpInvocationContext from "../../McpInvocationContext.ts";
 
 /**
  * The voice agent's own tools. Only a voice agent thread lists or calls them, and such a thread
- * lists and calls nothing else (`voiceAgentToolAllowed`).
+ * lists and calls nothing else (`lockedAgentToolAllowed`).
  */
 const dependencies = [
   McpInvocationContext.McpInvocationContext,

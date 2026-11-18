@@ -200,6 +200,7 @@ import { toastManager } from "./ui/toast";
 import { projectScriptIdFromCommand } from "~/projectScripts";
 import { newMessageId } from "~/lib/utils";
 import { isInSideChatPane, type SideChatParentPanel } from "~/lib/sideChatPane";
+import { inboxAgentLockedProvider, isInboxClientThread } from "~/state/inboxAgent.logic";
 import {
   NO_PROVIDER_MODEL_SELECTION,
   providerInstanceEntriesFor,
@@ -1264,7 +1265,10 @@ export default function ChatView(props: ChatViewProps) {
     threadProvider,
     providers: providerStatuses,
   });
-  const modelPickerLockedProvider = supportsProviderSwitchingViaHandoff ? null : lockedProvider;
+  const modelPickerLockedProvider =
+    // Fork: the Inbox runs on Claude only; see fork/README.md.
+    inboxAgentLockedProvider(activeThread) ??
+    (supportsProviderSwitchingViaHandoff ? null : lockedProvider);
   const pullRequestsCapabilityKnown = serverConfig !== null;
   const supportsPullRequests = serverConfig !== null;
   const attachmentEnvironmentConfig = environmentById.get(environmentId)?.serverConfig ?? null;
@@ -3282,6 +3286,8 @@ export default function ChatView(props: ChatViewProps) {
     <PanelLayoutControls
       {...panelToggleControlProps}
       showThreadPanelControl={!inlineRightPanelOwnsTitleBar}
+      // Fork: the Inbox has no terminal; see fork/README.md.
+      showTerminalControl={!isInboxClientThread(activeThread)}
     />
   );
   const threadPanelHeaderControl = <ThreadPanelHeaderControl {...panelToggleControlProps} />;

@@ -199,6 +199,7 @@ import { planThreadDeletion } from "./ThreadDeletion.ts";
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as ServerSettings from "../serverSettings.ts";
 import { voiceAgentThread } from "../voiceAgent/voiceAgentThread.ts";
+import { lockedAgentMessage, lockedAgentRefusal } from "../lockedAgents/lockedAgentGuard.ts";
 
 const isMessageQuestionAnswer = Schema.is(
   Schema.Union([TrimmedNonEmptyString, Schema.NonEmptyArray(TrimmedNonEmptyString)]),
@@ -3877,6 +3878,15 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         cause: `Thread ${command.threadId} is deleted.`,
       });
     }
+    // Fork: a locked agent keeps its provider, and the Inbox its title; see fork/README.md.
+    const lockedRefusal = lockedAgentRefusal(command, thread);
+    if (lockedRefusal !== null) {
+      return yield* new OrchestratorDispatchError({
+        commandId: command.commandId,
+        commandType: command.type,
+        cause: lockedRefusal,
+      });
+    }
     if (
       command.type === "thread.pull-request.watch" &&
       command.watching &&
@@ -6338,6 +6348,16 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           }
         : undefined,
     );
+    // Fork: a locked agent keeps its provider and its title; see fork/README.md.
+    const lockedRefusal = lockedAgentRefusal(command, projection.thread);
+    if (lockedRefusal !== null) {
+      return yield* new OrchestratorDispatchError({
+        commandId: command.commandId,
+        commandType: command.type,
+        cause: lockedRefusal,
+      });
+    }
+    command = lockedAgentMessage(command, projection.thread);
     if (command.steerFollowUpOfRunId !== undefined) {
       const source = projection.runs.find((run) => run.id === command.steerFollowUpOfRunId);
       if (

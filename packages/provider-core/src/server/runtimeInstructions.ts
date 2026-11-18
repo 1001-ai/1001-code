@@ -6,6 +6,7 @@ export { QUESTION_CARD_INSTRUCTIONS };
 export { REPLY_MARKER_INSTRUCTIONS, replyMarkerCodexContext } from "./replyMarkerInstructions.ts";
 export { liveAppCheckoutCodexContext, setLiveAppCheckout } from "./liveCheckoutInstructions.ts";
 export * from "./voiceAgentInstructions.ts";
+export * from "./inboxAgentInstructions.ts";
 
 /** Session-invariant; harnesses with a native system-prompt append can carry it once per session. */
 export const PULL_REQUEST_LINKING_INSTRUCTIONS = `<pull_request_linking>

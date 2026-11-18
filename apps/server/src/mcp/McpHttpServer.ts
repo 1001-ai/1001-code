@@ -88,6 +88,7 @@ import * as BoardHandlers from "./toolkits/board/handlers.ts";
 import { BoardToolkit } from "./toolkits/board/tools.ts";
 import * as MemoryHandlers from "./toolkits/memory/handlers.ts";
 import { MemoryToolkit } from "./toolkits/memory/tools.ts";
+import * as LockedAgentToolGate from "../lockedAgents/lockedAgentToolGate.ts";
 import * as VoiceAgentHandlers from "./toolkits/voiceAgent/handlers.ts";
 import { VoiceAgentToolkit } from "./toolkits/voiceAgent/tools.ts";
 import { requestUrl } from "../requestUrl.ts";
@@ -1374,7 +1375,7 @@ export const layerToolSearch = Layer.mergeAll(
 ).pipe(Layer.provide(layerToolExposure));
 
 /** Fork: applies to every tool of the server, whichever toolkit registered it. */
-export const layerVoiceAgentToolGate = McpServer.visibility(VoiceAgentHandlers.makeToolGate, {
+export const layerLockedAgentToolGate = McpServer.visibility(LockedAgentToolGate.makeToolGate, {
   global: true,
 });
 
@@ -1386,8 +1387,8 @@ export const layer = layerMcpTransport(
     toolkitRegistration(MemoryToolkit, MemoryHandlers.layer),
     // Fork: Board tasks; see fork/README.md.
     toolkitRegistration(BoardToolkit, BoardHandlers.layer),
-    // Fork: the voice agent's tools, and the gate that keeps it to them; see fork/README.md.
+    // Fork: the voice agent's tools, and the gate that keeps locked agents to theirs; see fork/README.md.
     toolkitRegistration(VoiceAgentToolkit, VoiceAgentHandlers.layer),
-    layerVoiceAgentToolGate,
+    layerLockedAgentToolGate,
   ),
 );

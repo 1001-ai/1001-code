@@ -47,6 +47,7 @@ import {
   THREAD_DETAILS_PANEL_LABEL_CLASS,
 } from "./threadDetailsPanelStyles";
 import { Menu, MenuPopup } from "../ui/menu";
+import { useIsInboxThread } from "../../state/inboxAgent";
 
 const GitActionsControl = memo(BaseGitActionsControl);
 
@@ -106,6 +107,8 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
   const activeThreadRef = { environmentId: props.environmentId, threadId: props.threadId };
   const project = useProject(scopeProjectRef(props.environmentId, props.projectId));
   const serverConfig = useServerConfigs().get(props.environmentId);
+  // Fork: the Inbox has no source control of its own; see fork/README.md.
+  const inbox = useIsInboxThread(props.environmentId, props.threadId);
   // A No project thread's folder sits inside the shared scratch root, so it must never get git.
   // Until the config and project load, a No project thread looks like any other folder.
   const offersGit =
@@ -233,7 +236,7 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                 </ThreadDetailsSection>
               ) : null}
 
-              {show.branch || show.pullRequests || show.git ? (
+              {!inbox && (show.branch || show.pullRequests || show.git) ? (
                 <ThreadDetailsSection
                   headingId="thread-details-version-control-heading"
                   title="Version Control"
