@@ -215,8 +215,9 @@ const layerDesktopApplication = Layer.mergeAll(
   DesktopApplicationMenu.layer,
   DesktopLinuxUrlHandler.layer,
   DesktopCliCommand.layer,
-  DesktopSelfUpdate.layer,
 ).pipe(
+  // Provided, not merged: the application menu's Check for Updates needs it.
+  Layer.provideMerge(DesktopSelfUpdate.layer),
   Layer.provideMerge(layerDesktopSnapShot),
   Layer.provideMerge(
     DesktopUpdates.layer.pipe(

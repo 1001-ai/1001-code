@@ -85,6 +85,7 @@ const spawnFailure = PlatformError.systemError({
 function makeHarness(input: {
   readonly setting?: string | undefined;
   readonly reply: (flag: Flag) => Reply;
+  readonly onState?: (state: DesktopSelfUpdateState) => Effect.Effect<unknown>;
 }) {
   const spawned: Spawned[] = [];
   const sent: DesktopSelfUpdateState[] = [];
@@ -126,7 +127,9 @@ function makeHarness(input: {
           sendAll: (_channel, state) =>
             Effect.sync(() => {
               sent.push(state as DesktopSelfUpdateState);
-            }),
+            }).pipe(
+              Effect.andThen(input.onState?.(state as DesktopSelfUpdateState) ?? Effect.void),
+            ),
         }),
         DesktopIpc.layerTest({
           removeHandler: () => {},
@@ -172,6 +175,8 @@ describe("DesktopSelfUpdate", () => {
     return Effect.gen(function* () {
       const service = yield* harness.start;
       yield* TestClock.adjust("3 hours");
+      assert.isFalse(yield* service.enabled);
+      assert.deepEqual(yield* service.checkNow, { status: "off" });
       assert.deepEqual(harness.spawned, []);
       assert.deepEqual(yield* service.getState, { status: "idle" });
       assert.isFalse(yield* service.restartToUpdate);
@@ -333,6 +338,80 @@ describe("DesktopSelfUpdate", () => {
 
         yield* Scope.close(appScope, Exit.void);
         assert.include(harness.events, "closed --stage");
+      }).pipe(Effect.scoped, Effect.provide(harness.layer));
+    }),
+  );
+
+  it.effect.each<{
+    name: string;
+    reply: Reply;
+    result: DesktopSelfUpdate.DesktopSelfUpdateCheckResult;
+    state: DesktopSelfUpdateState;
+  }>([
+    {
+      name: "no update exists",
+      reply: exited('{"update": false}'),
+      result: { status: "up-to-date" },
+      state: { status: "idle" },
+    },
+    {
+      name: "the check fails",
+      reply: exited("", 1, "Another update is running.\n"),
+      result: {
+        status: "error",
+        message: "Could not check for an update: Another update is running.",
+      },
+      state: {
+        status: "error",
+        message: "Could not check for an update: Another update is running.",
+      },
+    },
+  ])("checks on request and can check again when $name", ({ reply, result, state }) => {
+    const harness = makeHarness({ setting: SETTING, reply: () => reply });
+    return Effect.gen(function* () {
+      const service = yield* harness.start;
+      assert.isTrue(yield* service.enabled);
+      assert.deepEqual(yield* service.checkNow, result);
+      assert.deepEqual(yield* service.getState, state);
+      assert.deepEqual(yield* service.checkNow, result);
+      assert.deepEqual(harness.flags(), ["--check", "--check"]);
+    }).pipe(Effect.scoped, Effect.provide(harness.layer));
+  });
+
+  it.effect("builds an update found on request in the background, then offers it", () =>
+    Effect.gen(function* () {
+      const stageAnswer = yield* Deferred.make<string>();
+      const ready = yield* Deferred.make<void>();
+      const harness = makeHarness({
+        setting: SETTING,
+        reply: (flag) => (flag === "--check" ? exited('{"update": true}') : pending(stageAnswer)),
+        onState: (state) =>
+          state.status === "ready" ? Deferred.succeed(ready, undefined) : Effect.void,
+      });
+      yield* Effect.gen(function* () {
+        const service = yield* harness.start;
+        assert.deepEqual(yield* service.checkNow, { status: "started" });
+        assert.deepEqual(yield* service.getState, { status: "building" });
+        assert.deepEqual(yield* service.checkNow, { status: "building" });
+
+        yield* Deferred.succeed(stageAnswer, '{"staged": true}');
+        yield* Deferred.await(ready);
+        assert.deepEqual(yield* service.checkNow, { status: "ready" });
+        assert.deepEqual(harness.flags(), ["--check", "--stage"]);
+        assert.deepEqual(statuses(harness.sent), ["building", "ready"]);
+      }).pipe(Effect.scoped, Effect.provide(harness.layer));
+    }),
+  );
+
+  it.effect("says a scheduled check is already running instead of starting another", () =>
+    Effect.gen(function* () {
+      const checkAnswer = yield* Deferred.make<string>();
+      const harness = makeHarness({ setting: SETTING, reply: () => pending(checkAnswer) });
+      yield* Effect.gen(function* () {
+        const service = yield* harness.start;
+        yield* TestClock.adjust("30 seconds");
+        assert.deepEqual(yield* service.checkNow, { status: "checking" });
+        assert.deepEqual(harness.flags(), ["--check"]);
       }).pipe(Effect.scoped, Effect.provide(harness.layer));
     }),
   );

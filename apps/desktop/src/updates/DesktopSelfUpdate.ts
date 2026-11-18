@@ -5,8 +5,10 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Fiber from "effect/Fiber";
 import * as Path from "effect/Path";
 import * as Ref from "effect/Ref";
+import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
@@ -73,12 +75,21 @@ class DesktopSelfUpdateCommandError extends Schema.TaggedError<DesktopSelfUpdate
   }
 }
 
+/** What a check the user asked for found, or why none ran. */
+export type DesktopSelfUpdateCheckResult =
+  | { readonly status: "off" | "ready" | "building" | "checking" | "up-to-date" | "started" }
+  | { readonly status: "error"; readonly message: string };
+
 export class DesktopSelfUpdate extends Context.Service<
   DesktopSelfUpdate,
   {
     readonly getState: Effect.Effect<DesktopSelfUpdateState>;
     /** Serves the renderer and, when the build names an update command, checks soon and hourly. */
     readonly start: Effect.Effect<void, never, Scope.Scope>;
+    /** True once `start` found an update command. */
+    readonly enabled: Effect.Effect<boolean>;
+    /** Checks now unless a build is ready or running; a found update builds in the background. */
+    readonly checkNow: Effect.Effect<DesktopSelfUpdateCheckResult>;
     /** Only when `ready`: launches the command's finish step, then quits. False when it did not. */
     readonly restartToUpdate: Effect.Effect<boolean>;
   }
@@ -113,7 +124,10 @@ const make = Effect.gen(function* () {
   const path = yield* Path.Path;
 
   const stateRef = yield* Ref.make<DesktopSelfUpdateState>(IDLE);
-  const commandRef = yield* Ref.make(Option.none<UpdateCommand>());
+  // The scope is `start`'s, which closes on quit, so checks and builds stop with the app.
+  const activeRef = yield* Ref.make(
+    Option.none<{ readonly command: UpdateCommand; readonly scope: Scope.Scope }>(),
+  );
   const cycleRunning = yield* Ref.make(false);
   const restarting = yield* Ref.make(false);
 
@@ -181,15 +195,14 @@ const make = Effect.gen(function* () {
   const outputError = (step: "check" | "stage") => (cause: unknown) =>
     new DesktopSelfUpdateCommandError({ step, reason: "output", cause });
 
-  const cycle = Effect.fn("DesktopSelfUpdate.cycle")(
+  const check = (command: UpdateCommand) =>
+    run(command, "check", CHECK_TIMEOUT).pipe(
+      Effect.flatMap((line) => decodeCheckOutput(line).pipe(Effect.mapError(outputError("check")))),
+      Effect.map(({ update }) => update),
+    );
+
+  const stage = Effect.fn("DesktopSelfUpdate.stage")(
     function* (command: UpdateCommand) {
-      const { update } = yield* run(command, "check", CHECK_TIMEOUT).pipe(
-        Effect.flatMap((line) =>
-          decodeCheckOutput(line).pipe(Effect.mapError(outputError("check"))),
-        ),
-      );
-      if (!update) return yield* setState(IDLE);
-      yield* setState(BUILDING);
       const { staged } = yield* run(command, "stage", STAGE_TIMEOUT).pipe(
         Effect.flatMap((line) =>
           decodeStageOutput(line).pipe(Effect.mapError(outputError("stage"))),
@@ -200,6 +213,27 @@ const make = Effect.gen(function* () {
     Effect.catchTags({ DesktopSelfUpdateCommandError: fail }),
   );
 
+  // Runs holding `cycleRunning`; the build releases it when it ends, or this does when none starts.
+  const checkAndStage = Effect.fn("DesktopSelfUpdate.checkAndStage")(function* (
+    command: UpdateCommand,
+    scope: Scope.Scope,
+  ) {
+    const checked = yield* Effect.result(check(command));
+    if (Result.isFailure(checked)) {
+      yield* fail(checked.failure);
+      yield* Ref.set(cycleRunning, false);
+      return { status: "error", message: checked.failure.message } as const;
+    }
+    if (!checked.success) {
+      yield* setState(IDLE);
+      yield* Ref.set(cycleRunning, false);
+      return { status: "up-to-date" } as const;
+    }
+    yield* setState(BUILDING);
+    yield* stage(command).pipe(Effect.ensuring(Ref.set(cycleRunning, false)), Effect.forkIn(scope));
+    return { status: "started" } as const;
+  });
+
   const tick = Effect.fn("DesktopSelfUpdate.tick")(function* (
     command: UpdateCommand,
     scope: Scope.Scope,
@@ -207,14 +241,30 @@ const make = Effect.gen(function* () {
     // A staged build waits for the user's restart; checking again would only rebuild it.
     if ((yield* Ref.get(stateRef)).status === "ready") return;
     if (yield* Ref.getAndSet(cycleRunning, true)) return;
-    yield* cycle(command).pipe(Effect.ensuring(Ref.set(cycleRunning, false)), Effect.forkIn(scope));
+    yield* checkAndStage(command, scope).pipe(Effect.forkIn(scope));
   });
 
+  const checkNow = Effect.gen(function* () {
+    const active = yield* Ref.get(activeRef);
+    if (Option.isNone(active)) return { status: "off" } as const;
+    const { command, scope } = active.value;
+    yield* shellEnvironment.awaitDiscovery;
+    if ((yield* Ref.get(stateRef)).status === "ready") return { status: "ready" } as const;
+    if (yield* Ref.getAndSet(cycleRunning, true)) {
+      const { status } = yield* Ref.get(stateRef);
+      return status === "ready" || status === "building"
+        ? ({ status } as const)
+        : ({ status: "checking" } as const);
+    }
+    const fiber = yield* checkAndStage(command, scope).pipe(Effect.forkIn(scope));
+    return yield* Fiber.join(fiber);
+  }).pipe(Effect.withSpan("DesktopSelfUpdate.checkNow"));
+
   const restartToUpdate = Effect.gen(function* () {
-    const command = yield* Ref.get(commandRef);
-    if (Option.isNone(command) || (yield* Ref.get(stateRef)).status !== "ready") return false;
+    const active = yield* Ref.get(activeRef);
+    if (Option.isNone(active) || (yield* Ref.get(stateRef)).status !== "ready") return false;
     if (yield* Ref.getAndSet(restarting, true)) return false;
-    const [executable, ...args] = command.value;
+    const [executable, ...args] = active.value.command;
     // Detached and unreferenced, so the finish step outlives this app, which it waits to quit.
     const launched = yield* spawner
       .spawn(
@@ -280,7 +330,7 @@ const make = Effect.gen(function* () {
       }
       return;
     }
-    yield* Ref.set(commandRef, command);
+    yield* Ref.set(activeRef, Option.some({ command: command.value, scope }));
     yield* shellEnvironment.awaitDiscovery.pipe(
       Effect.andThen(Effect.sleep(FIRST_CHECK_DELAY)),
       Effect.andThen(
@@ -293,7 +343,13 @@ const make = Effect.gen(function* () {
     );
   }).pipe(Effect.withSpan("DesktopSelfUpdate.start"));
 
-  return DesktopSelfUpdate.of({ getState: Ref.get(stateRef), start, restartToUpdate });
+  return DesktopSelfUpdate.of({
+    getState: Ref.get(stateRef),
+    start,
+    enabled: Ref.get(activeRef).pipe(Effect.map(Option.isSome)),
+    checkNow,
+    restartToUpdate,
+  });
 });
 
 export const layer = Layer.effect(DesktopSelfUpdate, make);
