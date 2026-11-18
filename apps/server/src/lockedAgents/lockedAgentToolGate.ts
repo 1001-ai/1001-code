@@ -1,15 +1,12 @@
-import {
-  type LockedAgentKind,
-  type ThreadId,
-  lockedAgentKind,
-  lockedAgentToolAllowed,
-} from "@t3tools/contracts";
+import { type LockedAgentKind, type ThreadId, lockedAgentToolAllowed } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import type { McpServer } from "effect/ai";
 
 import * as McpInvocationContext from "../mcp/McpInvocationContext.ts";
+import { isInboxThread } from "../inboxAgent/inboxAgentThreads.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
+import { lockedAgentKindOf } from "./lockedAgentKind.ts";
 
 /**
  * The check behind T3's MCP server for every tool, on lists and on calls: a locked agent thread
@@ -19,7 +16,7 @@ import * as ThreadManagementService from "../orchestration-v2/ThreadManagementSe
  */
 export const makeToolGate = Effect.gen(function* () {
   const threads = yield* ThreadManagementService.ThreadManagementService;
-  // A thread's kind never changes, so one read a thread is enough.
+  // A voice agent thread's kind never changes, so one read a thread is enough.
   const kinds = new Map<ThreadId, LockedAgentKind | null>();
   // Untraced: it runs once per tool on every list request.
   return Effect.fnUntraced(function* ({ method, target }: McpServer.MiddlewareOptions) {
@@ -27,11 +24,12 @@ export const makeToolGate = Effect.gen(function* () {
     const scope = yield* Effect.serviceOption(McpInvocationContext.McpInvocationContext);
     const threadId = Option.getOrUndefined(scope)?.thread?.threadId;
     if (threadId === undefined) return lockedAgentToolAllowed(target, null);
+    if (isInboxThread(threadId)) return lockedAgentToolAllowed(target, "inbox");
     let kind = kinds.get(threadId);
     if (kind === undefined) {
       const shell = yield* threads.getThreadShell(threadId).pipe(Effect.orElseSucceed(() => null));
       if (shell === null) return false;
-      kind = lockedAgentKind(shell.lineage);
+      kind = lockedAgentKindOf(shell);
       kinds.set(threadId, kind);
       if (kinds.size > 2_000) kinds.delete(kinds.keys().next().value!);
     }

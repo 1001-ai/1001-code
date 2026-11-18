@@ -3,23 +3,24 @@ import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
-  findInboxAgentShell,
+  findInboxThread,
+  INBOX_COMPOSER_PLACEHOLDER,
   inboxAgentLockedProvider,
   inboxAgentStatus,
+  inboxComposerPlaceholder,
+  withoutInboxThreads,
 } from "./inboxAgent.logic";
 
 const PROJECT = ProjectId.make("project-acme");
+/** A shell the server made and named Inbox, as every client receives it. */
 const shell = (id: string, fields: Record<string, unknown> = {}) =>
   ({
     id: ThreadId.make(id),
     projectId: PROJECT,
-    lineage: {
-      parentThreadId: null,
-      relationshipToParent: null,
-      rootThreadId: ThreadId.make(id),
-      sideChat: true,
-      inboxAgent: true,
-    },
+    title: "Inbox",
+    createdBy: "system",
+    creationSource: "server",
+    lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: ThreadId.make(id) },
     createdAt: DateTime.makeUnsafe(1_000),
     activeRunId: null,
     activityRunStatus: null,
@@ -29,17 +30,17 @@ const shell = (id: string, fields: Record<string, unknown> = {}) =>
   }) as never;
 
 describe("inboxAgent.logic", () => {
-  it("finds the project's oldest Inbox shell and nothing else", () => {
+  it("finds the project's oldest thread the server made and named Inbox", () => {
     const threads = [
-      shell("chat", {
-        lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: "chat" },
-      }),
+      shell("user-named", { createdBy: "user", creationSource: "web", createdAt: 0 }),
+      shell("agent-named", { createdBy: "agent", creationSource: "mcp" }),
+      shell("chat", { title: "Fix the toolbar" }),
       shell("other", { projectId: ProjectId.make("project-other") }),
       shell("newer", { createdAt: DateTime.makeUnsafe(2_000) }),
       shell("older"),
     ];
-    expect(findInboxAgentShell(threads, PROJECT)).toMatchObject({ id: "older" });
-    expect(findInboxAgentShell(threads.slice(0, 2), PROJECT)).toBeNull();
+    expect(findInboxThread(threads, PROJECT)).toMatchObject({ id: "older" });
+    expect(findInboxThread(threads.slice(0, 4), PROJECT)).toBeNull();
   });
 
   it("shows waiting over running, and idle without a run", () => {
@@ -56,9 +57,24 @@ describe("inboxAgent.logic", () => {
     );
   });
 
-  it("locks only the Inbox's model picker to Claude", () => {
-    expect(inboxAgentLockedProvider(shell("a"))).toBe("claudeAgent");
-    expect(inboxAgentLockedProvider({ lineage: {} })).toBeNull();
+  it("locks only the Inbox's model picker to Claude, and gives only it its placeholder", () => {
+    expect(inboxAgentLockedProvider({ source: shell("a") })).toBe("claudeAgent");
+    expect(inboxAgentLockedProvider({ source: shell("a", { createdBy: "user" }) })).toBeNull();
+    expect(inboxAgentLockedProvider({})).toBeNull();
     expect(inboxAgentLockedProvider(null)).toBeNull();
+    expect(inboxComposerPlaceholder({ source: shell("a") }, "Ask anything")).toBe(
+      INBOX_COMPOSER_PLACEHOLDER,
+    );
+    expect(inboxComposerPlaceholder(undefined, "Ask anything")).toBe("Ask anything");
+  });
+
+  it("leaves the Inbox out of the sidebar's thread list, keeping the list as it is otherwise", () => {
+    const chat = { source: shell("chat", { title: "Fix the toolbar" }) };
+    const inbox = { source: shell("inbox") };
+    const withInbox = [chat, inbox];
+    expect(withoutInboxThreads(withInbox)).toEqual([chat]);
+    expect(withoutInboxThreads(withInbox)).toBe(withoutInboxThreads(withInbox));
+    const plain = [chat];
+    expect(withoutInboxThreads(plain)).toBe(plain);
   });
 });

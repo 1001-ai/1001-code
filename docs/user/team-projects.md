@@ -305,12 +305,16 @@ as "what finished overnight?" or "which threads wait on me?". Open it from the s
 - With **Boring sidebar (group by project)** on, each project folder starts with an **Inbox**
   row. A closed folder hides it, unless the Inbox is open.
 
-A dot on the row shows when the Inbox is working or needs you. The first open
-makes the Inbox, which needs the Claude provider signed in; when it cannot, it says why in one
-line. When you write to it while it is idle, it first reads what changed in the project's
-threads since your previous message to it, and shows that as **What changed** above your
-message.
+A dot on the row shows when the Inbox is working or needs you. The server makes each project's
+Inbox when it starts and when you add a project, once the Claude provider is signed in; until
+then the row and the action are greyed out. The Inbox is an ordinary thread named **Inbox**, so
+the mobile app and other T3 Code apps list it with the project's threads and can use it too. It
+keeps its name and stays on Claude. If you delete it, the server makes a new one the next time it
+starts.
+
+When you write to it while it is idle, it first reads what changed in the project's threads
+since your previous message to it, and shows that as **What changed** above your message.
 
 The Inbox can list, read and search threads, read the [Board](#board) and propose memories. It
-cannot run commands, change files or send messages to other threads. It runs only when you write
-to it.
+cannot run commands, change files or send messages to other threads, and it has no branch,
+commit or terminal controls. It runs only when you write to it.

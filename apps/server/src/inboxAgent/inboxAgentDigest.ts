@@ -26,7 +26,7 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
-import { isInboxAgentThread } from "./inboxAgentThread.ts";
+import { isInboxThread } from "./inboxAgentThreads.ts";
 
 /** The first message to the Inbox looks back this far. */
 const FIRST_DIGEST_LOOKBACK_MS = 24 * 60 * 60 * 1000;
@@ -76,7 +76,7 @@ export function inboxAgentDigest(input: {
     if (
       shell.projectId !== input.projectId ||
       shell.id === input.inboxThreadId ||
-      shell.lineage.inboxAgent === true ||
+      isInboxThread(shell.id) ||
       !isListedThreadLineage(shell.lineage)
     ) {
       continue;
@@ -201,12 +201,14 @@ type MessageDispatch = Extract<OrchestrationV2Command, { readonly type: "message
 export const attachInboxAgentDigest = Effect.fn("InboxAgent.attachDigest")(function* (
   command: MessageDispatch,
 ) {
+  // Every message comes through here: only an Inbox message reads anything.
+  if (!isInboxThread(command.threadId)) return command;
   const threads = yield* ThreadManagementService.ThreadManagementService;
   const inbox = yield* threads.getThreadShell(command.threadId).pipe(
     Effect.orElseSucceed(() => null),
     Effect.catchDefect(() => Effect.succeed(null)),
   );
-  if (inbox === null || !isInboxAgentThread(inbox)) return command;
+  if (inbox === null) return command;
   const stripped = withoutDigestRecord(command.context);
   const plain: MessageDispatch =
     stripped === command.context
@@ -244,9 +246,9 @@ export const attachInboxAgentDigest = Effect.fn("InboxAgent.attachDigest")(funct
 export function inboxAgentProviderText(
   text: string,
   message: { readonly context?: OrchestrationMessageContext | undefined },
-  thread: Pick<OrchestrationV2AppThread, "lineage">,
+  thread: Pick<OrchestrationV2AppThread, "id">,
 ): string {
-  return isInboxAgentThread(thread)
+  return isInboxThread(thread.id)
     ? withInboxAgentDigest(text, inboxAgentDigestOf(message.context))
     : text;
 }

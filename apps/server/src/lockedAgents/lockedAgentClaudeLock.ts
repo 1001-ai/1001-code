@@ -2,7 +2,6 @@ import {
   LOCKED_AGENT_TOOL_NAMES,
   type LockedAgentKind,
   type OrchestrationV2AppThread,
-  lockedAgentKind,
 } from "@t3tools/contracts";
 import {
   INBOX_AGENT_INSTRUCTIONS,
@@ -10,6 +9,7 @@ import {
 } from "@t3tools/provider-core/server/runtimeInstructions";
 
 import type { ClaudeAgentSdkQueryOptions } from "../orchestration-v2/Adapters/ClaudeAdapterV2.ts";
+import { lockedAgentKindOf } from "./lockedAgentKind.ts";
 
 /** The name of T3's MCP server in a Claude query; its tools are `mcp__<server>__<tool>`. */
 const T3_MCP_SERVER = "t3-code";
@@ -70,10 +70,10 @@ const LOCKED_AGENT_CLAUDE_DISALLOWED_TOOLS: ReadonlyArray<string> = [
  */
 export function lockClaudeQueryForLockedAgent(
   options: ClaudeAgentSdkQueryOptions,
-  thread: Pick<OrchestrationV2AppThread, "lineage">,
+  thread: Pick<OrchestrationV2AppThread, "id" | "lineage">,
   memory: string | undefined,
 ): ClaudeAgentSdkQueryOptions {
-  const kind = lockedAgentKind(thread.lineage);
+  const kind = lockedAgentKindOf(thread);
   if (kind === null) return options;
   const profile = PROFILES[kind];
   const {

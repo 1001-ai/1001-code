@@ -23,7 +23,7 @@ import {
   inboxAgentDigestSinceMs,
   inboxAgentProviderText,
 } from "./inboxAgentDigest.ts";
-import { inboxAgentThread } from "./inboxAgentThread.ts";
+import { recordInboxThread } from "./inboxAgentThreads.ts";
 
 const PROJECT = ProjectId.make("project-acme");
 const INBOX = ThreadId.make("inbox-1");
@@ -44,10 +44,9 @@ const thread = (
   ...fields,
 });
 
-const inboxShell = (fields: Partial<OrchestrationV2ThreadShell> = {}) => {
-  const base = thread(INBOX, fields);
-  return { ...base, ...inboxAgentThread(base as never, true) } as OrchestrationV2ThreadShell;
-};
+// An ordinary thread: only the server's record makes it the Inbox.
+recordInboxThread(PROJECT, INBOX);
+const inboxShell = (fields: Partial<OrchestrationV2ThreadShell> = {}) => thread(INBOX, fields);
 
 const digestOf = (shells: ReadonlyArray<OrchestrationV2ThreadShell>) =>
   inboxAgentDigest({

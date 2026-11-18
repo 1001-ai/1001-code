@@ -266,6 +266,7 @@ import {
 import { SidebarDraftBlock } from "./sidebar/SidebarDraftBlock";
 import { SidebarFolderInboxRow } from "./inboxAgent/InboxSidebarRow";
 import { SidebarProjectsSection } from "./inboxAgent/SidebarProjectsSection";
+import { withoutInboxThreads } from "../state/inboxAgent.logic";
 import {
   SidebarProjectFolderHeader,
   sidebarFolderRowId,
@@ -1104,7 +1105,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             ),
           ),
         );
-  const threads = useQuietThreadShells();
+  // Fork: each project's Inbox has its own row; see fork/README.md.
+  const threads = withoutInboxThreads(useQuietThreadShells());
   const promotingDraftThreadKeys = usePromotingDraftThreadKeys();
   const listedThreads =
     promotingDraftThreadKeys.length === 0

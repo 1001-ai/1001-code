@@ -1,11 +1,16 @@
-import { LOCKED_AGENT_TOOL_NAMES, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import {
+  LOCKED_AGENT_TOOL_NAMES,
+  ProjectId,
+  ProviderInstanceId,
+  ThreadId,
+} from "@t3tools/contracts";
 import {
   INBOX_AGENT_INSTRUCTIONS,
   VOICE_AGENT_INSTRUCTIONS,
 } from "@t3tools/provider-core/server/runtimeInstructions";
 import { expect, it } from "@effect/vitest";
 
-import { inboxAgentThread } from "../inboxAgent/inboxAgentThread.ts";
+import { recordInboxThread } from "../inboxAgent/inboxAgentThreads.ts";
 import { liveThreadShell } from "../mcp/McpToolAccess.testkit.ts";
 import { makeClaudeQueryOptions } from "../orchestration-v2/Adapters/ClaudeAdapterV2.ts";
 import { voiceAgentThread } from "../voiceAgent/voiceAgentThread.ts";
@@ -13,7 +18,9 @@ import { lockClaudeQueryForLockedAgent } from "./lockedAgentClaudeLock.ts";
 
 const chat = liveThreadShell(ThreadId.make("chat-1"));
 const voice = voiceAgentThread(chat as never, chat.id, chat);
-const inbox = inboxAgentThread(liveThreadShell(ThreadId.make("inbox-1")) as never, true);
+// An ordinary thread: only the server's record makes it the Inbox.
+const inbox = liveThreadShell(ThreadId.make("inbox-1"));
+recordInboxThread(ProjectId.make("project-acme"), inbox.id);
 
 /** The widest query the adapter builds: Full access, every tool, the user's own launch flags. */
 const fullAccess = () =>
@@ -120,7 +127,7 @@ it("leaves every other thread's query as the adapter built it", () => {
   expect(
     lockClaudeQueryForLockedAgent(
       unlocked,
-      { lineage: { ...chat.lineage, sideChat: true, relationshipToParent: "fork" } },
+      { id: chat.id, lineage: { ...chat.lineage, sideChat: true, relationshipToParent: "fork" } },
       undefined,
     ),
   ).toBe(unlocked);

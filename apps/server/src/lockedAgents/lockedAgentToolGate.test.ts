@@ -4,6 +4,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   EnvironmentId,
   OrchestratorMcpFailure,
+  ProjectId,
   ProviderInstanceId,
   ThreadId,
 } from "@t3tools/contracts";
@@ -14,7 +15,7 @@ import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
 import { HttpBody, HttpClient, HttpRouter } from "effect/http";
 
-import { inboxAgentThread } from "../inboxAgent/inboxAgentThread.ts";
+import { recordInboxThread } from "../inboxAgent/inboxAgentThreads.ts";
 import * as McpHttpServer from "../mcp/McpHttpServer.ts";
 import * as McpInvocationContext from "../mcp/McpInvocationContext.ts";
 import * as McpSessionRegistry from "../mcp/McpSessionRegistry.ts";
@@ -92,15 +93,10 @@ it.effect(
               id: VOICE,
             },
           ],
-          [
-            INBOX,
-            {
-              ...liveThreadShell(INBOX),
-              ...inboxAgentThread(liveThreadShell(INBOX) as never, true),
-              id: INBOX,
-            },
-          ],
+          // An ordinary thread: only the server's record makes it the Inbox.
+          [INBOX, liveThreadShell(INBOX)],
         ]);
+        recordInboxThread(ProjectId.make("project-acme"), INBOX);
         const boardCalls: Array<string> = [];
         const serverLayer = McpHttpServer.layerMcpTransport(
           Layer.mergeAll(

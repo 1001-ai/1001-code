@@ -10,6 +10,7 @@ import { ProjectFavicon, type ProjectFaviconProject } from "../ProjectFavicon";
 import { resolveSidebarRowAccessibility } from "../Sidebar.logic";
 import { sidebarFolderRowId } from "../sidebar/SidebarProjectFolderHeader";
 import { useSidebar } from "../ui/sidebar";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { INBOX_STATUS_DOT, inboxFolderRowVisible } from "./inboxSidebar.logic";
 
 /**
@@ -45,37 +46,47 @@ export const InboxSidebarRow = memo(function InboxSidebarRow(props: {
     projectDisplayName: props.projectDisplayName,
     isActive,
   });
+  const row = (
+    <button
+      type="button"
+      data-sidebar-row={`inbox:${environmentId}:${projectId}`}
+      data-sidebar-parent={props.folderRowId}
+      data-testid="sidebar-inbox-row"
+      aria-label={accessibility.label}
+      aria-current={accessibility.current}
+      disabled={inbox.threadId === null}
+      onClick={() => {
+        if (isMobile) setOpenMobile(false);
+        void inbox.open();
+      }}
+      className={cn(
+        "flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-md px-(--sidebar-row-content-inset) text-left text-sm text-sidebar-foreground outline-none select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:cursor-default disabled:opacity-60",
+        isActive ? "bg-sidebar-row-active" : "hover:bg-sidebar-row-hover",
+      )}
+    >
+      {props.favicon ? (
+        <ProjectFavicon project={props.favicon} className="size-4 shrink-0" />
+      ) : (
+        <InboxIcon aria-hidden className="size-4 shrink-0 text-sidebar-muted-foreground" />
+      )}
+      <span className="min-w-0 flex-1 truncate font-medium text-sidebar-foreground/90">
+        {props.label}
+      </span>
+      {dot ? (
+        <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", dot.className)} />
+      ) : null}
+    </button>
+  );
   return (
     <li className="list-none py-0.5">
-      <button
-        type="button"
-        data-sidebar-row={`inbox:${environmentId}:${projectId}`}
-        data-sidebar-parent={props.folderRowId}
-        data-testid="sidebar-inbox-row"
-        aria-label={accessibility.label}
-        aria-current={accessibility.current}
-        disabled={!inbox.canOpen}
-        onClick={() => {
-          if (isMobile) setOpenMobile(false);
-          void inbox.open();
-        }}
-        className={cn(
-          "flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-md px-(--sidebar-row-content-inset) text-left text-sm text-sidebar-foreground outline-none select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:cursor-default disabled:opacity-60",
-          isActive ? "bg-sidebar-row-active" : "hover:bg-sidebar-row-hover",
-        )}
-      >
-        {props.favicon ? (
-          <ProjectFavicon project={props.favicon} className="size-4 shrink-0" />
-        ) : (
-          <InboxIcon aria-hidden className="size-4 shrink-0 text-sidebar-muted-foreground" />
-        )}
-        <span className="min-w-0 flex-1 truncate font-medium text-sidebar-foreground/90">
-          {props.label}
-        </span>
-        {dot ? (
-          <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", dot.className)} />
-        ) : null}
-      </button>
+      {inbox.unavailableReason === null ? (
+        row
+      ) : (
+        <Tooltip>
+          <TooltipTrigger render={<span className="flex w-full" />}>{row}</TooltipTrigger>
+          <TooltipPopup side="right">{inbox.unavailableReason}</TooltipPopup>
+        </Tooltip>
+      )}
     </li>
   );
 });

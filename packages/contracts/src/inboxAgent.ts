@@ -1,40 +1,38 @@
 import * as Schema from "effect/Schema";
 
-import { IsoDateTime, NonNegativeInt, ProjectId, ThreadId } from "./baseSchemas.ts";
+import { IsoDateTime, NonNegativeInt, ThreadId } from "./baseSchemas.ts";
 import type { OrchestrationMessageContext } from "./composerContext.ts";
+import type { OrchestrationV2ThreadShell } from "./orchestrationV2.ts";
 
 /**
- * Each project has one Inbox agent: a hidden thread one level above the project's threads that
- * the user talks to about all of them. It runs on Claude with read tools only.
+ * Each project has one Inbox: an ordinary thread named "Inbox" that the server makes and that the
+ * user talks to about all of the project's threads. It runs on Claude with read tools only. The
+ * wire carries nothing new for it: the server knows its thread from its own state file, and a
+ * client finds it with `isInboxThreadShell`.
  */
 
 /** The model a new Inbox thread starts on. The user can pick another Claude model. */
 export const INBOX_AGENT_DEFAULT_MODEL = "claude-sonnet-5-5";
 export const INBOX_AGENT_THREAD_TITLE = "Inbox";
 
-export const InboxAgentOpenInput = Schema.Struct({ projectId: ProjectId });
-export type InboxAgentOpenInput = typeof InboxAgentOpenInput.Type;
-
-export const InboxAgentOpenResult = Schema.Union([
-  Schema.Struct({ status: Schema.Literal("ready"), threadId: ThreadId }),
-  /** No Inbox can run here, and the one line that says why. */
-  Schema.Struct({ status: Schema.Literal("unavailable"), message: Schema.String }),
-]);
-export type InboxAgentOpenResult = typeof InboxAgentOpenResult.Type;
-
-export const InboxAgentErrorReason = Schema.Literals(["not-created"]);
-export type InboxAgentErrorReason = typeof InboxAgentErrorReason.Type;
-
-const ERROR_MESSAGES: Record<InboxAgentErrorReason, string> = {
-  "not-created": "The server could not make this project's Inbox. Try again.",
-};
-
-export class InboxAgentError extends Schema.TaggedError<InboxAgentError>()("InboxAgentError", {
-  reason: InboxAgentErrorReason,
-}) {
-  override get message(): string {
-    return ERROR_MESSAGES[this.reason];
-  }
+/**
+ * Whether a thread looks like a project's Inbox from the fields every client already has: the
+ * server made it (no client or agent can create a thread as the system) and it is named "Inbox",
+ * a name the server keeps it from losing. A project's Inbox is the oldest such thread.
+ */
+export function isInboxThreadShell(
+  thread:
+    | Pick<OrchestrationV2ThreadShell, "title" | "createdBy" | "creationSource" | "lineage">
+    | null
+    | undefined,
+): boolean {
+  return (
+    thread != null &&
+    thread.title === INBOX_AGENT_THREAD_TITLE &&
+    thread.createdBy === "system" &&
+    thread.creationSource === "server" &&
+    thread.lineage.parentThreadId === null
+  );
 }
 
 /** The kind of the context record that carries a digest on the user's message. */

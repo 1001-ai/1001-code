@@ -18,7 +18,8 @@ export function useInboxPaletteAction(
     value: "action:open-inbox",
     searchTerms: ["inbox", "project", "threads", "summary", "what changed"],
     title: "Open Inbox",
-    disabled: !inbox.canOpen,
+    disabled: inbox.threadId === null,
+    ...(inbox.unavailableReason === null ? {} : { description: inbox.unavailableReason }),
     icon: <InboxIcon className={ITEM_ICON_CLASS} />,
     run: inbox.open,
   };

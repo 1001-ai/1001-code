@@ -1,17 +1,29 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { inboxAgentDigestOf } from "./inboxAgent.ts";
-import {
-  LOCKED_AGENT_TOOL_NAMES,
-  lockedAgentKind,
-  lockedAgentToolAllowed,
-} from "./lockedAgents.ts";
+import { inboxAgentDigestOf, isInboxThreadShell } from "./inboxAgent.ts";
+import { LOCKED_AGENT_TOOL_NAMES, lockedAgentToolAllowed } from "./lockedAgents.ts";
 
 describe("lockedAgents", () => {
-  it("reads a thread's kind from its lineage", () => {
-    expect(lockedAgentKind({ voiceAgent: true })).toBe("voice");
-    expect(lockedAgentKind({ inboxAgent: true })).toBe("inbox");
-    expect(lockedAgentKind({})).toBeNull();
+  it("knows a project's Inbox only by the server's name for it, made by the server", () => {
+    const lineage = { parentThreadId: null, relationshipToParent: null, rootThreadId: "t" };
+    const inbox = {
+      title: "Inbox",
+      createdBy: "system",
+      creationSource: "server",
+      lineage,
+    } as const;
+    expect(isInboxThreadShell(inbox as never)).toBe(true);
+    expect(
+      isInboxThreadShell({ ...inbox, createdBy: "user", creationSource: "web" } as never),
+    ).toBe(false);
+    expect(
+      isInboxThreadShell({ ...inbox, createdBy: "agent", creationSource: "mcp" } as never),
+    ).toBe(false);
+    expect(isInboxThreadShell({ ...inbox, title: "Inbox 2" } as never)).toBe(false);
+    expect(
+      isInboxThreadShell({ ...inbox, lineage: { ...lineage, parentThreadId: "chat" } } as never),
+    ).toBe(false);
+    expect(isInboxThreadShell(null)).toBe(false);
   });
 
   it.each([

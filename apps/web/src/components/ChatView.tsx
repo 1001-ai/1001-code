@@ -200,7 +200,7 @@ import { toastManager } from "./ui/toast";
 import { projectScriptIdFromCommand } from "~/projectScripts";
 import { newMessageId } from "~/lib/utils";
 import { isInSideChatPane, type SideChatParentPanel } from "~/lib/sideChatPane";
-import { inboxAgentLockedProvider } from "~/state/inboxAgent.logic";
+import { inboxAgentLockedProvider, isInboxClientThread } from "~/state/inboxAgent.logic";
 import {
   NO_PROVIDER_MODEL_SELECTION,
   providerInstanceEntriesFor,
@@ -3286,6 +3286,8 @@ export default function ChatView(props: ChatViewProps) {
     <PanelLayoutControls
       {...panelToggleControlProps}
       showThreadPanelControl={!inlineRightPanelOwnsTitleBar}
+      // Fork: the Inbox has no terminal; see fork/README.md.
+      showTerminalControl={!isInboxClientThread(activeThread)}
     />
   );
   const threadPanelHeaderControl = <ThreadPanelHeaderControl {...panelToggleControlProps} />;
