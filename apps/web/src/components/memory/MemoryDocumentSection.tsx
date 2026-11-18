@@ -54,6 +54,8 @@ export function MemoryDocumentSection(props: {
   readonly failure: string | null;
   readonly pullRequest: TeamCatalogProposal | undefined;
   readonly onEditsChange: (edits: MemoryEdits) => void;
+  /** Pins the lines before an editor opens, so a fetch cannot move the row it writes to. */
+  readonly onBeginEdit: () => void;
   readonly onDiscard: () => void;
   readonly onPropose: () => void;
 }) {
@@ -69,6 +71,14 @@ export function MemoryDocumentSection(props: {
   const change = (next: MemoryEdits) => {
     setEditing(null);
     props.onEditsChange(next);
+  };
+  const begin = (next: Editing) => {
+    props.onBeginEdit();
+    setEditing(next);
+  };
+  const cancel = () => {
+    setEditing(null);
+    if (changes === 0) props.onDiscard();
   };
   const attribution = (line: MemoryLine, prefix = "") =>
     line.author === null && line.pullRequest === null ? null : (
@@ -123,7 +133,7 @@ export function MemoryDocumentSection(props: {
                     size="xs"
                     variant="outline"
                     disabled={props.editBlocked !== null || props.saving}
-                    onClick={() => setEditing({ kind: "new", position: edits.added.length })}
+                    onClick={() => begin({ kind: "new", position: edits.added.length })}
                   >
                     <PlusIcon />
                     Add
@@ -165,7 +175,7 @@ export function MemoryDocumentSection(props: {
                   state={edited === undefined ? "saved" : "edited"}
                   meta={attribution(row.line, "Was by ")}
                   onDone={(text) => change(editRow(edits, row, text))}
-                  onCancel={() => setEditing(null)}
+                  onCancel={cancel}
                 />
               );
             }
@@ -182,7 +192,7 @@ export function MemoryDocumentSection(props: {
                       : attribution(row.line)
                 }
                 editBlocked={props.editBlocked ?? (props.saving ? "Proposing…" : null)}
-                onEdit={() => setEditing({ kind: "row", index: row.index })}
+                onEdit={() => begin({ kind: "row", index: row.index })}
                 onRemove={() => change(removeRow(edits, row.index))}
               />
             );
@@ -197,7 +207,7 @@ export function MemoryDocumentSection(props: {
                 state="new"
                 meta="New"
                 onDone={(next) => change(setAdded(edits, position, next))}
-                onCancel={() => setEditing(null)}
+                onCancel={cancel}
               />
             ) : (
               <MemoryRowView
@@ -207,7 +217,7 @@ export function MemoryDocumentSection(props: {
                 state="new"
                 meta="New"
                 editBlocked={props.editBlocked ?? (props.saving ? "Proposing…" : null)}
-                onEdit={() => setEditing({ kind: "new", position })}
+                onEdit={() => begin({ kind: "new", position })}
                 onRemove={() => change(setAdded(edits, position, ""))}
               />
             ),

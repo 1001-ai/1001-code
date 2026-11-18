@@ -28,7 +28,7 @@ import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { MemoryDocumentSection, type MemoryDraft } from "./MemoryDocumentSection";
 import { MemoryDecisionButtons, MemoryReplaces, useMemoryDecision } from "./MemoryProposalCard";
-import { changeCount, type MemoryEdits, memoryFileText } from "./memoryRows.logic";
+import { changeCount, type MemoryEdits, memoryFileText, NO_EDITS } from "./memoryRows.logic";
 import { VoiceAgentMemories } from "./VoiceAgentMemories";
 
 const TABS = ["team", "project", "personal", "voice", "proposals"] as const;
@@ -153,7 +153,14 @@ function MemoryDocuments(props: {
     setDrafts((current) => ({ ...current, [scope]: undefined }));
     setFailure(scope, undefined);
   };
-  // The first change pins the lines and revision it was made on, so a fetch never moves the rows.
+  // Opening an editor pins the lines and revision, so a fetch never moves the rows being changed.
+  const pinDraft = (document: MemoryDocument) => {
+    if (drafts[document.scope] !== undefined || view.revision === null) return;
+    setDrafts({
+      ...drafts,
+      [document.scope]: { baseRevision: view.revision, lines: document.lines, edits: NO_EDITS },
+    });
+  };
   const changeDraft = (document: MemoryDocument, edits: MemoryEdits) => {
     if (changeCount(edits) === 0) return dropDraft(document.scope);
     const current = drafts[document.scope];
@@ -269,6 +276,7 @@ function MemoryDocuments(props: {
                 failure={failures[document.scope] ?? null}
                 pullRequest={pullRequests[document.scope]}
                 onEditsChange={(edits) => changeDraft(document, edits)}
+                onBeginEdit={() => pinDraft(document)}
                 onDiscard={() => dropDraft(document.scope)}
                 onPropose={() => void submit(document.scope)}
               />
