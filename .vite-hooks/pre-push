@@ -1,0 +1,9 @@
+#!/usr/bin/env sh
+# Pushes are checked against the private build's term list. See fork/README.md.
+dir="${T3CODE_PRIVATE_DIR:-$(git config --get t3code.privateDir || true)}"
+scan="$dir/checks/public-text/scan.mjs"
+if [ -z "$dir" ] || [ ! -f "$scan" ]; then
+  echo "Push blocked: set T3CODE_PRIVATE_DIR or run 'git config t3code.privateDir <path>' to name the private checkout." >&2
+  exit 1
+fi
+node "$scan"

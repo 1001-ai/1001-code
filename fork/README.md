@@ -61,6 +61,13 @@ One entry for each place this fork changes a file upstream owns, or replaces som
 - **On conflict:** none, but GitHub enables a new workflow file as soon as a sync brings it in.
 - **Check:** `gh workflow list -R 1001-ai/1001-code` lists only `CI` and `Agent Context Budget`. Disable anything else unless it is a check this fork wants, and add it here if so.
 
+### Pushes are checked against the private build's term list
+
+- **Where:** `.vite-hooks/pre-push`, which is fork-only. `vp config` points `core.hooksPath` at `.vite-hooks/_`, whose `pre-push` wrapper runs it.
+- **Why:** this repository is public, so a fork commit must not carry private details. The term list and the scanner live in the private checkout, so this repository names neither. The hook finds the checkout through `T3CODE_PRIVATE_DIR`, else `git config t3code.privateDir`, and pipes git's pre-push lines to its `checks/public-text/scan.mjs`. With neither set, every push is blocked. Upstream's commits are never scanned, so a sync passes. Set it up once per clone: `git config t3code.privateDir <path to the private checkout>`.
+- **On conflict:** if upstream adds its own `.vite-hooks/pre-push`, keep upstream's commands and run the private check first.
+- **Check:** `git push` from a clone without `t3code.privateDir` set is blocked with a message naming it.
+
 ### Sending while scrolled up keeps your place
 
 - **Where:** `apps/web/src/components/chat/useTimelineFollow.ts` (one guard at the top of `anchorNewTurn`, and the new `scrollOnSend` it returns), `apps/web/src/components/ChatView.tsx` (destructures `scrollOnSend` and passes it as `scrollToEnd` to `useThreadLifecycle` and `useComposerResume`, which scroll after `/compact`, goal commands and resume). The rule itself is `sendKeepsReaderPlace` in `chat/sendKeepsPlace.logic.ts`, a fork-only file.
