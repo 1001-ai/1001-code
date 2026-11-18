@@ -182,8 +182,9 @@ const make = Effect.gen(function* () {
       projectId,
       title: INBOX_AGENT_THREAD_TITLE,
       modelSelection: { instanceId: provider.instanceId, model: INBOX_AGENT_DEFAULT_MODEL },
-      // The lowest mode. The tool lock does not depend on it, but nothing should ask for more.
-      runtimeMode: "approval-required",
+      // `t3_thread_send` refuses targets in broader modes than the caller's. The tool lock still
+      // gives the Inbox no shell or file tools.
+      runtimeMode: "full-access",
       interactionMode: "default",
       branch: null,
       worktreePath: null,

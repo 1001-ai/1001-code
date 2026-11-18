@@ -754,12 +754,12 @@ it("gives a board case T3's board text, its board tools and Linear's, and grades
   assert.deepEqual(failed(question.expect, run(filed)), ["notCalls board_add"]);
 });
 
-it("gives an inbox agent case its instructions, the project memory and its read tools", () => {
+it("gives an inbox agent case its instructions, the project memory and its tools", () => {
   const cases = NodeFS.readFileSync(new URL("./cases/inbox-agent.ndjson", import.meta.url), "utf8")
     .trim()
     .split("\n")
     .map((line) => decodeDeviceCase(line));
-  assert.isAtLeast(cases.length, 8);
+  assert.isAtLeast(cases.length, 12);
   for (const testCase of cases) {
     assert.isTrue(testCase.setup.memory?.inboxAgent, testCase.id);
     // Each message carries its digest first, as the server sends it.
@@ -782,6 +782,8 @@ it("gives an inbox agent case its instructions, the project memory and its read 
     "mcp__t3-code__t3_thread_list",
     "mcp__t3-code__t3_thread_read",
     "mcp__t3-code__t3_thread_search",
+    "mcp__t3-code__t3_thread_send",
+    "mcp__t3-code__t3_thread_wait",
   ]);
 });
 
