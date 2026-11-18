@@ -180,10 +180,12 @@ them. The text is limited to about 8 KB in total, roughly 2,000 tokens.
 
 Open **Memory** from the right panel's new surface menu or the command palette, in a
 thread of the project. **Team**, **Project** and **Personal** show each file as it was last
-fetched (**Personal** shows both of yours); **What agents get** shows the exact text agents receive and its size. **Edit** changes
-a file and **Propose change** opens a pull request on the catalog repository, as link changes
-do. The change is pending until it is merged; the repository's review rules decide who approves
-it, including for personal files.
+fetched, one memory per row with who last changed it, when, and in which pull request
+(**Personal** shows both of yours); **What agents get** shows the exact text agents receive and
+its size. Hover a row to edit or remove it, or use **Add** for a new one. Changes to a file
+collect until **Propose change** opens one pull request on the catalog repository, as link
+changes do. The change is pending until it is merged; the repository's review rules decide who
+approves it, including for personal files.
 
 ### Memories agents propose
 

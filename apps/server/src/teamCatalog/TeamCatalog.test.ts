@@ -538,3 +538,104 @@ it.live("reads the fetched catalog's files and proposes whole files as a branch"
     }),
   ),
 );
+
+it.live("completes a shallow checkout and says who last wrote each line of a file", () =>
+  withCatalog(({ catalog, stateDir, service }) =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const runner = yield* ProcessRunner.ProcessRunner;
+      const checkout = `${stateDir}/team-catalog/checkout`;
+      const output = (cwd: string, args: ReadonlyArray<string>) =>
+        runner
+          .run({ command: "git", args: ["-C", cwd, ...args] })
+          .pipe(Effect.map((result) => result.stdout.trim()));
+      const write = (
+        text: string,
+        author: { readonly name: string; readonly date: string },
+        message: string,
+      ) =>
+        Effect.gen(function* () {
+          yield* fileSystem.makeDirectory(`${catalog}/memory`, { recursive: true });
+          yield* fileSystem.writeFileString(`${catalog}/memory/team.md`, text);
+          yield* git(catalog, ["add", "--all"]);
+          const result = yield* runner.run({
+            command: "git",
+            args: ["-C", catalog, "commit", "--quiet", "-m", message],
+            env: {
+              ...process.env,
+              ...GIT_IDENTITY,
+              GIT_AUTHOR_NAME: author.name,
+              GIT_AUTHOR_EMAIL: "author@acme.test",
+              GIT_AUTHOR_DATE: author.date,
+            },
+          });
+          expect(result.code, result.stderr).toBe(0);
+        });
+      const ada = { name: "Ada Lovelace", date: "2026-03-02T10:00:00Z" };
+      const grace = { name: "Grace Hopper", date: "2026-03-09T12:30:00Z" };
+      yield* write(
+        "# Team memory\n\n- Prefer small pull requests.\n",
+        ada,
+        "Remember for the team: Prefer small pull requests. (#3)",
+      );
+      yield* write(
+        "# Team memory\n\n- Prefer small pull requests.\n- Run the tests before pushing.\n",
+        grace,
+        "Add a testing rule",
+      );
+      yield* service.setSource(catalog);
+      expect((yield* service.blame("memory/team.md"))?.[2]).toMatchObject({
+        text: "- Prefer small pull requests.",
+        pullRequest: 3,
+      });
+
+      // A checkout fetched before history was kept is shallow.
+      yield* fileSystem.remove(checkout, { recursive: true });
+      yield* fileSystem.makeDirectory(checkout, { recursive: true });
+      yield* git(checkout, ["init", "--quiet"]);
+      yield* git(checkout, ["config", "t3code.catalogSource", catalog]);
+      yield* git(checkout, ["fetch", "--quiet", "--depth=1", `file://${catalog}`, "HEAD"]);
+      yield* git(checkout, ["checkout", "--quiet", "--detach", "FETCH_HEAD"]);
+      expect(yield* output(checkout, ["rev-parse", "--is-shallow-repository"])).toBe("true");
+
+      yield* write(
+        "# Team memory\n\n- Prefer one change per pull request.\n- Run the tests before pushing.\n",
+        ada,
+        "Remember for the team: Prefer one change per pull request. (#14)",
+      );
+      const fetched = yield* service.refresh({ force: true });
+      expect(yield* output(checkout, ["rev-parse", "--is-shallow-repository"])).toBe("false");
+      expect(yield* output(checkout, ["rev-list", "--count", "HEAD"])).toBe("3");
+
+      const lines = yield* service.blame("memory/team.md");
+      expect(lines?.map(({ commit: _commit, ...line }) => line)).toEqual([
+        {
+          text: "# Team memory",
+          author: "Ada Lovelace",
+          authoredAt: "2026-03-02T10:00:00.000Z",
+          pullRequest: 3,
+        },
+        {
+          text: "",
+          author: "Ada Lovelace",
+          authoredAt: "2026-03-02T10:00:00.000Z",
+          pullRequest: 3,
+        },
+        {
+          text: "- Prefer one change per pull request.",
+          author: "Ada Lovelace",
+          authoredAt: "2026-03-02T10:00:00.000Z",
+          pullRequest: 14,
+        },
+        {
+          text: "- Run the tests before pushing.",
+          author: "Grace Hopper",
+          authoredAt: "2026-03-09T12:30:00.000Z",
+          pullRequest: null,
+        },
+      ]);
+      expect(lines?.[2]?.commit).toBe(fetched.revision);
+      expect(yield* service.blame("memory/people/alice.md")).toBeNull();
+    }),
+  ),
+);
