@@ -1,5 +1,14 @@
 import type { ProjectId, ProjectMoment, ScopedThreadRef } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
+import {
+  BotMessageSquareIcon,
+  CheckIcon,
+  FlaskConicalIcon,
+  type LucideIcon,
+  MessageCircleQuestionMarkIcon,
+  MessageSquarePlusIcon,
+  PlayIcon,
+} from "lucide-react";
 import * as Schema from "effect/Schema";
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 
@@ -12,6 +21,7 @@ import { agentsBoardRefresh, useAgentsBoard } from "~/state/agentsBoard";
 import { useTeamCatalog } from "~/state/teamCatalog";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { formatShortTimestamp } from "~/timestampFormat";
+import { PULL_REQUEST_STATE_PRESENTATION } from "../pullRequest/pullRequestIcons";
 import { Button } from "../ui/button";
 import { Switch } from "../ui/switch";
 import type { MessagesTimelineRow } from "./MessagesTimeline.logic";
@@ -30,24 +40,28 @@ const WINDOW_MILLIS = 7 * 24 * 60 * 60 * 1000;
 // The board is fetched on subscribe and refresh only; focus asks again at most this often.
 const BOARD_FOCUS_REFRESH_MILLIS = 60_000;
 
-const TONE_BORDER: Record<MomentTone, string> = {
-  ask: "border-warning/25",
-  prompt: "border-info/25",
-  agent: "border-guest/25",
-  done: "border-success/25",
-  testing: "border-update/25",
-  merged: "border-primary/25",
-  started: "border-info/25",
+const TONE_ICON: Record<MomentTone, { readonly Icon: LucideIcon; readonly color: string }> = {
+  ask: { Icon: MessageCircleQuestionMarkIcon, color: "text-warning" },
+  prompt: { Icon: MessageSquarePlusIcon, color: "text-info" },
+  agent: { Icon: BotMessageSquareIcon, color: "text-guest" },
+  done: { Icon: CheckIcon, color: "text-success" },
+  testing: { Icon: FlaskConicalIcon, color: "text-update" },
+  merged: {
+    Icon: PULL_REQUEST_STATE_PRESENTATION.merged.Icon,
+    color: PULL_REQUEST_STATE_PRESENTATION.merged.toneClassName,
+  },
+  started: { Icon: PlayIcon, color: "text-info" },
 };
-const TONE_BORDER_STRONG: Record<MomentTone, string> = {
-  ask: "border-warning/50",
-  prompt: "border-info/50",
-  agent: "border-guest/50",
-  done: "border-success/50",
-  testing: "border-update/50",
-  merged: "border-primary/50",
-  started: "border-info/50",
-};
+
+function MomentIcon({ tone, className }: { tone: MomentTone; className?: string }) {
+  const { Icon, color } = TONE_ICON[tone];
+  return <Icon aria-hidden="true" className={cn("shrink-0", color, className)} />;
+}
+
+// The prompt box's glass surface. Cards sit over the empty gutter, so they skip its backdrop
+// blur (a blur per card costs a layer each and shows nothing there); the hover detail keeps it.
+const MOMENT_GLASS =
+  "border border-border bg-(--moment-glass)/(--glass-opacity) [--moment-glass:var(--card)] dark:[--moment-glass:var(--surface-raised)] [html[data-theme-id]_&]:[--moment-glass:var(--app-theme-surface-raised)]";
 
 interface HoveredCard {
   readonly card: MomentCard;
@@ -237,8 +251,8 @@ export function TimelineMomentCards({
                 <button
                   type="button"
                   className={cn(
-                    "min-w-0 cursor-pointer truncate rounded-lg border bg-card/90 px-2.5 py-1 text-left font-medium text-foreground text-xs leading-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
-                    TONE_BORDER[card.tone],
+                    "flex min-w-0 cursor-pointer items-center gap-1.5 rounded-lg px-2 py-1 text-left font-medium text-foreground text-xs leading-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+                    MOMENT_GLASS,
                     card.personal && "ms-3",
                   )}
                   style={{ maxWidth: cardMaxWidth }}
@@ -246,7 +260,8 @@ export function TimelineMomentCards({
                   onFocus={(event) => showDetail(card, event.currentTarget)}
                   onClick={(event) => primaryAction(card, event)}
                 >
-                  {card.label}
+                  <MomentIcon tone={card.tone} className="size-3.5" />
+                  <span className="truncate">{card.label}</span>
                 </button>
                 <time
                   className="shrink-0 font-mono text-2xs text-muted-foreground"
@@ -301,17 +316,18 @@ function MomentCardDetail({
     // Overlaps the message column like the minimap's preview; it grows in place from the card.
     <div
       className={cn(
-        "pointer-events-auto absolute z-50 w-max max-w-80 origin-top-left rounded-xl border bg-popover p-3 text-left text-popover-foreground shadow-xl shadow-black/25 transition-[opacity,scale] duration-150 ease-out starting:scale-95 starting:opacity-0 motion-reduce:transition-none motion-reduce:starting:scale-100 motion-reduce:starting:opacity-100",
-        TONE_BORDER_STRONG[card.tone],
+        "pointer-events-auto absolute z-50 w-max max-w-80 origin-top-left rounded-xl p-3 text-left text-popover-foreground shadow-xl backdrop-blur-(--glass-blur) backdrop-saturate-(--glass-saturation) shadow-black/25 transition-[opacity,scale] duration-150 ease-out starting:scale-95 starting:opacity-0 motion-reduce:transition-none motion-reduce:starting:scale-100 motion-reduce:starting:opacity-100",
+        MOMENT_GLASS,
       )}
       style={{ top: hovered.top, left: hovered.left, minWidth: hovered.minWidth }}
       onPointerLeave={onLeave}
     >
       <button
         type="button"
-        className="block cursor-pointer text-left font-medium text-sm leading-5 focus-visible:outline-none"
+        className="flex cursor-pointer items-center gap-1.5 text-left font-medium text-sm leading-5 focus-visible:outline-none"
         onClick={onPrimary}
       >
+        <MomentIcon tone={card.tone} className="size-4" />
         {card.label}
       </button>
       {source ? <div className="mt-0.5 text-muted-foreground text-xs">{source}</div> : null}
