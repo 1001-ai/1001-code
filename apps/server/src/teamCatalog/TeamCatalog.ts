@@ -1,5 +1,6 @@
 import {
   checkTeamCatalogProposal,
+  type MemoryLine,
   isTeamCatalogSource,
   TEAM_CATALOG_PROJECTS_DIRECTORY,
   TeamCatalogError,
@@ -36,6 +37,7 @@ import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolv
 import * as ServerSettings from "../serverSettings.ts";
 import { unsetInheritedRepositoryEnv } from "../vcs/VcsProcess.ts";
 import * as TeamCatalogAccess from "./TeamCatalogAccess.ts";
+import { parseBlamePorcelain } from "./teamCatalogBlame.ts";
 import { hostedRepositoryOf, proposalFileText, proposalText } from "./teamCatalogProposal.ts";
 import {
   type DecodedTeamCatalog,
@@ -72,6 +74,11 @@ export class TeamCatalog extends Context.Service<
     readonly liveViewer: Effect.Effect<TeamCatalogViewer>;
     /** A file of the last fetch, by its path in the catalog; null when it has none. */
     readonly readFile: (file: string) => Effect.Effect<string | null>;
+    /**
+     * Who last wrote each line of a file at the fetched revision, kept until the next revision;
+     * null when git cannot say, such as for a file the revision does not have.
+     */
+    readonly blame: (file: string) => Effect.Effect<ReadonlyArray<MemoryLine> | null>;
     /** Proposes whole files, as `propose` does, under the GitHub CLI's login. */
     readonly proposeFiles: (
       input: TeamCatalogFilesProposal,
@@ -201,12 +208,15 @@ const make = Effect.gen(function* () {
       yield* git(["init", "--quiet", checkoutPath]);
       yield* git(["-C", checkoutPath, "config", CHECKOUT_SOURCE_KEY, source]);
     }
+    // Memory shows who wrote each line, so the history is fetched whole; checkouts from before
+    // that were shallow and are completed once.
+    const shallow = yield* git(["-C", checkoutPath, "rev-parse", "--is-shallow-repository"]);
     yield* git([
       "-C",
       checkoutPath,
       "fetch",
       "--quiet",
-      "--depth=1",
+      ...(shallow === "true" ? ["--unshallow"] : []),
       "--no-tags",
       "--",
       source,
@@ -633,6 +643,38 @@ const make = Effect.gen(function* () {
       Effect.orElseSucceed(() => null),
     );
 
+  const blameCache = yield* Ref.make<{
+    readonly revision: string | null;
+    readonly files: ReadonlyMap<string, ReadonlyArray<MemoryLine>>;
+  }>({ revision: null, files: new Map() });
+  const blameLock = yield* Semaphore.make(1);
+
+  const blame: TeamCatalog["Service"]["blame"] = Effect.fn("TeamCatalog.blame")(
+    function* (file) {
+      const { source, revision } = yield* SubscriptionRef.get(state);
+      if (source === null || revision === null) return null;
+      const cached = yield* Ref.get(blameCache);
+      const known = cached.revision === revision ? cached.files.get(file) : undefined;
+      if (known !== undefined) return known;
+      // Not through `git`, whose trimmed output would drop a trailing blank line.
+      const output = yield* processRunner.run({
+        command: "git",
+        args: ["-C", checkoutPath, "blame", "--line-porcelain", "--root", revision, "--", file],
+        env,
+        timeout: FETCH_TIMEOUT,
+      });
+      if (output.code !== 0) return null;
+      const lines = parseBlamePorcelain(output.stdout);
+      yield* Ref.update(blameCache, (current) => ({
+        revision,
+        files: new Map([...(current.revision === revision ? current.files : []), [file, lines]]),
+      }));
+      return lines;
+    },
+    blameLock.withPermits(1),
+    Effect.orElseSucceed(() => null),
+  );
+
   return TeamCatalog.of({
     snapshot: SubscriptionRef.get(state),
     changes,
@@ -641,6 +683,7 @@ const make = Effect.gen(function* () {
     propose,
     liveViewer,
     readFile,
+    blame,
     proposeFiles,
     mergeProposal,
   });

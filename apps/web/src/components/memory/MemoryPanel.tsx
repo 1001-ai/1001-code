@@ -11,32 +11,24 @@ import {
   type MemoryView,
 } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
-import {
-  ExternalLinkIcon,
-  GitBranchIcon,
-  PencilIcon,
-  ScrollTextIcon,
-  Settings2Icon,
-} from "lucide-react";
+import { ScrollTextIcon, Settings2Icon } from "lucide-react";
 import { useState } from "react";
 
-import { useOpenLink } from "~/browser/useOpenLink";
 import { useEnvironmentScope } from "~/state/session";
 import { teamCatalogRefresh } from "~/state/teamCatalog";
 import { memoryPropose, useMemory } from "~/state/memory";
 import { useAtomCommand } from "~/state/use-atom-command";
-import ChatMarkdown from "../ChatMarkdown";
 import { RelativeTime } from "../RelativeTime";
-import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "../ui/empty";
 import { RefreshIcon } from "../ui/refresh-icon";
 import { Spinner } from "../ui/spinner";
-import { Textarea } from "../ui/textarea";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { MemoryDocumentSection, type MemoryDraft } from "./MemoryDocumentSection";
 import { MemoryDecisionButtons, MemoryReplaces, useMemoryDecision } from "./MemoryProposalCard";
+import { changeCount, type MemoryEdits, memoryFileText, NO_EDITS } from "./memoryRows.logic";
 import { VoiceAgentMemories } from "./VoiceAgentMemories";
 
 const TABS = ["team", "project", "personal", "voice", "proposals"] as const;
@@ -56,13 +48,6 @@ const TAB_SCOPES: Record<Exclude<Tab, "voice" | "proposals">, ReadonlyArray<Memo
   personal: ["personal-project", "personal"],
 };
 
-const SCOPE_LABEL: Record<MemoryScope, string> = {
-  team: "Team",
-  project: "Project",
-  personal: "Yours, in every project",
-  "personal-project": "Yours, in this project",
-};
-
 const isTab = (value: unknown): value is Tab => TABS.some((tab) => tab === value);
 
 /** Revision, size and an approximate token count, at about four bytes a token. */
@@ -75,13 +60,7 @@ function blockStatus(view: MemoryView): string {
   return `${size} · ${revision}${view.truncated ? " · over the limit, so the end is left out" : ""}`;
 }
 
-interface Draft {
-  readonly scope: MemoryScope;
-  readonly baseRevision: string;
-  readonly text: string;
-}
-
-/** The project's memory in the right panel: markdown read in place, edited as a pull request. */
+/** The project's memory in the right panel: one row per line with its author, changed as a pull request. */
 export default function MemoryPanel(props: {
   readonly threadRef: ScopedThreadRef;
   readonly projectId: ProjectId | null;
@@ -144,9 +123,9 @@ function MemoryDocuments(props: {
   const canPush = useEnvironmentScope(environmentId, AuthSourceControlWriteScope);
   const propose = useAtomCommand(memoryPropose, { reportFailure: false });
   const [tab, setTab] = useState<Tab>("team");
-  const [draft, setDraft] = useState<Draft | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [failure, setFailure] = useState<string | null>(null);
+  const [drafts, setDrafts] = useState<Partial<Record<MemoryScope, MemoryDraft>>>({});
+  const [saving, setSaving] = useState<MemoryScope | null>(null);
+  const [failures, setFailures] = useState<Partial<Record<MemoryScope, string>>>({});
   const [pullRequests, setPullRequests] = useState<
     Partial<Record<MemoryScope, TeamCatalogProposal>>
   >({});
@@ -164,29 +143,61 @@ function MemoryDocuments(props: {
     ? "This connection cannot push to the team repository."
     : view.viewer.login === null
       ? (view.viewer.problem ?? "Sign in to the GitHub CLI with gh auth login to propose changes.")
-      : null;
+      : view.revision === null
+        ? "The team repository has not been fetched yet."
+        : null;
 
-  const submit = async () => {
-    if (draft === null) return;
-    setSaving(true);
-    setFailure(null);
+  const setFailure = (scope: MemoryScope, failure: string | undefined) =>
+    setFailures((current) => ({ ...current, [scope]: failure }));
+  const dropDraft = (scope: MemoryScope) => {
+    setDrafts((current) => ({ ...current, [scope]: undefined }));
+    setFailure(scope, undefined);
+  };
+  // Opening an editor pins the lines and revision, so a fetch never moves the rows being changed.
+  const pinDraft = (document: MemoryDocument) => {
+    if (drafts[document.scope] !== undefined || view.revision === null) return;
+    setDrafts({
+      ...drafts,
+      [document.scope]: { baseRevision: view.revision, lines: document.lines, edits: NO_EDITS },
+    });
+  };
+  const changeDraft = (document: MemoryDocument, edits: MemoryEdits) => {
+    if (changeCount(edits) === 0) return dropDraft(document.scope);
+    const current = drafts[document.scope];
+    if (current === undefined && view.revision === null) return;
+    setDrafts({
+      ...drafts,
+      [document.scope]: current
+        ? { ...current, edits }
+        : { baseRevision: view.revision!, lines: document.lines, edits },
+    });
+  };
+
+  const submit = async (scope: MemoryScope) => {
+    const draft = drafts[scope];
+    if (draft === undefined) return;
+    setSaving(scope);
+    setFailure(scope, undefined);
     const result = await propose({
       environmentId,
       input: {
         projectId: props.projectId,
-        scope: draft.scope,
+        scope,
         baseRevision: draft.baseRevision,
-        text: draft.text,
+        text: memoryFileText(draft.lines, draft.edits),
       },
     });
-    setSaving(false);
+    setSaving(null);
     if (result._tag === "Failure") {
       const error = squashAtomCommandFailure(result);
-      setFailure(error instanceof Error ? error.message : "The change could not be proposed.");
+      setFailure(
+        scope,
+        error instanceof Error ? error.message : "The change could not be proposed.",
+      );
       return;
     }
-    setPullRequests({ ...pullRequests, [draft.scope]: result.value });
-    setDraft(null);
+    setPullRequests({ ...pullRequests, [scope]: result.value });
+    dropDraft(scope);
   };
 
   return (
@@ -197,10 +208,16 @@ function MemoryDocuments(props: {
           value={[tab]}
           onValueChange={(next) => {
             const value = next[0];
-            if (isTab(value)) {
-              setTab(value);
-              setFailure(null);
-            }
+            if (!isTab(value)) return;
+            setTab(value);
+            // A tab switch closes any open editor, so drop the pins it left with no changes.
+            setDrafts((current) =>
+              Object.fromEntries(
+                Object.entries(current).filter(
+                  ([, draft]) => draft !== undefined && changeCount(draft.edits) > 0,
+                ),
+              ),
+            );
           }}
         >
           {TABS.map((candidate) => (
@@ -260,27 +277,17 @@ function MemoryDocuments(props: {
               <MemoryDocumentSection
                 key={document.scope}
                 threadRef={props.threadRef}
+                source={view.source}
                 document={document}
-                editing={draft !== null && draft.scope === document.scope ? draft : null}
+                draft={drafts[document.scope] ?? null}
                 editBlocked={editBlocked}
-                saving={saving}
-                failure={failure}
+                saving={saving === document.scope}
+                failure={failures[document.scope] ?? null}
                 pullRequest={pullRequests[document.scope]}
-                onEdit={() => {
-                  if (view.revision === null) return;
-                  setFailure(null);
-                  setDraft({
-                    scope: document.scope,
-                    baseRevision: view.revision,
-                    text: document.text,
-                  });
-                }}
-                onChange={(text) => setDraft((current) => (current ? { ...current, text } : null))}
-                onCancel={() => {
-                  setDraft(null);
-                  setFailure(null);
-                }}
-                onSubmit={() => void submit()}
+                onEditsChange={(edits) => changeDraft(document, edits)}
+                onBeginEdit={() => pinDraft(document)}
+                onDiscard={() => dropDraft(document.scope)}
+                onPropose={() => void submit(document.scope)}
               />
             ))}
             {tab === "voice" ? <VoiceAgentMemories document={view.voiceAgent} /> : null}
@@ -300,107 +307,6 @@ function MemoryDocuments(props: {
           </details>
         ) : null}
       </div>
-    </div>
-  );
-}
-
-function MemoryDocumentSection(props: {
-  readonly threadRef: ScopedThreadRef;
-  readonly document: MemoryDocument;
-  readonly editing: Draft | null;
-  readonly editBlocked: string | null;
-  readonly saving: boolean;
-  readonly failure: string | null;
-  readonly pullRequest: TeamCatalogProposal | undefined;
-  readonly onEdit: () => void;
-  readonly onChange: (text: string) => void;
-  readonly onCancel: () => void;
-  readonly onSubmit: () => void;
-}) {
-  const { document, editing, pullRequest } = props;
-  const openLink = useOpenLink(props.threadRef);
-  return (
-    <div className="space-y-3">
-      <DocumentHeading
-        document={document}
-        editing={editing !== null}
-        editBlocked={props.editBlocked}
-        onEdit={props.onEdit}
-      />
-      {document.file === null ? (
-        <p className="text-sm text-muted-foreground">{document.unavailable}</p>
-      ) : editing !== null ? (
-        <div className="space-y-2">
-          <Textarea
-            aria-label={`${SCOPE_LABEL[document.scope]} memory`}
-            rows={16}
-            value={editing.text}
-            maxLength={MEMORY_MAX_BYTES}
-            onChange={(event) => props.onChange(event.target.value)}
-            placeholder={"- One memory per line, in plain words.\n- Another one."}
-          />
-          <p className="text-xs text-muted-foreground">
-            Saving opens a pull request on the team repository. The change is pending until it is
-            merged; the repository's review rules decide who approves it.
-          </p>
-          {props.failure !== null ? (
-            <p className="text-sm text-destructive-foreground">{props.failure}</p>
-          ) : null}
-          <div className="flex flex-wrap justify-end gap-2">
-            <Button size="sm" variant="outline" disabled={props.saving} onClick={props.onCancel}>
-              Cancel
-            </Button>
-            <Button
-              size="sm"
-              disabled={props.saving || editing.text === document.text}
-              onClick={props.onSubmit}
-            >
-              <GitBranchIcon />
-              {props.saving ? "Proposing…" : "Propose change"}
-            </Button>
-          </div>
-        </div>
-      ) : document.text.trim() === "" ? (
-        <p className="text-sm text-muted-foreground">Nothing saved here yet.</p>
-      ) : (
-        <ChatMarkdown
-          text={document.text}
-          cwd={undefined}
-          environmentId={props.threadRef.environmentId}
-          threadRef={props.threadRef}
-        />
-      )}
-      {pullRequest !== undefined && editing === null ? (
-        <Alert variant="success">
-          <GitBranchIcon />
-          <AlertTitle>
-            {pullRequest.pullRequestUrl === null
-              ? "Branch pushed, pending until merged"
-              : "Pull request opened, pending until merged"}
-          </AlertTitle>
-          <AlertDescription>
-            <p>
-              <code className="text-xs break-all">{pullRequest.branch}</code> changes{" "}
-              {pullRequest.files.join(" and ")}. Agents get it once it is merged and fetched.
-            </p>
-            {pullRequest.pullRequestProblem !== null ? (
-              <p>No pull request was opened: {pullRequest.pullRequestProblem}</p>
-            ) : null}
-            {pullRequest.pullRequestUrl !== null ? (
-              <Button
-                variant="outline"
-                size="xs"
-                onClick={(event) =>
-                  void openLink(pullRequest.pullRequestUrl!, { event }).catch(() => undefined)
-                }
-              >
-                <ExternalLinkIcon />
-                Open pull request
-              </Button>
-            ) : null}
-          </AlertDescription>
-        </Alert>
-      ) : null}
     </div>
   );
 }
@@ -470,51 +376,6 @@ function MemoryProposals(props: {
           </div>
         </div>
       ))}
-    </div>
-  );
-}
-
-function DocumentHeading(props: {
-  readonly document: MemoryDocument;
-  readonly editing: boolean;
-  readonly editBlocked: string | null;
-  readonly onEdit: () => void;
-}) {
-  const { document } = props;
-  const title =
-    document.scope === "project" && document.label !== null
-      ? `${SCOPE_LABEL.project} · ${document.label}`
-      : SCOPE_LABEL[document.scope];
-  return (
-    <div className="flex items-start gap-2">
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium">{title}</div>
-        {document.file !== null && (
-          <div className="truncate text-xs text-muted-foreground">
-            <code>{document.file}</code>
-          </div>
-        )}
-      </div>
-      {document.file !== null && !props.editing ? (
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <span>
-                <Button
-                  size="xs"
-                  variant="outline"
-                  disabled={props.editBlocked !== null}
-                  onClick={props.onEdit}
-                >
-                  <PencilIcon />
-                  Edit
-                </Button>
-              </span>
-            }
-          />
-          <TooltipPopup>{props.editBlocked ?? "Propose a change as a pull request"}</TooltipPopup>
-        </Tooltip>
-      ) : null}
     </div>
   );
 }

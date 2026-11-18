@@ -126,6 +126,17 @@ export const VoiceAgentMemoryDocument = Schema.Struct({
 });
 export type VoiceAgentMemoryDocument = typeof VoiceAgentMemoryDocument.Type;
 
+/** One line of a memory file and who last wrote it; the attribution is null where git cannot say. */
+export const MemoryLine = Schema.Struct({
+  text: Schema.String,
+  author: Schema.NullOr(Schema.String),
+  authoredAt: Schema.NullOr(IsoDateTime),
+  commit: Schema.NullOr(TrimmedNonEmptyString),
+  /** From a squash merge's "(#N)" title suffix. */
+  pullRequest: Schema.NullOr(Schema.Int),
+});
+export type MemoryLine = typeof MemoryLine.Type;
+
 export const MemoryDocument = Schema.Struct({
   scope: MemoryScope,
   /** The file in the team repository; null when this scope has none here. */
@@ -134,6 +145,8 @@ export const MemoryDocument = Schema.Struct({
   label: Schema.NullOr(Schema.String),
   /** The file's text; empty when the file does not exist yet. */
   text: Schema.String,
+  /** The text's lines, each with its last change in the team repository's history. */
+  lines: Schema.Array(MemoryLine),
   /** Why the scope has no file here, such as the GitHub CLI being signed out. */
   unavailable: Schema.NullOr(Schema.String),
 });
