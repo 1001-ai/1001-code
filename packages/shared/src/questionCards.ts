@@ -4,6 +4,9 @@
 /** Joins the options a pick-any answer selects. */
 export const QUESTION_MULTI_SEPARATOR = ", ";
 
+/** The answer a card's Skip gives; agents stop the work that depends on that question. */
+export const QUESTION_SKIPPED_ANSWER = "skipped";
+
 export interface QuestionBlock {
   readonly id: string;
   readonly prompt: string;

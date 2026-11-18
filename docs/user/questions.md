@@ -19,6 +19,10 @@ count as waiting until you answer them.
 The filter in the header narrows the list to Questions, Approvals or Memories, and the project
 menu beside it to one project with something waiting.
 
+To decline a question card, click **Skip** on it, here or in the thread. It answers `Q4: skipped`,
+and the agent stops the work that depends on that question instead of choosing for you, then says
+what it left undone.
+
 A thread's question cards leave the list once you reply to it in any way, so answer every
 question you want to answer in the same message. Archived threads and threads your tag filter hides are not listed.
 The mobile app does not have this page.
