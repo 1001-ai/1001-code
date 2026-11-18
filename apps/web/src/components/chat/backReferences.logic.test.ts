@@ -1,3 +1,4 @@
+import { ComposerContextId, GuestMessageId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -125,7 +126,7 @@ describe("searchBackReferenceHistory", () => {
 });
 
 describe("backReferenceSources", () => {
-  it("keeps finished messages, without a reply's Re: lines, a Re:-only reply, an automation prompt or a workflow opening, and reuses them per item", () => {
+  it("keeps finished messages as their rows show them, without a reply's Re: lines, a Re:-only reply, automation prompts, workflow openings or file-only messages, and reuses them per item", () => {
     const user = { item: { id: "1", type: "user_message", text: "hi there", messageId: "u1" } };
     const reply = {
       item: {
@@ -160,6 +161,67 @@ describe("backReferenceSources", () => {
         workflowScript: true,
       },
     };
+    const legacyAutomation = {
+      item: {
+        id: "8",
+        type: "user_message",
+        text: "[Triggered by schedule task: Daily]\n\nhi there",
+        messageId: "scheduled-task-message:task:1:scheduled",
+      },
+    };
+    const legacyWorkflow = {
+      item: {
+        id: "9",
+        type: "user_message",
+        text: 'export const meta = { name: "hi there" };',
+        messageId: "u4",
+      },
+    };
+    const guest = {
+      item: {
+        id: "10",
+        type: "user_message",
+        text: "Sam, a guest, wrote: hi there",
+        messageId: "u5",
+        context: {
+          version: 1 as const,
+          records: [],
+          guest: { guestMessageId: GuestMessageId.make("g1"), name: "Sam", text: "hello from Sam" },
+        },
+      },
+    };
+    const file = {
+      type: "file" as const,
+      id: "report",
+      name: "report.pdf",
+      mimeType: "application/pdf",
+      sizeBytes: 1024,
+    };
+    const fileOnly = {
+      item: {
+        id: "11",
+        type: "user_message",
+        text: "[report.pdf](t3-context://v1/file/report)",
+        messageId: "u6",
+        attachments: [file],
+        context: {
+          version: 1 as const,
+          records: [
+            {
+              version: 1,
+              kind: "file",
+              contextId: ComposerContextId.make("report"),
+              label: file.name,
+              attachmentId: file.id,
+              type: file.type,
+              name: file.name,
+              mimeType: file.mimeType,
+              sizeBytes: file.sizeBytes,
+            },
+          ],
+        },
+      },
+    };
     const first = backReferenceSources([
       user,
       reply,
@@ -168,18 +230,23 @@ describe("backReferenceSources", () => {
       reOnly,
       automation,
       workflow,
+      legacyAutomation,
+      legacyWorkflow,
+      guest,
+      fileOnly,
     ]);
     expect(first).toEqual([
       { itemId: "1", messageId: "u1", text: "hi there" },
       { itemId: "2", messageId: "a1", text: "Hello back." },
+      { itemId: "10", messageId: "u5", text: "hello from Sam" },
     ]);
-    expect(sameBackReferenceSources(first, backReferenceSources([user, reply, streaming]))).toBe(
-      true,
-    );
+    expect(
+      sameBackReferenceSources(first, backReferenceSources([user, reply, streaming, guest])),
+    ).toBe(true);
     const finished = { item: { ...streaming.item, streaming: false } };
-    expect(sameBackReferenceSources(first, backReferenceSources([user, reply, finished]))).toBe(
-      false,
-    );
+    expect(
+      sameBackReferenceSources(first, backReferenceSources([user, reply, finished, guest])),
+    ).toBe(false);
   });
 });
 

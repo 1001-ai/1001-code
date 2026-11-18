@@ -1,4 +1,11 @@
-import type { ComposerContextId } from "@t3tools/contracts";
+import { isWorkflowScriptMessage } from "@t3tools/client-runtime/state/subagentRuntime";
+import { resolveUserMessagePresentation } from "@t3tools/client-runtime/user-message";
+import type {
+  ComposerContextId,
+  OrchestrationMessageContext,
+  OrchestrationV2Actor,
+  OrchestrationV2CreationSource,
+} from "@t3tools/contracts";
 import {
   findBackReferences,
   findQuotedMessage,
@@ -10,6 +17,10 @@ import {
 import { formatComposerContextHref } from "@t3tools/shared/composerContextReferences";
 import { splitReLines } from "@t3tools/shared/replyMarkers";
 import type { PhrasingContent, Root, RootContent } from "mdast";
+
+import { resolveUserMessageContext } from "~/lib/composerContextRecords";
+import type { ChatAttachment } from "../../types";
+import { userMessageAttachmentsOnly } from "./TimelineUserMessageRow.logic";
 
 /** A finished chat message a back-reference can point at, in timeline order. */
 export interface BackReferenceSource<M extends string = string> {
@@ -32,15 +43,49 @@ interface TurnItemLike<M extends string> {
     readonly messageId?: M;
     readonly streaming?: unknown;
     readonly scheduledTaskId?: unknown;
-    readonly workflowScript?: unknown;
+    readonly workflowScript?: boolean | undefined;
+    readonly createdBy?: OrchestrationV2Actor | undefined;
+    readonly creationSource?: OrchestrationV2CreationSource | undefined;
+    readonly context?: OrchestrationMessageContext | undefined;
+    readonly attachments?: ReadonlyArray<ChatAttachment> | undefined;
   };
 }
 
 const sourceByItem = new WeakMap<object, BackReferenceSource | null>();
 
+/** The text a message's row shows where a reveal searches, or null when the row cannot reveal. */
+function revealableText<M extends string>(item: TurnItemLike<M>["item"]): string | null {
+  const { type, text, messageId } = item;
+  if (typeof text !== "string") return null;
+  // Re: lines render above the reply, outside the text the reveal searches.
+  if (type === "assistant_message") {
+    return item.streaming === true ? null : (splitReLines(text)?.body ?? text);
+  }
+  // Automation prompts, workflow openings and attachment-only messages mount no reveal.
+  if (type !== "user_message" || item.scheduledTaskId !== undefined) return null;
+  const message = { role: "user", text, workflowScript: item.workflowScript };
+  if (isWorkflowScriptMessage(message)) return null;
+  const presented = resolveUserMessagePresentation({
+    ...message,
+    ...(messageId === undefined ? {} : { id: messageId }),
+    ...(item.createdBy === undefined ? {} : { createdBy: item.createdBy }),
+    ...(item.creationSource === undefined ? {} : { creationSource: item.creationSource }),
+    context: item.context,
+  });
+  if (presented.attribution === "automation") return null;
+  const context = resolveUserMessageContext({ text: presented.text, context: item.context });
+  return userMessageAttachmentsOnly({
+    attachments: item.attachments ?? [],
+    context,
+    attribution: presented.attribution,
+  }) === null
+    ? context.text
+    : null;
+}
+
 /**
- * The finished user and assistant messages of a thread's visible items, without automation
- * prompts and workflow openings, whose rows a reveal cannot open. Reads each item once.
+ * The finished user and assistant messages of a thread's visible items whose rows a reveal can
+ * open, each with the text its row shows. Reads each item once.
  */
 export function backReferenceSources<M extends string>(
   items: ReadonlyArray<TurnItemLike<M>>,
@@ -49,19 +94,10 @@ export function backReferenceSources<M extends string>(
   for (const { item } of items) {
     let source = sourceByItem.get(item) as BackReferenceSource<M> | null | undefined;
     if (source === undefined) {
-      const { id, type, text, messageId, streaming, scheduledTaskId, workflowScript } = item;
-      // Re: lines render above the reply, outside the text the reveal searches.
-      const shown =
-        typeof text === "string" && type === "assistant_message"
-          ? (splitReLines(text)?.body ?? text)
-          : text;
+      const shown = revealableText(item);
       source =
-        ((type === "user_message" && scheduledTaskId === undefined && workflowScript !== true) ||
-          (type === "assistant_message" && streaming !== true)) &&
-        typeof shown === "string" &&
-        shown.trim() !== "" &&
-        messageId !== undefined
-          ? { itemId: id, messageId, text: shown }
+        shown !== null && shown.trim() !== "" && item.messageId !== undefined
+          ? { itemId: item.id, messageId: item.messageId, text: shown }
           : null;
       sourceByItem.set(item, source);
     }
