@@ -248,6 +248,7 @@ import * as Board from "./board/Board.ts";
 import * as Memory from "./memory/Memory.ts";
 import * as AgentsBoard from "./agentsBoard/AgentsBoard.ts";
 import * as VoiceAgent from "./voiceAgent/VoiceAgent.ts";
+import * as InboxAgent from "./inboxAgent/InboxAgent.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as TriageService from "./triage/TriageService.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
@@ -1505,6 +1506,7 @@ export const layerWsRpc = (
       const memory = yield* Memory.Memory;
       const agentsBoard = yield* AgentsBoard.AgentsBoard;
       const voiceAgent = yield* VoiceAgent.VoiceAgent;
+      const inboxAgent = yield* InboxAgent.InboxAgent;
       const usageLimitSources = yield* UsageLimitSources.UsageLimitSources;
       const worktreeSetupTracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
       const projectCloneTracker = yield* ProjectCloneTracker.ProjectCloneTracker;
@@ -2711,6 +2713,7 @@ export const layerWsRpc = (
         [WS_METHODS.voiceAgentClose]: (input) => voiceAgent.close(input.sessionId),
         [WS_METHODS.voiceAgentMediaStep]: (input) => voiceAgent.stepMedia(input),
         [WS_METHODS.voiceAgentTranscript]: (input) => voiceAgent.transcript(input.sessionId),
+        [WS_METHODS.inboxAgentOpen]: (input) => inboxAgent.open(input),
         [WS_METHODS.serverRetryResourceTelemetry]: (_input) => resourceTelemetry.retry,
         [WS_METHODS.serverCheckOtlpEndpoint]: (input) => otlpEndpointCheck.check(input),
         [WS_METHODS.serverListTextGeneratorModels]: (input) => textGenerators.listModels(input),

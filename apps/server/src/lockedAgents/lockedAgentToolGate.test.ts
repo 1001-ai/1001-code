@@ -1,33 +1,71 @@
 import { NodeHttpServer } from "@effect/platform-node";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  OrchestratorMcpFailure,
+  ProviderInstanceId,
+  ThreadId,
+} from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
+import { Tool, Toolkit } from "effect/ai";
 import { HttpBody, HttpClient, HttpRouter } from "effect/http";
 
-import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
-import * as ProjectionStore from "../../../orchestration-v2/ProjectionStore.ts";
-import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
-import * as ProjectService from "../../../project/ProjectService.ts";
-import * as PullRequestReviewGuideService from "../../../pullRequest/PullRequestReviewGuideService.ts";
-import * as ServerSettings from "../../../serverSettings.ts";
-import * as VoiceAgent from "../../../voiceAgent/VoiceAgent.ts";
-import { voiceAgentThread } from "../../../voiceAgent/voiceAgentThread.ts";
-import * as McpHttpServer from "../../McpHttpServer.ts";
-import type * as McpInvocationContext from "../../McpInvocationContext.ts";
-import * as McpSessionRegistry from "../../McpSessionRegistry.ts";
-import { liveThreadShell } from "../../McpToolAccess.testkit.ts";
-import * as VoiceAgentHandlers from "./handlers.ts";
-import { VoiceAgentToolkit } from "./tools.ts";
+import { inboxAgentThread } from "../inboxAgent/inboxAgentThread.ts";
+import * as McpHttpServer from "../mcp/McpHttpServer.ts";
+import * as McpInvocationContext from "../mcp/McpInvocationContext.ts";
+import * as McpSessionRegistry from "../mcp/McpSessionRegistry.ts";
+import * as McpToolAccess from "../mcp/McpToolAccess.ts";
+import { liveThreadShell } from "../mcp/McpToolAccess.testkit.ts";
+import * as VoiceAgentHandlers from "../mcp/toolkits/voiceAgent/handlers.ts";
+import { VoiceAgentToolkit } from "../mcp/toolkits/voiceAgent/tools.ts";
+import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
+import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
+import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
+import * as ProjectService from "../project/ProjectService.ts";
+import * as PullRequestReviewGuideService from "../pullRequest/PullRequestReviewGuideService.ts";
+import * as ServerSettings from "../serverSettings.ts";
+import * as VoiceAgent from "../voiceAgent/VoiceAgent.ts";
+import { voiceAgentThread } from "../voiceAgent/voiceAgentThread.ts";
 
 const environmentId = EnvironmentId.make("environment-test");
 const CHAT = ThreadId.make("thread-chat");
 const VOICE = ThreadId.make("thread-voice");
+const INBOX = ThreadId.make("thread-inbox");
+
+/**
+ * Stand-ins under the real names of the tools the Inbox may use, and one it may not: the gate
+ * reads only the name, so these show what it lets through without each toolkit's services.
+ */
+const NAMED_TOOLS = [
+  "t3_thread_list",
+  "t3_thread_read",
+  "t3_thread_search",
+  "board_list",
+  "memory_propose",
+  "t3_thread_send",
+] as const;
+const probe = (name: string) =>
+  Tool.make(name, {
+    description: "A stand-in.",
+    success: Schema.Struct({ ok: Schema.Boolean }),
+    failure: OrchestratorMcpFailure,
+    failureMode: "return",
+    dependencies: [McpInvocationContext.McpInvocationContext],
+  });
+const NamedToolkit = Toolkit.make(...NAMED_TOOLS.map(probe));
+const namedHandlers = McpToolAccess.toLayer(
+  NamedToolkit,
+  Object.fromEntries(
+    NAMED_TOOLS.map((name) => [name, McpToolAccess.reads(() => Effect.succeed({ ok: true }))]),
+  ) as never,
+);
 
 it.effect(
-  "lists and runs only the voice agent's tools for its thread, and hides them from every other",
+  "lists and runs only a locked agent's own tools for its thread, and hides the voice tools from every other",
   () =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -54,13 +92,22 @@ it.effect(
               id: VOICE,
             },
           ],
+          [
+            INBOX,
+            {
+              ...liveThreadShell(INBOX),
+              ...inboxAgentThread(liveThreadShell(INBOX) as never, true),
+              id: INBOX,
+            },
+          ],
         ]);
         const boardCalls: Array<string> = [];
         const serverLayer = McpHttpServer.layerMcpTransport(
           Layer.mergeAll(
             McpHttpServer.layerPullRequestsToolkit,
             McpHttpServer.toolkitRegistration(VoiceAgentToolkit, VoiceAgentHandlers.layer),
-            McpHttpServer.layerVoiceAgentToolGate,
+            McpHttpServer.toolkitRegistration(NamedToolkit, namedHandlers),
+            McpHttpServer.layerLockedAgentToolGate,
           ),
         ).pipe(
           Layer.provide(ServerSettings.layerTest()),
@@ -152,6 +199,7 @@ it.effect(
 
         const voice = yield* session(VOICE);
         expect(yield* voice.listed).toEqual([
+          "memory_propose",
           "voice_board",
           "voice_send_message",
           "voice_show_media",
@@ -161,11 +209,28 @@ it.effect(
         // Every other tool of the server is gone for it, on the call as on the list.
         expect(yield* voice.ran("link_pull_request")).toBe(false);
         expect(yield* voice.ran("read_pull_request_guide")).toBe(false);
+        expect(yield* voice.ran("t3_thread_read")).toBe(false);
+
+        // The Inbox reads threads and the Board, and does nothing else.
+        const inbox = yield* session(INBOX);
+        expect(yield* inbox.listed).toEqual([
+          "board_list",
+          "memory_propose",
+          "t3_thread_list",
+          "t3_thread_read",
+          "t3_thread_search",
+        ]);
+        expect(yield* inbox.ran("t3_thread_read")).toBe(true);
+        expect(yield* inbox.ran("t3_thread_send")).toBe(false);
+        expect(yield* inbox.ran("link_pull_request")).toBe(false);
+        expect(yield* inbox.ran("voice_board")).toBe(false);
+        expect(boardCalls).toEqual([VOICE]);
 
         const ordinary = yield* session(CHAT);
         const ordinaryTools = yield* ordinary.listed;
         expect(ordinaryTools).toContain("link_pull_request");
         expect(ordinaryTools.filter((tool) => tool.startsWith("voice_"))).toEqual([]);
+        expect(ordinaryTools).toContain("t3_thread_send");
         expect(yield* ordinary.ran("voice_board")).toBe(false);
         expect(boardCalls).toEqual([VOICE]);
 

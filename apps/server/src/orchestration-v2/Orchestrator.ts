@@ -199,6 +199,11 @@ import { planThreadDeletion } from "./ThreadDeletion.ts";
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as ServerSettings from "../serverSettings.ts";
 import { voiceAgentThread } from "../voiceAgent/voiceAgentThread.ts";
+import { inboxAgentThread } from "../inboxAgent/inboxAgentThread.ts";
+import {
+  lockedAgentMessage,
+  lockedAgentRefusesProvider,
+} from "../lockedAgents/lockedAgentGuard.ts";
 
 const isMessageQuestionAnswer = Schema.is(
   Schema.Union([TrimmedNonEmptyString, Schema.NonEmptyArray(TrimmedNonEmptyString)]),
@@ -3530,7 +3535,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       deletedAt: null,
     };
 
-    // Fork: the voice agent's hidden thread; see fork/README.md.
+    // Fork: the voice agent's and the Inbox's hidden threads; see fork/README.md.
     const voiceAgentParent =
       command.voiceAgentOf === undefined ? null : yield* findThread(command.voiceAgentOf);
     yield* emitEvent({
@@ -3538,7 +3543,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       threadId: command.threadId,
       providerInstanceId: command.modelSelection.instanceId,
       occurredAt: now,
-      payload: voiceAgentThread(thread, command.voiceAgentOf, voiceAgentParent),
+      payload: inboxAgentThread(
+        voiceAgentThread(thread, command.voiceAgentOf, voiceAgentParent),
+        command.inboxAgent,
+      ),
     });
     if (command.importedNativeThread !== undefined) {
       yield* emitEvent({
@@ -3875,6 +3883,17 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         commandId: command.commandId,
         commandType: command.type,
         cause: `Thread ${command.threadId} is deleted.`,
+      });
+    }
+    // Fork: a locked agent keeps its provider; see fork/README.md.
+    if (
+      (command.type === "thread.model-selection.set" || command.type === "provider.switch") &&
+      lockedAgentRefusesProvider(command, thread)
+    ) {
+      return yield* new OrchestratorDispatchError({
+        commandId: command.commandId,
+        commandType: command.type,
+        cause: "This agent runs on its own provider, which cannot change.",
       });
     }
     if (
@@ -6338,6 +6357,15 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           }
         : undefined,
     );
+    // Fork: a locked agent keeps its provider and its title; see fork/README.md.
+    if (lockedAgentRefusesProvider(command, projection.thread)) {
+      return yield* new OrchestratorDispatchError({
+        commandId: command.commandId,
+        commandType: command.type,
+        cause: "This agent runs on its own provider, which cannot change.",
+      });
+    }
+    command = lockedAgentMessage(command, projection.thread);
     if (command.steerFollowUpOfRunId !== undefined) {
       const source = projection.runs.find((run) => run.id === command.steerFollowUpOfRunId);
       if (

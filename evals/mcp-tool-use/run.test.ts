@@ -44,6 +44,7 @@ import {
 import { briefRoute, gradeDevice, shellInvocations } from "./device-grading.ts";
 import { boardMemory } from "./board.ts";
 import {
+  INBOX_AGENT_INSTRUCTIONS,
   VOICE_AGENT_INSTRUCTIONS,
   parseVoiceAgentUserMessage,
 } from "@t3tools/provider-core/server/runtimeInstructions";
@@ -751,6 +752,37 @@ it("gives a board case T3's board text, its board tools and Linear's, and grades
   ]);
   assert.deepEqual(failed(question.expect, run(["Read", { file_path: "src/format.ts" }])), []);
   assert.deepEqual(failed(question.expect, run(filed)), ["notCalls board_add"]);
+});
+
+it("gives an inbox agent case its instructions, the project memory and its read tools", () => {
+  const cases = NodeFS.readFileSync(new URL("./cases/inbox-agent.ndjson", import.meta.url), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => decodeDeviceCase(line));
+  assert.isAtLeast(cases.length, 8);
+  for (const testCase of cases) {
+    assert.isTrue(testCase.setup.memory?.inboxAgent, testCase.id);
+    // Each message carries its digest first, as the server sends it.
+    assert.match(testCase.prompt, /^<inbox_digest since="[^"]+" until="[^"]+">\n/, testCase.id);
+  }
+  const base = buildBase(template, {
+    model: "claude-haiku-5-5",
+    keepUserInstructions: false,
+    memory: cases[0]!.setup.memory,
+  });
+  const system = base.system.map((block) => String(block.text)).join("\n");
+  assert.include(system, INBOX_AGENT_INSTRUCTIONS);
+  assert.include(system, "call memory_propose");
+  assert.notInclude(system, "<voice_agent_memories>");
+  const loaded = base.nativeTools.map((tool) => tool.name);
+  assert.includeMembers(loaded, ["mcp__t3-code__board_list", "mcp__t3-code__memory_propose"]);
+  assert.notInclude(loaded, "mcp__t3-code__board_add");
+  const t3 = base.t3.map((tool) => tool.name);
+  assert.includeMembers(t3, [
+    "mcp__t3-code__t3_thread_list",
+    "mcp__t3-code__t3_thread_read",
+    "mcp__t3-code__t3_thread_search",
+  ]);
 });
 
 it("gives a voice agent case its memories and memory_propose, and grades a replacement", () => {

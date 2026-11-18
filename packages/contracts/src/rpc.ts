@@ -408,6 +408,7 @@ import {
   VoiceAgentThreadInput,
   VoiceAgentTranscript,
 } from "./voiceAgent.ts";
+import { InboxAgentError, InboxAgentOpenInput, InboxAgentOpenResult } from "./inboxAgent.ts";
 import {
   StorageCleanupReport,
   DatabaseReclaimError,
@@ -625,6 +626,7 @@ export const WS_METHODS = {
   voiceAgentClose: "voiceAgent.close",
   voiceAgentMediaStep: "voiceAgent.mediaStep",
   voiceAgentTranscript: "voiceAgent.transcript",
+  inboxAgentOpen: "inboxAgent.open",
 
   scheduledTasksSubscribe: "scheduledTasks.subscribe",
   scheduledTasksUpsert: "scheduledTasks.upsert",
@@ -1246,6 +1248,12 @@ const WsVoiceAgentTranscriptRpc = Rpc.make(WS_METHODS.voiceAgentTranscript, {
   payload: VoiceAgentSessionInput,
   success: VoiceAgentTranscript,
   error: Schema.Union([VoiceAgentError, EnvironmentAuthorizationError]),
+});
+
+const WsInboxAgentOpenRpc = Rpc.make(WS_METHODS.inboxAgentOpen, {
+  payload: InboxAgentOpenInput,
+  success: InboxAgentOpenResult,
+  error: Schema.Union([InboxAgentError, EnvironmentAuthorizationError]),
 });
 
 const WsServerSignalProcessRpc = Rpc.make(WS_METHODS.serverSignalProcess, {
@@ -2397,6 +2405,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsVoiceAgentCloseRpc,
   WsVoiceAgentMediaStepRpc,
   WsVoiceAgentTranscriptRpc,
+  WsInboxAgentOpenRpc,
   WsServerSignalProcessRpc,
   WsScheduledTasksSubscribeRpc,
   WsScheduledTasksUpsertRpc,

@@ -170,6 +170,8 @@ export const OrchestrationV2AppThreadLineage = Schema.Struct({
   sideChat: Schema.optional(Schema.Boolean),
   /** Fork: the hidden thread of the voice agent layer; see fork/README.md. */
   voiceAgent: Schema.optional(Schema.Boolean),
+  /** Fork: the project's hidden Inbox agent thread; see fork/README.md. */
+  inboxAgent: Schema.optional(Schema.Boolean),
 });
 export type OrchestrationV2AppThreadLineage = typeof OrchestrationV2AppThreadLineage.Type;
 
@@ -3020,6 +3022,8 @@ export const OrchestrationV2Command = Schema.Union([
     delegatedFrom: Schema.optional(OrchestrationV2DelegatedFrom),
     /** Fork: only the server sets this, for the voice agent's hidden thread under this chat. */
     voiceAgentOf: Schema.optional(ThreadId),
+    /** Fork: only the server sets this, for a project's hidden Inbox agent thread. */
+    inboxAgent: Schema.optional(Schema.Boolean),
     importedNativeThread: Schema.optional(
       Schema.Struct({
         ref: Schema.Struct({

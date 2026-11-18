@@ -138,6 +138,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.voiceAgentClose]: AuthOrchestrationOperateScope,
   [WS_METHODS.voiceAgentMediaStep]: AuthOrchestrationOperateScope,
   [WS_METHODS.voiceAgentTranscript]: AuthOrchestrationReadScope,
+  [WS_METHODS.inboxAgentOpen]: AuthOrchestrationOperateScope,
   [WS_METHODS.serverRefreshUsageRates]: AuthDiagnosticsReadScope,
   [WS_METHODS.serverSignalProcess]: AuthEnvironmentMaintainScope,
   [WS_METHODS.serverReportClientActivity]: AuthOrchestrationReadScope,

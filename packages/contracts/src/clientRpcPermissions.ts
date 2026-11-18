@@ -41,6 +41,8 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   [WS_METHODS.voiceAgentSay]: AuthOrchestrationOperateScope,
   [WS_METHODS.voiceAgentClose]: AuthOrchestrationOperateScope,
   [WS_METHODS.voiceAgentMediaStep]: AuthOrchestrationOperateScope,
+  // Makes the project's Inbox thread on first open.
+  [WS_METHODS.inboxAgentOpen]: AuthOrchestrationOperateScope,
   [WS_METHODS.serverRefreshProviders]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsRunAction]: AuthSourceControlWriteScope,
   [WS_METHODS.pullRequestsUpdate]: AuthSourceControlWriteScope,
