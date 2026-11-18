@@ -1,4 +1,5 @@
 import { MessageId } from "@t3tools/contracts";
+import { QUESTION_SKIPPED_ANSWER } from "@t3tools/shared/questionCards";
 import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -234,6 +235,9 @@ describe("questionAnswersMessage", () => {
       ],
       text: "Q1: Yes\nQ2: Ada",
     });
+    expect(questionAnswersMessage(`Q2: ${QUESTION_SKIPPED_ANSWER}`, ["Q1", "Q2"])?.text).toBe(
+      "Q2: skipped",
+    );
   });
 
   it("is null while no listed card has an answer", () => {

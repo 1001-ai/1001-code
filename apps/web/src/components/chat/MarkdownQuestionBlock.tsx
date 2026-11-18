@@ -15,7 +15,11 @@ import {
 
 import { useComposerDraftStore } from "~/composerDraftStore";
 import { cn } from "~/lib/utils";
-import { parseQuestionQuote, type QuestionBlock } from "@t3tools/shared/questionCards";
+import {
+  parseQuestionQuote,
+  QUESTION_SKIPPED_ANSWER,
+  type QuestionBlock,
+} from "@t3tools/shared/questionCards";
 import { environmentThreadDetails } from "../../state/threads";
 import {
   findQuestionAnswer,
@@ -179,6 +183,13 @@ export function QuestionCard({
     optionRefs.current[next]?.focus();
     if (radio) writeDraftAnswer(options[next] ?? null);
   };
+  const skipped = draftAnswer === QUESTION_SKIPPED_ANSWER;
+  // Skip is one more single choice: it sends where the card can, and a second click undoes it.
+  const skip = () => {
+    if (skipped) writeDraftAnswer(null);
+    else if (sendAnswer === null) writeDraftAnswer(QUESTION_SKIPPED_ANSWER);
+    else send(QUESTION_SKIPPED_ANSWER);
+  };
   const showControls = answer === null || changing;
   const sendingAnswer =
     sent !== null && draftAnswer === null && sent.after === (answer?.messageId ?? null)
@@ -194,17 +205,37 @@ export function QuestionCard({
         !embedded && "my-4 rounded-xl border border-border/70 bg-card",
       )}
     >
-      <div className="min-w-0 text-sm [overflow-wrap:anywhere]">
-        <span className="me-2 font-mono text-2xs text-muted-foreground">{question.id}</span>
-        <span id={promptId} className="font-medium">
-          {question.prompt}
-        </span>
+      <div className="flex min-w-0 items-start gap-2">
+        <div className="min-w-0 flex-1 text-sm [overflow-wrap:anywhere]">
+          <span className="me-2 font-mono text-2xs text-muted-foreground">{question.id}</span>
+          <span id={promptId} className="font-medium">
+            {question.prompt}
+          </span>
+        </div>
+        {showControls && sendingAnswer === null ? (
+          <Button
+            size="micro"
+            variant="ghost-muted"
+            aria-label={`Skip ${question.id}`}
+            aria-pressed={skipped}
+            data-pressed={skipped ? "" : undefined}
+            onClick={skip}
+          >
+            Skip
+          </Button>
+        ) : null}
       </div>
       {answer !== null ? (
         <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-muted-foreground text-sm">
           <CheckIcon aria-hidden className="size-3.5 shrink-0 text-success-foreground" />
           <span className="min-w-0 [overflow-wrap:anywhere]">
-            Answered: <span className="text-foreground">{answer.answer}</span>
+            {answer.answer === QUESTION_SKIPPED_ANSWER ? (
+              "Skipped"
+            ) : (
+              <>
+                Answered: <span className="text-foreground">{answer.answer}</span>
+              </>
+            )}
           </span>
           {/* Change and Cancel wait for an in-flight send; neither could stop it. */}
           {sendingAnswer !== null ? null : <span aria-hidden>·</span>}

@@ -1,3 +1,4 @@
+import { QUESTION_SKIPPED_ANSWER } from "@t3tools/shared/questionCards";
 import { fromMarkdown } from "mdast-util-from-markdown";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -52,8 +53,10 @@ describe("multi answers", () => {
     expect(toggleMultiOption(options, toggleMultiOption(options, two, "Web"), "Mobile")).toBeNull();
   });
 
-  it("selects nothing from a typed answer", () => {
+  it("selects nothing from a typed or skipped answer, and a pick replaces it", () => {
     expect(selectedMultiOptions(options, "Whatever works").size).toBe(0);
+    expect(selectedMultiOptions(options, QUESTION_SKIPPED_ANSWER).size).toBe(0);
+    expect(toggleMultiOption(options, QUESTION_SKIPPED_ANSWER, "Desktop")).toBe("Desktop");
   });
 });
 
