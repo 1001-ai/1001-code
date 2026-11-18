@@ -10,7 +10,7 @@ import * as NodeURL from "node:url";
 import * as NodeUtil from "node:util";
 import * as Schema from "effect/Schema";
 
-import { gradeSample, McpToolUseCase, pastedText, worldFilePaths } from "./run.ts";
+import { chatHistory, gradeSample, McpToolUseCase, pastedText, worldFilePaths } from "./run.ts";
 
 const { values, positionals } = NodeUtil.parseArgs({
   allowPositionals: true,
@@ -41,6 +41,7 @@ for (const file of positionals) {
       row,
       pastedText(testCase),
       worldFilePaths(testCase),
+      chatHistory(testCase),
     ).filter((check) => !check.pass);
     const cut = failed.length === 0 && row.stopReason === "failed_early";
     const pass = failed.length === 0 && !cut;

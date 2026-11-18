@@ -1,6 +1,7 @@
 import { ASSISTANT_CITATION_CONTEXT_LENGTH, type AssistantCitation } from "@t3tools/contracts";
 
 import { mathWrapperOf } from "../markdown-clipboard";
+import { findBackReferenceText, isBackReferenceCitation } from "./backReferenceCitation";
 
 export type AssistantTextSelector = {
   readonly text: string;
@@ -287,7 +288,9 @@ export function resolveAssistantCitationRange(
 ): Range | null {
   if (excludedAncestor(root) !== null) return null;
   const stream = readAssistantText(root);
-  const match = findAssistantCitationText(stream.text, selector);
+  const match = isBackReferenceCitation(selector)
+    ? findBackReferenceText(normalizeWhitespace(stream.text), selector.text)
+    : findAssistantCitationText(stream.text, selector);
   if (match === null) return null;
 
   const start = rawTextOffset(stream.text, match.start);

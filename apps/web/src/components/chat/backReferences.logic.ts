@@ -1,23 +1,27 @@
 import type { ComposerContextId } from "@t3tools/contracts";
-import { findBackReferences } from "@t3tools/shared/backReferences";
+import {
+  findBackReferences,
+  findQuotedMessage,
+  markdownDisplayText,
+  quoteWords,
+  type QuoteMatch,
+  type QuoteWords,
+} from "@t3tools/shared/backReferences";
 import { formatComposerContextHref } from "@t3tools/shared/composerContextReferences";
 import { textAfterReLines } from "@t3tools/shared/replyMarkers";
 import type { PhrasingContent, Root, RootContent } from "mdast";
-
-import { reLineMatchText } from "./exchangeThread.logic";
 
 /** A finished chat message a back-reference can point at, in timeline order. */
 export interface BackReferenceSource<M extends string = string> {
   readonly itemId: string;
   readonly messageId: M;
-  /** The text the message renders where the reveal looks for the words. */
+  /** The message's markdown, as the timeline renders it. */
   readonly text: string;
 }
 
 export interface BackReferenceTarget<M extends string = string> {
   readonly messageId: M;
-  /** The quoted words as the earlier message renders them. */
-  readonly text: string;
+  readonly kind: QuoteMatch["kind"];
 }
 
 interface TurnItemLike<M extends string> {
@@ -66,78 +70,22 @@ export function sameBackReferenceSources(
   return left.length === right.length && left.every((source, index) => source === right[index]);
 }
 
-const MATCH_IGNORED_CHAR = /[*_`~>#]/;
+const wordsBySource = new WeakMap<BackReferenceSource, QuoteWords>();
 
-/** `reLineMatchText` of `raw`, with each matched character's place in `raw`. */
-interface MatchIndex {
-  readonly text: string;
-  readonly starts: ReadonlyArray<number>;
-  readonly ends: ReadonlyArray<number>;
-}
-
-function buildMatchIndex(raw: string): MatchIndex {
-  let text = "";
-  const starts: number[] = [];
-  const ends: number[] = [];
-  let space = false;
-  for (let index = 0; index < raw.length;) {
-    const char = String.fromCodePoint(raw.codePointAt(index)!);
-    const next = index + char.length;
-    if (/\s/.test(char)) {
-      space = text.length > 0;
-    } else if (!MATCH_IGNORED_CHAR.test(char)) {
-      if (space) {
-        text += " ";
-        starts.push(index);
-        ends.push(index);
-        space = false;
-      }
-      const folded = reLineMatchText(char);
-      for (let unit = 0; unit < folded.length; unit += 1) {
-        starts.push(index);
-        ends.push(next);
-      }
-      text += folded;
-    }
-    index = next;
+/** The words a source shows, read once per source. */
+function sourceWords(source: BackReferenceSource): QuoteWords {
+  let words = wordsBySource.get(source);
+  if (words === undefined) {
+    words = quoteWords(markdownDisplayText(source.text));
+    wordsBySource.set(source, words);
   }
-  return { text, starts, ends };
-}
-
-const matchIndexBySource = new WeakMap<BackReferenceSource, MatchIndex>();
-
-function matchIndexOf(source: BackReferenceSource): MatchIndex {
-  let index = matchIndexBySource.get(source);
-  if (index === undefined) {
-    index = buildMatchIndex(source.text);
-    matchIndexBySource.set(source, index);
-  }
-  return index;
-}
-
-const LINE_MARKS = /^[ \t]*(?:>[ \t]*)*(?:#{1,6}[ \t]+)?/gm;
-const INLINE_MARKS = /\*+|`+|~~|(?<![\p{L}\p{N}])_+|_+(?![\p{L}\p{N}])/gu;
-
-/** The words of a markdown slice as chat renders them: emphasis, code and line marks dropped. */
-export function renderedQuoteText(slice: string): string {
-  return slice.replace(LINE_MARKS, "").replace(INLINE_MARKS, "").replace(/\s+/g, " ").trim();
-}
-
-/** Where `excerpt` sits in `source`, ignoring case, quote style, markdown marks and spacing. */
-export function findQuoteInSource(source: BackReferenceSource, excerpt: string): string | null {
-  const needle = reLineMatchText(excerpt);
-  if (needle === "") return null;
-  const index = matchIndexOf(source);
-  const at = index.text.indexOf(needle);
-  if (at < 0) return null;
-  const slice = source.text.slice(index.starts[at], index.ends[at + needle.length - 1]);
-  const rendered = renderedQuoteText(slice);
-  return rendered === "" ? null : rendered;
+  return words;
 }
 
 /**
- * The earlier message a back-reference in `itemId` points at: the newest message before it that
- * holds the quoted words. Null when the words appear in none, so the marker stays text.
+ * The earlier message a back-reference in `itemId` points at, among the messages before it: the
+ * newest that holds the quoted words exactly, else the newest that holds a close match. Null when
+ * none does, so the marker stays text.
  */
 export function findBackReferenceTarget<M extends string>(
   sources: ReadonlyArray<BackReferenceSource<M>>,
@@ -145,12 +93,36 @@ export function findBackReferenceTarget<M extends string>(
   excerpt: string,
 ): BackReferenceTarget<M> | null {
   const position = sources.findIndex((source) => source.itemId === itemId);
-  for (let index = position - 1; index >= 0; index -= 1) {
-    const source = sources[index]!;
-    const text = findQuoteInSource(source, excerpt);
-    if (text !== null) return { messageId: source.messageId, text };
+  if (position <= 0) return null;
+  const found = findQuotedMessage(sources.slice(0, position), sourceWords, excerpt);
+  return found === null ? null : { messageId: found.message.messageId, kind: found.match.kind };
+}
+
+export type BackReferenceSearch<M extends string> =
+  | { readonly _tag: "found"; readonly target: BackReferenceTarget<M> }
+  | { readonly _tag: "not-found" }
+  | { readonly _tag: "aborted" };
+
+const MAX_HISTORY_PAGES = 20;
+
+/**
+ * Finds a back-reference's target, paging older history in while the loaded messages hold none
+ * and the thread has more. `readHistory` resolves once no page is loading, or with null on abort.
+ */
+export async function searchBackReferenceHistory<M extends string>(input: {
+  readonly find: () => BackReferenceTarget<M> | null;
+  readonly readHistory: () => Promise<{ readonly hasMoreHistory: boolean } | null>;
+  readonly loadPage: () => Promise<{ readonly _tag: string }>;
+}): Promise<BackReferenceSearch<M>> {
+  for (let pages = 0; ; pages += 1) {
+    const history = await input.readHistory();
+    if (history === null) return { _tag: "aborted" };
+    const target = input.find();
+    if (target !== null) return { _tag: "found", target };
+    if (!history.hasMoreHistory || pages >= MAX_HISTORY_PAGES) return { _tag: "not-found" };
+    const result = await input.loadPage();
+    if (result._tag === "error" || result._tag === "noop") return { _tag: "not-found" };
   }
-  return null;
 }
 
 /** The context kind a back-reference renders through `renderContextReference`. */

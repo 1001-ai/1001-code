@@ -3,10 +3,9 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   backReferenceSources,
   findBackReferenceTarget,
-  findQuoteInSource,
   remarkBackReferences,
-  renderedQuoteText,
   sameBackReferenceSources,
+  searchBackReferenceHistory,
   type BackReferenceSource,
 } from "./backReferences.logic";
 
@@ -14,57 +13,6 @@ const source = (itemId: string, text: string): BackReferenceSource => ({
   itemId,
   messageId: `message-${itemId}`,
   text,
-});
-
-describe("findQuoteInSource", () => {
-  it.each([
-    {
-      name: "exact words",
-      text: "Risks: the token expires after one hour, so refresh it.",
-      excerpt: "the token expires after one hour",
-      expected: "the token expires after one hour",
-    },
-    {
-      name: "case, curly quotes and spacing differ",
-      text: "Then we said “ship it   on Friday” and moved on.",
-      excerpt: 'Said "ship it on friday"',
-      expected: "said “ship it on Friday”",
-    },
-    {
-      name: "markdown marks in the message",
-      text: "- The **session token** expires after `3600` seconds.",
-      excerpt: "session token expires after 3600",
-      expected: "session token expires after 3600",
-    },
-    {
-      name: "a line break inside the words",
-      text: "The cache is\ncleared on deploy.",
-      excerpt: "cache is cleared on deploy",
-      expected: "cache is cleared on deploy",
-    },
-    {
-      name: "underscores inside a name stay",
-      text: "Set max_retries to five before launch.",
-      excerpt: "set max_retries to five",
-      expected: "Set max_retries to five",
-    },
-    {
-      name: "words the message does not hold",
-      text: "The token expires after one hour.",
-      excerpt: "the token never expires",
-      expected: null,
-    },
-  ])("$name", ({ text, excerpt, expected }) => {
-    expect(findQuoteInSource(source("a", text), excerpt)).toBe(expected);
-  });
-});
-
-describe("renderedQuoteText", () => {
-  it("drops emphasis, code and line marks but keeps words", () => {
-    expect(renderedQuoteText("## The *fast* path uses `run_all`\n> and __never__ waits")).toBe(
-      "The fast path uses run_all and never waits",
-    );
-  });
 });
 
 describe("findBackReferenceTarget", () => {
@@ -78,11 +26,11 @@ describe("findBackReferenceTarget", () => {
   it("takes the newest earlier message that holds the words", () => {
     expect(findBackReferenceTarget(sources, "3", "keep the old table")).toEqual({
       messageId: "message-2",
-      text: "keep the old table",
+      kind: "exact",
     });
     expect(findBackReferenceTarget(sources, "2", "keep the old table until")).toEqual({
       messageId: "message-1",
-      text: "keep the old table until",
+      kind: "exact",
     });
   });
 
@@ -91,6 +39,88 @@ describe("findBackReferenceTarget", () => {
     expect(findBackReferenceTarget(sources, "3", "A later message says")).toBeNull();
     expect(findBackReferenceTarget(sources, "1", "keep the old table")).toBeNull();
     expect(findBackReferenceTarget(sources, "unknown", "keep the old table")).toBeNull();
+  });
+
+  it.each([
+    {
+      name: "bold and inline code",
+      text: "- The **session token** expires after `3600` seconds.",
+      excerpt: "session token expires after 3600",
+    },
+    {
+      name: "a link, by its text and not its target",
+      text: "Read [the setup guide](https://acme.test/docs) before you deploy.",
+      excerpt: "read the setup guide before you",
+    },
+    {
+      name: "italics across a line break",
+      text: "The cache is _cleared_\non deploy.",
+      excerpt: "cache is cleared on deploy",
+    },
+  ])("matches the shown words across $name", ({ text, excerpt }) => {
+    const shown = [source("1", text), source("2", "reply")];
+    expect(findBackReferenceTarget(shown, "2", excerpt)).toEqual({
+      messageId: "message-1",
+      kind: "exact",
+    });
+  });
+
+  it("takes a close match only when no earlier message holds the words exactly", () => {
+    const closeOnly = [
+      source("1", "The session token expires after one hour."),
+      source("2", "reply"),
+    ];
+    expect(
+      findBackReferenceTarget(closeOnly, "2", "the session token expires after an hour"),
+    ).toEqual({ messageId: "message-1", kind: "close" });
+    const both = [source("1", "The session token expires after an hour."), ...closeOnly].map(
+      (entry, index) => ({ ...entry, itemId: String(index), messageId: `m${index}` }),
+    );
+    expect(findBackReferenceTarget(both, "2", "the session token expires after an hour")).toEqual({
+      messageId: "m0",
+      kind: "exact",
+    });
+  });
+});
+
+describe("searchBackReferenceHistory", () => {
+  const search = (pages: ReadonlyArray<boolean>, loads: Array<string> = []) => {
+    let loaded = 0;
+    return searchBackReferenceHistory({
+      find: () => (pages[loaded] ? { messageId: `page-${loaded}`, kind: "exact" as const } : null),
+      readHistory: async () => ({ hasMoreHistory: loaded < pages.length - 1 }),
+      loadPage: async () => {
+        loads.push("page");
+        loaded += 1;
+        return { _tag: "loaded" };
+      },
+    });
+  };
+
+  it("pages older history in until a message holds the words", async () => {
+    const loads: Array<string> = [];
+    await expect(search([false, false, true], loads)).resolves.toEqual({
+      _tag: "found",
+      target: { messageId: "page-2", kind: "exact" },
+    });
+    expect(loads).toHaveLength(2);
+  });
+
+  it("loads nothing when a loaded message holds the words, and gives up at the start", async () => {
+    const loads: Array<string> = [];
+    await expect(search([true], loads)).resolves.toMatchObject({ _tag: "found" });
+    await expect(search([false, false], loads)).resolves.toEqual({ _tag: "not-found" });
+    expect(loads).toHaveLength(1);
+  });
+
+  it("stops when a page fails to load", async () => {
+    await expect(
+      searchBackReferenceHistory({
+        find: () => null,
+        readHistory: async () => ({ hasMoreHistory: true }),
+        loadPage: async () => ({ _tag: "error" }),
+      }),
+    ).resolves.toEqual({ _tag: "not-found" });
   });
 });
 

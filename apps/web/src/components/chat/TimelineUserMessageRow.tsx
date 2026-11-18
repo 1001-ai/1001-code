@@ -102,7 +102,7 @@ import {
 } from "./TimelineUserMessageRow.logic";
 import { ExchangeReplyLink, ExchangeThreadButton, useExchangeBubble } from "./ExchangeThread";
 import { useMessageContextMenu, type MessageCopy } from "./MessageContextMenu";
-import { BackReferenceUserSource } from "./BackReferenceLink";
+import { BackReferenceUserSource, useUnfoldForBackReference } from "./BackReferenceLink";
 
 // Drawn inside the media so dark screenshots keep an edge on the dark background.
 const MEDIA_EDGE_CLASS_NAME =
@@ -478,6 +478,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
   const folded = userMessage.attribution === "agent";
   const [expanded, setExpanded] = useState(folded && AGENT_MESSAGE_STARTS_OPEN);
   const revealFoldRef = findRevealRef(() => setExpanded(true));
+  useUnfoldForBackReference(ctx.citationRequest, row.message.id, () => setExpanded(true));
   const senderShell = useQuietThreadShell(folded ? senderRef : null);
   const senderLabel =
     senderShell?.title.trim() || row.message.linkedSender?.title.trim() || "Agent";

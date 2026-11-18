@@ -6,6 +6,7 @@ import {
   type AssistantCitationSourceAnchor,
 } from "~/lib/assistantTextSelection";
 import { toastManager } from "../ui/toast";
+import { BACK_REFERENCE_NOT_FOUND, isBackReferenceCitation } from "~/lib/backReferenceCitation";
 import { observeResize } from "~/lib/observeResize";
 
 const CITATION_PULSE_DURATION_MS = 650;
@@ -207,8 +208,12 @@ export function observeAssistantCitationSource({
       if (!range) {
         toastManager.add({
           type: "warning",
-          title: "The quoted text has changed",
-          description: "Showing the source response. The saved quote is unchanged.",
+          ...(isBackReferenceCitation(request.citation)
+            ? BACK_REFERENCE_NOT_FOUND
+            : {
+                title: "The quoted text has changed",
+                description: "Showing the source response. The saved quote is unchanged.",
+              }),
         });
       }
     }
