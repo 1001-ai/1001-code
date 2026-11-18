@@ -324,11 +324,11 @@ function MomentCardDetail({
     >
       <button
         type="button"
-        className="flex cursor-pointer items-center gap-1.5 text-left font-medium text-sm leading-5 focus-visible:outline-none"
+        className="flex cursor-pointer items-start gap-1.5 text-left font-medium text-sm leading-5 focus-visible:outline-none"
         onClick={onPrimary}
       >
-        <MomentIcon tone={card.tone} className="size-4" />
-        {card.label}
+        <MomentIcon tone={card.tone} className="mt-0.5 size-4" />
+        <span className="min-w-0 break-words">{card.label}</span>
       </button>
       {source ? <div className="mt-0.5 text-muted-foreground text-xs">{source}</div> : null}
       {card.detail ? (
