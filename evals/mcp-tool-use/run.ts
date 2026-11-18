@@ -76,6 +76,7 @@ import { DeviceExpect, gradeDevice } from "./device-grading.ts";
 import { FileLinksExpect, gradeFileLinks } from "./file-link-grading.ts";
 import { QuestionCardsExpect, gradeQuestionCards } from "./question-card-grading.ts";
 import { ReplyMarkersExpect, gradeReplyMarkers } from "./reply-marker-grading.ts";
+import { BackReferencesExpect, gradeBackReferences } from "./back-reference-grading.ts";
 import { ShellInOrderExpect, gradeShellInOrder, withLiveAppCheckout } from "./live-checkout.ts";
 import {
   AGENT_DEVICE_SHELL,
@@ -241,6 +242,8 @@ const McpToolUseExpect = Schema.Struct({
   questionCards: Schema.optional(QuestionCardsExpect),
   /** `Re:` lines chat links from the final answer. See reply-marker-grading.ts. */
   replyMarkers: Schema.optional(ReplyMarkersExpect),
+  /** `(↑ "words")` markers chat links from the final answer. See back-reference-grading.ts. */
+  backReferences: Schema.optional(BackReferencesExpect),
 });
 
 /**
@@ -1951,6 +1954,7 @@ export const gradeSample = (
   checks.push(...gradeSecret(expect.secret, run, pasted));
   checks.push(...gradeQuestionCards(expect.questionCards, run));
   checks.push(...gradeReplyMarkers(expect.replyMarkers, run));
+  checks.push(...gradeBackReferences(expect.backReferences, run));
   checks.push(...gradeShellInOrder(expect.shellInOrder, shell));
   return checks;
 };

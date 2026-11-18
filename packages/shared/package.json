@@ -299,6 +299,10 @@
       "types": "./src/replyMarkers.ts",
       "import": "./src/replyMarkers.ts"
     },
+    "./backReferences": {
+      "types": "./src/backReferences.ts",
+      "import": "./src/backReferences.ts"
+    },
     "./composerContextLegacy": {
       "types": "./src/composerContextLegacy.ts",
       "import": "./src/composerContextLegacy.ts"

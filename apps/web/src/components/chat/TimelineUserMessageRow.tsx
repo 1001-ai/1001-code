@@ -102,6 +102,7 @@ import {
 } from "./TimelineUserMessageRow.logic";
 import { ExchangeReplyLink, ExchangeThreadButton, useExchangeBubble } from "./ExchangeThread";
 import { useMessageContextMenu, type MessageCopy } from "./MessageContextMenu";
+import { BackReferenceUserSource } from "./BackReferenceLink";
 
 // Drawn inside the media so dark screenshots keep an edge on the dark background.
 const MEDIA_EDGE_CLASS_NAME =
@@ -1046,13 +1047,20 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             ) : null}
             {fileCardsOnly || audioOnly ? null : (
               <div onCopyCapture={onBodyCopyCapture}>
-                <CollapsibleUserMessageBody
-                  text={resolvedContext.text}
-                  renderContextReference={renderContextReference}
-                  skills={ctx.skills}
-                  markdownCwd={ctx.markdownCwd}
-                  collapsible={!folded}
-                />
+                <BackReferenceUserSource
+                  messageId={row.message.id}
+                  itemKey={row.id}
+                  request={ctx.citationRequest}
+                  listRef={ctx.listRef}
+                >
+                  <CollapsibleUserMessageBody
+                    text={resolvedContext.text}
+                    renderContextReference={renderContextReference}
+                    skills={ctx.skills}
+                    markdownCwd={ctx.markdownCwd}
+                    collapsible={!folded}
+                  />
+                </BackReferenceUserSource>
               </div>
             )}
           </div>

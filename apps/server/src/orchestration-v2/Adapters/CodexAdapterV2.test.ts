@@ -200,6 +200,11 @@ describe("CodexAdapterV2 runtime policy", () => {
               params.additionalContext?.["t3_code_runtime"]?.value ?? "",
               "<reply_markers>",
             );
+            assert.isDefined(params.additionalContext?.["t3_code_back_references"]);
+            assert.notInclude(
+              params.additionalContext?.["t3_code_runtime"]?.value ?? "",
+              "<back_references>",
+            );
           }
         }
       }),

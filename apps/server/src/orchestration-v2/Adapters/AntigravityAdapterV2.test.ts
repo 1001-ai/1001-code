@@ -1237,14 +1237,17 @@ describe("AntigravityAdapterV2 session system prompt", () => {
           assert.include(append, "pull_request_linking");
           assert.include(append, "asking_the_user");
           assert.include(append, "reply_markers");
+          assert.include(append, "back_references");
           assert.notInclude(sent, "<pull_request_linking>");
           assert.notInclude(sent, "<asking_the_user>");
           assert.notInclude(sent, "<reply_markers>");
+          assert.notInclude(sent, "<back_references>");
         } else {
           assert.notInclude(append, "systemPrompt");
           assert.include(sent, "<pull_request_linking>");
           assert.include(sent, "<asking_the_user>");
           assert.include(sent, "<reply_markers>");
+          assert.include(sent, "<back_references>");
         }
       }).pipe(Effect.provide(layerSession), Effect.scoped),
   );

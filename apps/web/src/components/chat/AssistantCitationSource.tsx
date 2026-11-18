@@ -99,7 +99,7 @@ export interface AssistantCitationTarget extends AssistantCitationRequest {
   onComplete: () => void;
 }
 
-function observeAssistantCitationSource({
+export function observeAssistantCitationSource({
   root,
   itemKey,
   request,

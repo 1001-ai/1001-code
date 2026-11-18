@@ -3,6 +3,7 @@ import {
   buildRuntimeInstructions,
   liveAppCheckoutCodexContext,
   replyMarkerCodexContext,
+  backReferenceCodexContext,
 } from "@t3tools/provider-core/server/runtimeInstructions";
 
 import {
@@ -62,9 +63,11 @@ export function buildCodexAdditionalContext(
         ...runtime,
         liveAppCheckout: false,
         replyMarkers: false,
+        backReferences: false,
       }),
     },
     ...replyMarkerCodexContext(),
+    ...backReferenceCodexContext(),
     ...liveAppCheckoutCodexContext(),
     ...(tools ? { t3_code_tools: { kind: "application", value: tools } } : {}),
   };
