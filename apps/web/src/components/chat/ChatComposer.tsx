@@ -83,6 +83,7 @@ import {
   replaceTextRange,
 } from "../../composer-logic";
 import { DEFAULT_COMPOSER_PLACEHOLDER } from "../../composerPlaceholder";
+import { inboxComposerPlaceholder } from "../../state/inboxAgent.logic";
 import { deriveComposerSendState, getAntigravitySendBlockReason } from "../ChatView.logic";
 import {
   dataTransferHasComposerMention,
@@ -2304,6 +2305,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   );
   // After /clear the next message starts a fresh session that cannot see what the suggestion refers to.
   const freshSessionArmed = useFreshSessionArmed(scopedThreadKey(routeThreadRef));
+  // Fork: the Inbox's own placeholder; see fork/README.md.
+  const defaultPlaceholder = inboxComposerPlaceholder(activeThread, DEFAULT_COMPOSER_PLACEHOLDER);
   // Offered only where the default placeholder would show, so it never hides a pending question.
   const offeredPromptSuggestion =
     phase !== "running" &&
@@ -3587,7 +3590,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                             ? "Choose a project above to start a thread"
                             : showProviderUnavailable
                               ? "Enable a provider in Settings to send a message"
-                              : (offeredPromptSuggestion ?? DEFAULT_COMPOSER_PLACEHOLDER)
+                              : (offeredPromptSuggestion ?? defaultPlaceholder)
                     }
                     placeholderSuffix={
                       offeredPromptSuggestion !== null ? (

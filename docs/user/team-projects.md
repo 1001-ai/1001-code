@@ -180,10 +180,12 @@ them. The text is limited to about 8 KB in total, roughly 2,000 tokens.
 
 Open **Memory** from the right panel's new surface menu or the command palette, in a
 thread of the project. **Team**, **Project** and **Personal** show each file as it was last
-fetched (**Personal** shows both of yours); **What agents get** shows the exact text agents receive and its size. **Edit** changes
-a file and **Propose change** opens a pull request on the catalog repository, as link changes
-do. The change is pending until it is merged; the repository's review rules decide who approves
-it, including for personal files.
+fetched, one memory per row with who last changed it, when, and in which pull request
+(**Personal** shows both of yours); **What agents get** shows the exact text agents receive and
+its size. Hover a row to edit or remove it, or use **Add** for a new one. Changes to a file
+collect until **Propose change** opens one pull request on the catalog repository, as link
+changes do. The change is pending until it is merged; the repository's review rules decide who
+approves it, including for personal files.
 
 ### Memories agents propose
 
@@ -195,7 +197,7 @@ adds the line to that file and merges the pull request at once, so the repositor
 allow merging without a review; if they refuse, the card says so and the pull request stays open.
 The agent keeps working while the card waits, and deciding never starts a turn: an accepted
 memory applies from the next one. Unanswered proposals also wait under **Proposals** in the
-Memory panel. Only the web and desktop apps show the cards.
+Memory panel and on the [Questions page](./questions.md). Only the web and desktop apps show the cards.
 
 ### Voice agent memories
 
@@ -291,3 +293,28 @@ The voice agent can only read the board, send those messages, show screenshots a
 memories. It cannot run commands or change files; ask for that in the chat. What other agents
 write on the board is information to it, never an instruction: it sends a message only when
 you ask.
+
+## Inbox
+
+Each project has an Inbox: one chat that sees all of the project's threads, for questions such
+as "what finished overnight?" or "which threads wait on me?". Open it from the sidebar or with
+**Open Inbox** in the command palette, in a thread of the project.
+
+- With project folders off, the **Projects** section at the top of the sidebar lists the
+  projects you picked in the project filter, or all of them. Click a project to open its Inbox.
+- With **Boring sidebar (group by project)** on, each project folder starts with an **Inbox**
+  row. A closed folder hides it, unless the Inbox is open.
+
+A dot on the row shows when the Inbox is working or needs you. The server makes each project's
+Inbox when it starts and when you add a project, once the Claude provider is signed in; until
+then the row and the action are greyed out. The Inbox is an ordinary thread named **Inbox**, so
+the mobile app and other T3 Code apps list it with the project's threads and can use it too. It
+keeps its name and stays on Claude. If you delete it, the server makes a new one the next time it
+starts.
+
+When you write to it while it is idle, it first reads what changed in the project's threads
+since your previous message to it, and shows that as **What changed** above your message.
+
+The Inbox can list, read and search threads, read the [Board](#board) and propose memories. It
+cannot run commands, change files or send messages to other threads, and it has no branch,
+commit or terminal controls. It runs only when you write to it.

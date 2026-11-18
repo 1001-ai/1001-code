@@ -2699,6 +2699,7 @@ export const layerWsRpc = (
         [WS_METHODS.boardDisconnect]: () => board.disconnect,
         [WS_METHODS.teamCatalogPropose]: (input) => teamCatalog.propose(input),
         [WS_METHODS.memorySubscribe]: (input) => memory.changes(input.projectId),
+        [WS_METHODS.memorySubscribePending]: () => memory.pendingChanges,
         [WS_METHODS.memoryPropose]: (input) => memory.propose(input),
         [WS_METHODS.memoryDecide]: (input) => memory.decide(input, currentSessionId),
         [WS_METHODS.agentsBoardSubscribe]: (input) => agentsBoard.changes(input.projectId),

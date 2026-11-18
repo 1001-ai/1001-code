@@ -216,7 +216,7 @@ import {
 } from "@t3tools/provider-core/server/orchestrationInstructions";
 import { buildRuntimeInstructions } from "@t3tools/provider-core/server/runtimeInstructions";
 import { claudeMemoryQueryKey } from "../../memory/memoryProviders.ts";
-import { lockClaudeQueryForVoiceAgent } from "../../voiceAgent/voiceAgentClaudeLock.ts";
+import { lockClaudeQueryForLockedAgent } from "../../lockedAgents/lockedAgentClaudeLock.ts";
 import {
   mcpToolPresentation,
   normalizeMcpText,
@@ -12094,8 +12094,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             ...(toolSearchOverride === undefined ? {} : { toolSearchOverride }),
             memory: turnInput.memory,
           });
-          // Fork: a voice agent thread gets only its own tools; see fork/README.md.
-          const queryOptions = lockClaudeQueryForVoiceAgent(
+          // Fork: a locked agent thread gets only its own tools; see fork/README.md.
+          const queryOptions = lockClaudeQueryForLockedAgent(
             unlockedQueryOptions,
             turnInput.appThread,
             turnInput.memory,

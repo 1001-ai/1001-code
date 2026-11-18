@@ -13,6 +13,7 @@ import {
   type MemoryScope,
   type MemoryView,
   memoryFile,
+  type PendingMemoryProposal,
   type ProjectId,
   type TeamCatalogProject,
   type TeamCatalogProposal,
@@ -44,6 +45,7 @@ import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
 import * as TeamCatalog from "../teamCatalog/TeamCatalog.ts";
+import { attributeLines } from "../teamCatalog/teamCatalogBlame.ts";
 import { hostedRepositoryOf } from "../teamCatalog/teamCatalogProposal.ts";
 import * as MemoryProposalStore from "./MemoryProposalStore.ts";
 import {
@@ -64,6 +66,11 @@ export class Memory extends Context.Service<
     readonly read: (projectId: ProjectId) => Effect.Effect<MemoryView>;
     /** The view now, then again whenever the catalog or the project's proposals change. */
     readonly changes: (projectId: ProjectId) => Stream.Stream<MemoryView>;
+    /**
+     * Every project's unanswered proposals, newest first, now and on each change. Reads only the
+     * proposals, never the catalog or its files.
+     */
+    readonly pendingChanges: Stream.Stream<ReadonlyArray<PendingMemoryProposal>>;
     /**
      * The block for a turn in the project, or undefined when there is none. Never fails and never
      * waits for git: a stale catalog is refreshed in the background for later turns.
@@ -133,8 +140,16 @@ export const boardInstructions = (linear: TeamCatalogLinear, link: string): stri
   ].join("\n");
 };
 
-/** What a turn reads. The voice agent's memories are left out: only the panel's view adds them. */
-type GeneralMemoryView = Omit<MemoryView, "voiceAgent">;
+/** A document without its lines' authors, which only the panel shows. */
+type MemoryDocumentText = Omit<MemoryDocument, "lines">;
+
+/**
+ * What a turn reads. The voice agent's memories and the lines' authors are left out: only the
+ * panel's view adds them, so a turn never waits for git.
+ */
+type GeneralMemoryView = Omit<MemoryView, "voiceAgent" | "documents"> & {
+  readonly documents: ReadonlyArray<MemoryDocumentText>;
+};
 
 /** Turns use the cached catalog; one older than this starts a background fetch. */
 const STALE_AFTER_MS = 10 * 60_000;
@@ -277,7 +292,7 @@ const make = Effect.gen(function* () {
       return { view, project: null };
     }
     const project = yield* catalogProject(catalog, projectId);
-    const documents: ReadonlyArray<MemoryDocument> = [
+    const documents = [
       yield* document("team", project, catalog.viewer),
       yield* document("project", project, catalog.viewer),
       yield* document("personal", project, catalog.viewer),
@@ -299,12 +314,21 @@ const make = Effect.gen(function* () {
 
   const read: Memory["Service"]["read"] = Effect.fn("Memory.readView")(function* (projectId) {
     const { view } = yield* readWithProject(projectId);
+    const documents = yield* Effect.forEach(view.documents, (document) =>
+      document.file === null || document.text === ""
+        ? Effect.succeed({ ...document, lines: [] })
+        : teamCatalog
+            .blame(document.file)
+            .pipe(
+              Effect.map((blame) => ({ ...document, lines: attributeLines(document.text, blame) })),
+            ),
+    );
     const own = yield* voiceAgentFile(view.source, view.viewer);
     const voiceAgent: MemoryView["voiceAgent"] =
       typeof own === "string"
         ? { file: null, unavailable: own, active: [], earlier: [] }
         : { file: own.file, unavailable: null, ...parseVoiceAgentMemories(own.text) };
-    return { ...view, voiceAgent };
+    return { ...view, documents, voiceAgent };
   });
 
   const changes: Memory["Service"]["changes"] = (projectId) =>
@@ -312,6 +336,18 @@ const make = Effect.gen(function* () {
       Stream.mapEffect(() => read(projectId)),
       Stream.changesWith((a, b) => JSON.stringify(a) === JSON.stringify(b)),
     );
+
+  const pendingChanges: Memory["Service"]["pendingChanges"] = SubscriptionRef.changes(
+    proposalsRef,
+  ).pipe(
+    Stream.map((proposals) =>
+      proposals
+        .filter((proposal) => proposal.decision === null)
+        .toSorted((left, right) => right.createdAt.localeCompare(left.createdAt))
+        .map((proposal) => ({ projectId: proposal.projectId, proposal: onWire(proposal) })),
+    ),
+    Stream.changesWith((a, b) => JSON.stringify(a) === JSON.stringify(b)),
+  );
 
   const refreshWhenStale = Effect.fn("Memory.refreshWhenStale")(function* (
     catalog: TeamCatalogSnapshot,
@@ -656,6 +692,7 @@ const make = Effect.gen(function* () {
   return Memory.of({
     read,
     changes,
+    pendingChanges,
     instructions,
     voiceAgentInstructions,
     voiceAgentEarlier,

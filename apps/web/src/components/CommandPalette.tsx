@@ -253,6 +253,7 @@ import { memoryPaletteAction } from "./memory/memorySurface";
 import { agentsBoardPaletteAction } from "./agentsBoard/agentsBoardSurface";
 import { questionsPaletteAction } from "./questions/questionsEntryPoints";
 import { useLampPaletteAction } from "./lamp/lampEntryPoints";
+import { useInboxPaletteAction } from "./inboxAgent/inboxEntryPoints";
 import { useCommandPaletteThreadItems } from "./CommandPaletteThreadItems";
 import { useCommandPaletteThemeItems } from "./CommandPaletteThemeItems";
 import {
@@ -1243,6 +1244,7 @@ function OpenCommandPaletteDialog(props: {
   });
   const teamProjectsDrawer = useTeamProjectsDrawerToggle();
   const lampPaletteAction = useLampPaletteAction();
+  const inboxPaletteAction = useInboxPaletteAction(currentProjectEnvironmentId, currentProjectId);
 
   const openAddProjectFlow = () => {
     switch (addProjectEntry.kind) {
@@ -1673,6 +1675,7 @@ function OpenCommandPaletteDialog(props: {
   }
   actionItems.push(questionsPaletteAction(() => navigate({ to: "/questions" })));
   if (lampPaletteAction) actionItems.push(lampPaletteAction);
+  if (inboxPaletteAction) actionItems.push(inboxPaletteAction);
 
   actionItems.push({
     kind: "action",

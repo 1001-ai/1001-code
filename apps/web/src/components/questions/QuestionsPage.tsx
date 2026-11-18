@@ -33,18 +33,24 @@ import { useEnvironmentLookups, useProjectLookups } from "../CommandPaletteLooku
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../ui/empty";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { SidebarInset } from "../ui/sidebar";
 import { Spinner } from "../ui/spinner";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
+import { MemoryProposalRow } from "../memory/MemoryProposalRow";
 import { WorkspacePageContainer } from "../WorkspacePageContainer";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
 import { QuestionsApproval } from "./QuestionsApproval";
 import {
+  ALL_PROJECTS,
+  effectiveProjectFilter,
   matchesFilter,
   questionAnswersMessage,
+  waitingProjectOptions,
   waitingSummary,
   withoutSentAnswerLines,
   type OpenQuestionCard,
+  type QuestionsFilter,
   type WaitingSummary,
 } from "./questionsPage.logic";
 import {
@@ -53,26 +59,52 @@ import {
   type QuestionsThreadEntry,
 } from "./questionsPage.state";
 
-type QuestionsFilter = "all" | "questions" | "approvals";
-
 const FILTERS: ReadonlyArray<{ readonly value: QuestionsFilter; readonly label: string }> = [
   { value: "all", label: "All" },
   { value: "questions", label: "Questions" },
   { value: "approvals", label: "Approvals" },
+  { value: "memories", label: "Memories" },
 ];
+
+const NONE_WAITING: Record<QuestionsFilter, string> = {
+  all: "Nothing waiting",
+  questions: "No questions waiting",
+  approvals: "No approvals waiting",
+  memories: "No memory proposals waiting",
+};
 
 function pluralize(count: number, singular: string, plural: string): string {
   return `${count} ${count === 1 ? singular : plural}`;
 }
 
+const entryProjectKey = (entry: QuestionsThreadEntry) =>
+  `${entry.ref.environmentId}:${entry.shell.projectId}`;
+
 export function QuestionsPage() {
   const entries = useAtomValue(questionsThreadEntriesAtom);
   const [filter, setFilter] = useState<QuestionsFilter>("all");
+  const [selectedProject, setSelectedProject] = useState(ALL_PROJECTS);
   const { environmentLabelById } = useEnvironmentLookups();
   const { projectByKey } = useProjectLookups();
   const summarized = entries.map((entry) => ({ entry, summary: waitingSummary(entry) }));
   const waiting = summarized.reduce((total, { summary }) => total + summary.count, 0);
-  const shown = summarized.filter(({ entry, summary }) =>
+  const projectOptions = waitingProjectOptions(
+    summarized
+      .filter(({ entry, summary }) => matchesFilter(summary, entry.loaded, "all"))
+      .map(({ entry }) => ({
+        key: entryProjectKey(entry),
+        title: projectByKey.get(entryProjectKey(entry))?.title ?? null,
+      })),
+  );
+  const project = effectiveProjectFilter(selectedProject, projectOptions);
+  // Forget a project once it has nothing waiting, so new items there do not narrow the list again.
+  if (project !== selectedProject) setSelectedProject(project);
+  const projectTitle = projectOptions.find((option) => option.key === project)?.title ?? null;
+  const inProject = summarized.filter(
+    ({ entry }) => project === ALL_PROJECTS || entryProjectKey(entry) === project,
+  );
+  const waitingInProject = inProject.reduce((total, { summary }) => total + summary.count, 0);
+  const shown = inProject.filter(({ entry, summary }) =>
     matchesFilter(summary, entry.loaded, filter),
   );
 
@@ -83,6 +115,32 @@ export function QuestionsPage() {
           <h1 className="truncate font-medium text-sm">Questions</h1>
           <Badge variant="secondary">{waiting} waiting</Badge>
           <div className="min-w-0 flex-1" />
+          {projectOptions.length > 0 ? (
+            <span className="min-w-0 shrink [-webkit-app-region:no-drag]">
+              <Select
+                value={project}
+                onValueChange={(next) => {
+                  if (next !== null) setSelectedProject(next);
+                }}
+              >
+                <SelectTrigger size="sm" variant="ghost" aria-label="Project">
+                  <SelectValue>
+                    {(value: string) =>
+                      projectOptions.find((option) => option.key === value)?.title ?? "All projects"
+                    }
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectPopup align="end" alignItemWithTrigger={false}>
+                  <SelectItem value={ALL_PROJECTS}>All projects</SelectItem>
+                  {projectOptions.map((option) => (
+                    <SelectItem key={option.key} value={option.key}>
+                      {option.title}
+                    </SelectItem>
+                  ))}
+                </SelectPopup>
+              </Select>
+            </span>
+          ) : null}
           <ToggleGroup
             aria-label="Show"
             className="[-webkit-app-region:no-drag]"
@@ -105,7 +163,8 @@ export function QuestionsPage() {
               <EmptyHeader>
                 <EmptyTitle>Nothing is waiting on you</EmptyTitle>
                 <EmptyDescription>
-                  Questions and approvals from agents in every thread show up here.
+                  Questions, approvals and memory proposals from agents in every thread show up
+                  here.
                 </EmptyDescription>
               </EmptyHeader>
             </Empty>
@@ -113,10 +172,11 @@ export function QuestionsPage() {
             <Empty className="h-full">
               <EmptyHeader>
                 <EmptyTitle>
-                  {filter === "questions" ? "No questions waiting" : "No approvals waiting"}
+                  {NONE_WAITING[filter]}
+                  {projectTitle === null ? null : ` in ${projectTitle}`}
                 </EmptyTitle>
                 <EmptyDescription>
-                  {pluralize(waiting, "item waits", "items wait")} under All.
+                  {pluralize(waitingInProject, "item waits", "items wait")} under All.
                 </EmptyDescription>
               </EmptyHeader>
             </Empty>
@@ -159,10 +219,11 @@ function QuestionsThreadGroup({
   readonly projectTitle: string | null;
   readonly environmentLabel: string | null;
 }) {
-  const { ref, shell, cards, requests } = entry;
-  const { questions, approvals } = summary;
-  const showQuestions = filter !== "approvals";
-  const showApprovals = filter !== "questions";
+  const { ref, shell, cards, requests, proposals } = entry;
+  const { questions, approvals, memories } = summary;
+  const showQuestions = filter === "all" || filter === "questions";
+  const showApprovals = filter === "all" || filter === "approvals";
+  const showMemories = filter === "all" || filter === "memories";
   const meta = [projectTitle, environmentLabel, formatRelativeTimeLabel(waitingSince(entry))]
     .filter(Boolean)
     .join(" · ");
@@ -188,10 +249,13 @@ function QuestionsThreadGroup({
             {approvals === 1 ? "Approval" : pluralize(approvals, "approval", "approvals")}
           </Badge>
         ) : null}
+        {memories > 0 ? (
+          <Badge variant="secondary">{pluralize(memories, "memory", "memories")}</Badge>
+        ) : null}
         <OpenThreadLink threadRef={ref} entry={entry} />
       </header>
       <div className="flex flex-col divide-y divide-border">
-        {!entry.loaded ? (
+        {!entry.loaded && filter !== "memories" ? (
           <div className="flex items-center gap-2 px-4 py-3 text-muted-foreground text-sm">
             <Spinner className="size-3.5" />
             Loading…
@@ -221,6 +285,17 @@ function QuestionsThreadGroup({
         {showApprovals
           ? requests.approvals.map((approval) => (
               <QuestionsApproval key={approval.requestId} threadRef={ref} approval={approval} />
+            ))
+          : null}
+        {showMemories
+          ? proposals.map((pending) => (
+              <MemoryProposalRow
+                key={pending.proposal.id}
+                environmentId={pending.environmentId}
+                projectId={pending.projectId}
+                proposal={pending.proposal}
+                embedded
+              />
             ))
           : null}
       </div>

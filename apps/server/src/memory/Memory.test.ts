@@ -3,6 +3,7 @@ import {
   ProjectId,
   type RepositoryIdentity,
   TeamCatalogError,
+  type MemoryLine,
   type TeamCatalogLinear,
   type TeamCatalogProposal,
   type TeamCatalogSnapshot,
@@ -17,6 +18,8 @@ import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
@@ -74,6 +77,19 @@ const FILES: Record<string, string> = {
 };
 const VOICE_FILE = "memory/people/alice/voice-agent-memories.md";
 
+const ADA_LINE = {
+  author: "Ada Lovelace",
+  authoredAt: "2026-03-02T10:00:00.000Z",
+  commit: "a".repeat(40),
+  pullRequest: 14,
+};
+const UNKNOWN_LINE = { author: null, authoredAt: null, commit: null, pullRequest: null };
+/** What `git blame` says of the fetched files; the project file's blame is of an older version. */
+const BLAME: Record<string, ReadonlyArray<MemoryLine>> = {
+  "memory/team.md": [{ text: "- Prefer small pull requests.", ...ADA_LINE }],
+  "memory/projects/web.md": [{ text: "- Run the web tests.", ...ADA_LINE }],
+};
+
 const makeMemory = (input: {
   readonly catalog: TeamCatalogSnapshot;
   readonly identity?: RepositoryIdentity | null;
@@ -94,6 +110,7 @@ const makeMemory = (input: {
   const proposals: Array<TeamCatalog.TeamCatalogFilesProposal> = [];
   const merged: Array<string> = [];
   const reads: Array<string> = [];
+  const blames: Array<string> = [];
   const store = { saved: input.stored ?? [], saves: 0 };
   const build = Memory.layer.pipe(
     Layer.provide(
@@ -128,6 +145,11 @@ const makeMemory = (input: {
                 reads.push(file);
                 return input.catalog.source === null ? null : (FILES[file] ?? null);
               })),
+          blame: (file) =>
+            Effect.sync(() => {
+              blames.push(file);
+              return BLAME[file] ?? null;
+            }),
           refresh: () =>
             (input.refreshed === undefined
               ? Effect.void
@@ -173,14 +195,18 @@ const makeMemory = (input: {
     Layer.build,
     Effect.map((context) => Context.get(context, Memory.Memory)),
   );
-  return { build, proposals, merged, store, reads };
+  return { build, proposals, merged, store, reads, blames };
 };
 
 it.effect(
   "reads the team file, the project's file by its remote, and only the viewer's own file",
   () =>
     Effect.gen(function* () {
-      const memory = yield* makeMemory({ catalog: catalog() }).build;
+      const fixture = makeMemory({ catalog: catalog() });
+      const memory = yield* fixture.build;
+      const block = yield* memory.instructions(PROJECT_ID, THREAD_ID);
+      // A turn never waits for git blame; only the panel shows the authors.
+      expect(fixture.blames).toEqual([]);
       const view = yield* memory.read(PROJECT_ID);
       expect(view.documents).toEqual([
         {
@@ -188,6 +214,7 @@ it.effect(
           file: "memory/team.md",
           label: null,
           text: FILES["memory/team.md"],
+          lines: [{ text: "- Prefer small pull requests.", ...ADA_LINE }],
           unavailable: null,
         },
         {
@@ -195,6 +222,7 @@ it.effect(
           file: "memory/projects/web.md",
           label: "Web app",
           text: FILES["memory/projects/web.md"],
+          lines: [{ text: "- Run the web tests before pushing.", ...UNKNOWN_LINE }],
           unavailable: null,
         },
         {
@@ -202,6 +230,7 @@ it.effect(
           file: "memory/people/alice.md",
           label: "Alice",
           text: FILES["memory/people/alice.md"],
+          lines: [{ text: "- Keep replies short.", ...UNKNOWN_LINE }],
           unavailable: null,
         },
         {
@@ -209,10 +238,15 @@ it.effect(
           file: "memory/projects/web/people/alice.md",
           label: "Alice",
           text: "",
+          lines: [],
           unavailable: null,
         },
       ]);
-      const block = yield* memory.instructions(PROJECT_ID, THREAD_ID);
+      expect(fixture.blames).toEqual([
+        "memory/team.md",
+        "memory/projects/web.md",
+        "memory/people/alice.md",
+      ]);
       expect(block).toBe(view.block);
       expect(block).toContain("call memory_propose");
       const team = block!.indexOf("Prefer small pull requests");
@@ -453,6 +487,51 @@ it.effect("accepting adds the edited line to the chosen file and merges at once"
       ],
     ]);
     expect(fixture.merged).toHaveLength(2);
+  }).pipe(Effect.scoped),
+);
+
+it.effect("lists every project's unanswered proposals, newest first, without reading files", () =>
+  Effect.gen(function* () {
+    const otherProject = ProjectId.make("project-api");
+    const stored: ReadonlyArray<MemoryProposalStore.StoredMemoryProposal> = [
+      {
+        id: "api-pending",
+        projectId: otherProject,
+        threadId: ThreadId.make("thread-api"),
+        threadTitle: "Tune the API",
+        text: "Cache reads.",
+        reason: "",
+        createdAt: "1970-01-01T00:00:00.000Z",
+        decision: null,
+        decidedBySession: null,
+      },
+    ];
+    const fixture = makeMemory({ catalog: catalog(), stored });
+    const memory = yield* fixture.build;
+    const pending = Stream.runHead(memory.pendingChanges).pipe(
+      Effect.map((head) =>
+        Option.getOrThrow(head).map(({ projectId, proposal }) => [projectId, proposal.text]),
+      ),
+    );
+    yield* TestClock.adjust("1 minute");
+    const tabs = yield* memory.proposeFromAgent(agentProposal("Use tabs."));
+    yield* TestClock.adjust("1 minute");
+    yield* memory.proposeFromAgent(agentProposal("Prefer pnpm."));
+    expect(yield* pending).toEqual([
+      [PROJECT_ID, "Prefer pnpm."],
+      [PROJECT_ID, "Use tabs."],
+      [otherProject, "Cache reads."],
+    ]);
+
+    yield* memory.decide(
+      { projectId: PROJECT_ID, proposalId: tabs.id, choice: "reject", text: "Use tabs." },
+      "session-1",
+    );
+    expect(yield* pending).toEqual([
+      [PROJECT_ID, "Prefer pnpm."],
+      [otherProject, "Cache reads."],
+    ]);
+    expect(fixture.reads).toEqual([]);
   }).pipe(Effect.scoped),
 );
 

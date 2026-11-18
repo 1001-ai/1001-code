@@ -1,12 +1,16 @@
 import { MessageId } from "@t3tools/contracts";
+import { QUESTION_SKIPPED_ANSWER } from "@t3tools/shared/questionCards";
 import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  ALL_PROJECTS,
   askedQuestionCards,
+  effectiveProjectFilter,
   matchesFilter,
   openQuestionCards,
   questionAnswersMessage,
+  waitingProjectOptions,
   waitingSummary,
   withoutSentAnswerLines,
 } from "./questionsPage.logic";
@@ -54,6 +58,7 @@ describe("waitingSummary", () => {
       all: matchesFilter(summary, entry.loaded, "all"),
       questions: matchesFilter(summary, entry.loaded, "questions"),
       approvals: matchesFilter(summary, entry.loaded, "approvals"),
+      memories: matchesFilter(summary, entry.loaded, "memories"),
     };
   };
   it.each([
@@ -65,8 +70,9 @@ describe("waitingSummary", () => {
         cardsAsked: false,
         cards: [1, 2],
         requests: { approvals: [1], userInputs: [{ questions: [1, 2] }] },
+        proposals: [1],
       },
-      { count: 5, all: true, questions: true, approvals: true },
+      { count: 6, all: true, questions: true, approvals: true, memories: true },
     ],
     [
       "a thread still loading",
@@ -76,8 +82,9 @@ describe("waitingSummary", () => {
         cardsAsked: false,
         cards: [],
         requests: none,
+        proposals: [],
       },
-      { count: 1, all: true, questions: true, approvals: true },
+      { count: 1, all: true, questions: true, approvals: true, memories: false },
     ],
     [
       "cards outside the loaded history",
@@ -87,8 +94,9 @@ describe("waitingSummary", () => {
         cardsAsked: false,
         cards: [],
         requests: none,
+        proposals: [],
       },
-      { count: 1, all: true, questions: true, approvals: false },
+      { count: 1, all: true, questions: true, approvals: false, memories: false },
     ],
     [
       "cards all answered before the shell caught up",
@@ -98,8 +106,9 @@ describe("waitingSummary", () => {
         cardsAsked: true,
         cards: [],
         requests: none,
+        proposals: [],
       },
-      { count: 0, all: false, questions: false, approvals: false },
+      { count: 0, all: false, questions: false, approvals: false, memories: false },
     ],
     [
       "a request kind the page does not render",
@@ -109,11 +118,52 @@ describe("waitingSummary", () => {
         cardsAsked: false,
         cards: [],
         requests: none,
+        proposals: [],
       },
-      { count: 2, all: true, questions: true, approvals: true },
+      { count: 2, all: true, questions: true, approvals: true, memories: false },
+    ],
+    [
+      "memory proposals alone",
+      { shell, loaded: true, cardsAsked: false, cards: [], requests: none, proposals: [1, 2] },
+      { count: 2, all: true, questions: false, approvals: false, memories: true },
+    ],
+    [
+      "a thread still loading, with a memory proposal",
+      {
+        shell: { ...shell, hasPendingApprovals: true },
+        loaded: false,
+        cardsAsked: false,
+        cards: [],
+        requests: none,
+        proposals: [1],
+      },
+      { count: 2, all: true, questions: true, approvals: true, memories: true },
     ],
   ])("%s", (_label, entry, expected) => {
     expect(counted(entry)).toEqual(expected);
+  });
+});
+
+describe("project filter", () => {
+  const options = waitingProjectOptions([
+    { key: "env-1:web", title: "Web app" },
+    { key: "env-2:api", title: "API" },
+    { key: "env-1:web", title: "Web app" },
+    { key: "env-1:gone", title: null },
+  ]);
+
+  it("lists each project with something waiting once, by title", () => {
+    expect(options).toEqual([
+      { key: "env-2:api", title: "API" },
+      { key: "env-1:gone", title: "Unknown project" },
+      { key: "env-1:web", title: "Web app" },
+    ]);
+  });
+
+  it("falls back to all projects once the chosen one has nothing waiting", () => {
+    expect(effectiveProjectFilter("env-2:api", options)).toBe("env-2:api");
+    expect(effectiveProjectFilter("env-3:docs", options)).toBe(ALL_PROJECTS);
+    expect(effectiveProjectFilter(ALL_PROJECTS, options)).toBe(ALL_PROJECTS);
   });
 });
 
@@ -152,6 +202,17 @@ describe("openQuestionCards", () => {
     expect(ids(openCards(items, "2026-01-01T00:01:00.000Z"))).toEqual([["a1", "Q2"]]);
   });
 
+  it("drops cards the agent withdrew", () => {
+    const items = [
+      assistant("a1", ASK_TWO, "2026-01-01T00:02:00.000Z"),
+      user("u1", "Also check the tests", "2026-01-01T00:01:00.000Z"),
+      assistant("a2", "Q2: no longer needed", "2026-01-01T00:03:00.000Z"),
+    ];
+    expect(ids(openCards(items, "2026-01-01T00:01:00.000Z"))).toEqual([["a1", "Q1"]]);
+    const both = [...items, assistant("a3", "Q1: no longer needed", "2026-01-01T00:04:00.000Z")];
+    expect(openCards(both, "2026-01-01T00:01:00.000Z")).toEqual([]);
+  });
+
   it("keeps only the newest card for a re-asked id, and skips streaming messages", () => {
     const items = [
       assistant("a1", ASK_TWO, "2026-01-01T00:02:00.000Z"),
@@ -185,6 +246,9 @@ describe("questionAnswersMessage", () => {
       ],
       text: "Q1: Yes\nQ2: Ada",
     });
+    expect(questionAnswersMessage(`Q2: ${QUESTION_SKIPPED_ANSWER}`, ["Q1", "Q2"])?.text).toBe(
+      "Q2: skipped",
+    );
   });
 
   it("is null while no listed card has an answer", () => {

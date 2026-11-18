@@ -74,6 +74,8 @@ export * from "./memory.ts";
 export * from "./agentsBoard.ts";
 export * from "./voiceOutput.ts";
 export * from "./voiceAgent.ts";
+export * from "./lockedAgents.ts";
+export * from "./inboxAgent.ts";
 export * from "./scheduledTask.ts";
 export * from "./worktreeMcp.ts";
 export * from "./resourceTelemetry.ts";

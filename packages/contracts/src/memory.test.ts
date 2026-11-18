@@ -24,6 +24,7 @@ const doc = (
           : memoryFile({ scope, project: "web", login: label ?? "alice" }),
   label,
   text,
+  lines: [],
   unavailable: null,
 });
 
