@@ -45,6 +45,7 @@ export const INBOX_AGENT_DIGEST_DETAIL_MAX_LENGTH = 300;
 
 export const InboxAgentDigestEntryKind = Schema.Literals([
   "thread-created",
+  "run-started",
   "run-finished",
   "run-failed",
   "question",

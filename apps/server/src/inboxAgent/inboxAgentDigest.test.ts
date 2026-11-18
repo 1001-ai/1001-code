@@ -85,6 +85,14 @@ it("lists each kind of change in the window, newest first", () => {
         createdAt: at(15 * HOUR),
       },
     }),
+    // Finished in the window, then started again: the newer run is what the shell keeps.
+    thread("rerun", {
+      title: "Search",
+      latestRunStartedAt: at(17 * HOUR),
+      latestRunCompletedAt: null,
+      status: "running",
+    }),
+    thread("long-run", { latestRunStartedAt: at(9 * HOUR), latestRunCompletedAt: null }),
     thread("pr", {
       title: "Cache",
       pullRequests: [
@@ -107,6 +115,7 @@ it("lists each kind of change in the window, newest first", () => {
   expect(digest.until).toBe(DateTime.formatIso(at(UNTIL)));
   expect(digest.omitted).toBe(0);
   expect(digest.entries.map((entry) => [entry.kind, entry.title, entry.detail])).toEqual([
+    ["run-started", "Search", undefined],
     ["pull-request", "Cache", "https://git.acme.test/acme/web/pull/7"],
     ["question", "Deploy", "waits for an approval"],
     ["question", "Layout", "asks the user a question"],

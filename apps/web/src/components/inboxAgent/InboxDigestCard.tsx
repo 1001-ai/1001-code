@@ -13,6 +13,7 @@ import { TimelineRowCtx } from "../chat/timelineRowContext";
 
 const KIND_LABELS: Record<InboxAgentDigestEntry["kind"], string> = {
   "thread-created": "New thread",
+  "run-started": "Working",
   "run-finished": "Finished",
   "run-failed": "Failed",
   question: "Waiting for you",

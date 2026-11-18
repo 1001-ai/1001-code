@@ -27,6 +27,7 @@ import * as ThreadManagementService from "../orchestration-v2/ThreadManagementSe
 import * as OrchestrationEventStore from "../persistence/OrchestrationEventStore.ts";
 import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import * as InboxAgent from "./InboxAgent.ts";
 import { isInboxThread } from "./inboxAgentThreads.ts";
 
@@ -58,6 +59,8 @@ const withInbox = <A, E>(
     readonly watch?: boolean;
     readonly stateDir?: string;
     readonly providers?: ReadonlyArray<ServerProvider>;
+    /** Whether Claude is on for the project at the start. */
+    readonly enabled?: boolean;
   },
   test: (fixture: {
     readonly service: InboxAgent.InboxAgent["Service"];
@@ -68,6 +71,7 @@ const withInbox = <A, E>(
     readonly projects: Array<ProjectId>;
     readonly projectEvents: Queue.Queue<ApplicationStoredEvent>;
     readonly providerChanges: Queue.Queue<ReadonlyArray<ServerProvider>>;
+    readonly settingsChanges: Queue.Queue<void>;
     readonly setProviders: (providers: ReadonlyArray<ServerProvider>) => void;
     readonly setEnabled: (enabled: boolean) => void;
     readonly stateDir: string;
@@ -83,8 +87,9 @@ const withInbox = <A, E>(
       const projects: Array<ProjectId> = [PROJECT];
       const projectEvents = yield* Queue.unbounded<ApplicationStoredEvent>();
       const providerChanges = yield* Queue.unbounded<ReadonlyArray<ServerProvider>>();
+      const settingsChanges = yield* Queue.unbounded<void>();
       let providers: ReadonlyArray<ServerProvider> = options.providers ?? [claude()];
-      let enabled = true;
+      let enabled = options.enabled ?? true;
       const live = (archived: boolean, projectId: ProjectId | undefined) =>
         [...shells.values()].filter(
           (shell) =>
@@ -106,6 +111,9 @@ const withInbox = <A, E>(
               }),
             ),
           ),
+        }),
+        Layer.mock(ServerSettings.ServerSettingsService)({
+          streamChanges: Stream.fromQueue(settingsChanges).pipe(Stream.map(() => ({}) as never)),
         }),
         Layer.mock(ProjectStore.ProjectStoreV2)({
           list: () => Effect.sync(() => projects.map((projectId) => ({ projectId }) as never)),
@@ -162,6 +170,7 @@ const withInbox = <A, E>(
         projects,
         projectEvents,
         providerChanges,
+        settingsChanges,
         setProviders: (next) => {
           providers = next;
         },
@@ -341,6 +350,16 @@ it.effect("makes a waiting project's Inbox once Claude becomes ready", () =>
     Effect.gen(function* () {
       // The watcher reads provider changes only after the startup pass, which made nothing.
       yield* Queue.offer(providerChanges, [claude()]);
+      expect((yield* Queue.take(creates)).projectId).toBe(PROJECT);
+    }),
+  ),
+);
+
+it.effect("makes a waiting project's Inbox once Claude is turned on in its settings", () =>
+  withInbox({ watch: true, enabled: false }, ({ creates, settingsChanges, setEnabled }) =>
+    Effect.gen(function* () {
+      setEnabled(true);
+      yield* Queue.offer(settingsChanges, undefined);
       expect((yield* Queue.take(creates)).projectId).toBe(PROJECT);
     }),
   ),

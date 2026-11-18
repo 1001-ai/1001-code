@@ -41,6 +41,8 @@ type DigestShell = Pick<
   | "createdAt"
   | "status"
   | "lastError"
+  | "latestRunRequestedAt"
+  | "latestRunStartedAt"
   | "latestRunCompletedAt"
   | "openQuestionsAt"
   | "pendingRuntimeRequest"
@@ -56,8 +58,9 @@ const iso = (millis: number) => DateTime.formatIso(DateTime.makeUnsafe(millis));
 
 /**
  * What changed in one project's listed threads after `sinceMs` and up to `untilMs`: threads made,
- * runs that finished or failed, questions opened and pull requests linked. Side chats, subagents,
- * other projects and the Inbox itself are left out. Newest first; the oldest are cut past the cap.
+ * each thread's latest run started, finished or failed, questions opened and pull requests
+ * linked. Side chats, subagents, other projects and the Inbox itself are left out. Newest first;
+ * the oldest are cut past the cap.
  */
 export function inboxAgentDigest(input: {
   readonly shells: ReadonlyArray<DigestShell>;
@@ -101,7 +104,14 @@ export function inboxAgentDigest(input: {
     const created = inWindow(shell.createdAt);
     if (created !== null) add("thread-created", created);
 
-    const finished = inWindow(shell.latestRunCompletedAt);
+    // The shell keeps only the latest run: one that is still going hides any earlier outcome.
+    const completedAt = shell.latestRunCompletedAt ?? null;
+    const started =
+      completedAt === null
+        ? inWindow(shell.latestRunStartedAt ?? shell.latestRunRequestedAt)
+        : null;
+    if (started !== null) add("run-started", started);
+    const finished = inWindow(completedAt);
     if (finished !== null) {
       if (shell.status === "failed") add("run-failed", finished, shell.lastError ?? undefined);
       else

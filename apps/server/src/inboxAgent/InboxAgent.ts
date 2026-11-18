@@ -28,6 +28,7 @@ import * as ThreadManagementService from "../orchestration-v2/ThreadManagementSe
 import * as OrchestrationEventStore from "../persistence/OrchestrationEventStore.ts";
 import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import { forkParked } from "../serverActivation.ts";
 import {
   inboxThreadOf,
@@ -239,13 +240,15 @@ const isProjectCreated = (event: ApplicationStoredEvent): event is ApplicationPr
   "type" in event && event.type === "project.created";
 
 /**
- * The triggers. Kept beside `ensure` so changing when an Inbox is made (for example only when
- * someone names a thread "Inbox") touches only this function.
+ * The triggers: startup, new projects, and provider or settings changes. Kept beside `ensure` so
+ * changing when an Inbox is made (for example only when someone names a thread "Inbox") touches
+ * only this function.
  */
 const watch = Effect.gen(function* () {
   const inbox = yield* InboxAgent;
   const events = yield* OrchestrationEventStore.OrchestrationEventStore;
   const registry = yield* ProviderRegistry.ProviderRegistry;
+  const settings = yield* ServerSettings.ServerSettingsService;
   const afterSequence = yield* events.latestApplicationSequence.pipe(Effect.orElseSucceed(() => 0));
   yield* forkParked(
     inbox.ensureAll.pipe(
@@ -259,8 +262,12 @@ const watch = Effect.gen(function* () {
               (event) => inbox.ensure(event.payload.projectId),
             ),
             Stream.runForEach(registry.streamChanges, inbox.retryWaiting),
+            // Turning Claude on for a project is a settings change, not a provider change.
+            Stream.runForEach(settings.streamChanges, () =>
+              registry.getProviders.pipe(Effect.flatMap(inbox.retryWaiting)),
+            ),
           ],
-          { concurrency: 2, discard: true },
+          { concurrency: 3, discard: true },
         ),
       ),
       Effect.catchCause((cause) =>
