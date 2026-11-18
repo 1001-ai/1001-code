@@ -2,7 +2,7 @@ import { parseScopedThreadKey, scopedThreadKey } from "@t3tools/client-runtime/e
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { Atom } from "effect/reactivity";
-import { CheckIcon, PencilLineIcon } from "lucide-react";
+import { CheckIcon, CircleSlashIcon, PencilLineIcon } from "lucide-react";
 import {
   use,
   useId,
@@ -23,6 +23,7 @@ import {
 import { environmentThreadDetails } from "../../state/threads";
 import {
   findQuestionAnswer,
+  isQuestionWithdrawn,
   questionOptions,
   readAnswerLine,
   selectedMultiOptions,
@@ -53,6 +54,20 @@ const questionAnswerAtomFamily = Atom.family((key: string) => {
     }
     return previous;
   }).pipe(Atom.setIdleTTL(0));
+});
+
+const questionWithdrawnAtomFamily = Atom.family((key: string) => {
+  const [thread = "", askedInItemId = "", questionId = ""] = key.split("\u0000");
+  const threadRef = parseScopedThreadKey(thread);
+  return Atom.make(
+    (get) =>
+      threadRef !== null &&
+      isQuestionWithdrawn(
+        get(environmentThreadDetails.timelineVisibleTurnItemsAtom(threadRef)),
+        askedInItemId,
+        questionId,
+      ),
+  ).pipe(Atom.setIdleTTL(0));
 });
 
 // Kept alive so typing, an open "Change answer" and a send in flight survive the card remounting when streaming ends.
@@ -121,6 +136,7 @@ export function QuestionCard({
   const freeText = useAtomValue(questionFreeTextAtomFamily(cardKey));
   const setFreeText = useAtomSet(questionFreeTextAtomFamily(cardKey));
   const answer = useAtomValue(questionAnswerAtomFamily(cardKey));
+  const withdrawn = useAtomValue(questionWithdrawnAtomFamily(cardKey));
   const sendAnswer = use(QuestionAnswerSendContext);
   const sent = useAtomValue(questionSentAtomFamily(cardKey));
   const setSent = useAtomSet(questionSentAtomFamily(cardKey));
@@ -190,11 +206,13 @@ export function QuestionCard({
     else if (sendAnswer === null) writeDraftAnswer(QUESTION_SKIPPED_ANSWER);
     else send(QUESTION_SKIPPED_ANSWER);
   };
-  const showControls = answer === null || changing;
   const sendingAnswer =
     sent !== null && draftAnswer === null && sent.after === (answer?.messageId ?? null)
       ? sent.answer
       : null;
+  // An answer the user gives, or one on its way, still wins over the agent's withdrawal.
+  const showWithdrawn = answer === null && withdrawn && sendingAnswer === null;
+  const showControls = (answer === null && !showWithdrawn) || changing;
 
   return (
     <section
@@ -225,6 +243,14 @@ export function QuestionCard({
           </Button>
         ) : null}
       </div>
+      {showWithdrawn ? (
+        <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-muted-foreground text-sm">
+          <CircleSlashIcon aria-hidden className="size-3.5 shrink-0" />
+          <span className="min-w-0 [overflow-wrap:anywhere]">No longer needed</span>
+          <span aria-hidden>·</span>
+          <span>withdrawn by the agent</span>
+        </div>
+      ) : null}
       {answer !== null ? (
         <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-muted-foreground text-sm">
           <CheckIcon aria-hidden className="size-3.5 shrink-0 text-success-foreground" />

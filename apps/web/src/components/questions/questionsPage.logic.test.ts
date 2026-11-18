@@ -202,6 +202,17 @@ describe("openQuestionCards", () => {
     expect(ids(openCards(items, "2026-01-01T00:01:00.000Z"))).toEqual([["a1", "Q2"]]);
   });
 
+  it("drops cards the agent withdrew", () => {
+    const items = [
+      assistant("a1", ASK_TWO, "2026-01-01T00:02:00.000Z"),
+      user("u1", "Also check the tests", "2026-01-01T00:01:00.000Z"),
+      assistant("a2", "Q2: no longer needed", "2026-01-01T00:03:00.000Z"),
+    ];
+    expect(ids(openCards(items, "2026-01-01T00:01:00.000Z"))).toEqual([["a1", "Q1"]]);
+    const both = [...items, assistant("a3", "Q1: no longer needed", "2026-01-01T00:04:00.000Z")];
+    expect(openCards(both, "2026-01-01T00:01:00.000Z")).toEqual([]);
+  });
+
   it("keeps only the newest card for a re-asked id, and skips streaming messages", () => {
     const items = [
       assistant("a1", ASK_TWO, "2026-01-01T00:02:00.000Z"),

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { parseQuestionQuote, questionCardsInMarkdown } from "./questionCards.ts";
+import {
+  parseQuestionQuote,
+  questionCardsInMarkdown,
+  questionWithdrawalsInMarkdown,
+} from "./questionCards.ts";
 
 describe("parseQuestionQuote", () => {
   const quote = (...lines: ReadonlyArray<string>) => lines.map((line) => `> ${line}`).join("\n");
@@ -163,5 +167,27 @@ describe("questionCardsInMarkdown", () => {
   it("finds a card after a closed fence", () => {
     const text = `~~~\n${card("Q1", "Old?")}\n~~~\n\n${card("Q2", "New?")}`;
     expect(questionCardsInMarkdown(text).map((question) => question.id)).toEqual(["Q2"]);
+  });
+});
+
+describe("questionWithdrawalsInMarkdown", () => {
+  it("reads each whole `Qn: no longer needed` line once, in order", () => {
+    const text =
+      "You switched to CSV only, so two questions are moot.\n\n```\nQ2: no longer needed\n```\n  Q3 :  no longer needed \nQ1: no longer needed\r\nQ3: no longer needed";
+    expect(questionWithdrawalsInMarkdown(text)).toEqual(["Q3", "Q1"]);
+  });
+
+  it.each([
+    ["the phrase inside a sentence", "Q1: no longer needed, since you chose CSV."],
+    ["another answer", "Q1: skipped"],
+    ["a different case", "Q1: No longer needed"],
+    ["an id that is not a card's", "Item1: no longer needed"],
+    ["inline code", "Write `Q1: no longer needed` to withdraw it."],
+    ["a fenced code block", "The format:\n\n```\nQ1: no longer needed\n```"],
+    ["a tilde fence", "~~~~md\nQ1: no longer needed\n~~~~"],
+    ["an indented code block", "The format:\n\n    Q1: no longer needed"],
+    ["a tab-indented code block", "\tQ1: no longer needed"],
+  ])("ignores %s", (_name, text) => {
+    expect(questionWithdrawalsInMarkdown(text)).toEqual([]);
   });
 });

@@ -23,6 +23,10 @@ To decline a question card, click **Skip** on it, here or in the thread. It answ
 and the agent stops the work that depends on that question instead of choosing for you, then says
 what it left undone.
 
+When something you wrote later makes one of the agent's open question cards pointless, the agent
+can withdraw it with a `Q4: no longer needed` line. The card then reads "No longer needed" and
+leaves this page; you can still answer it if you want to.
+
 A thread's question cards leave the list once you reply to it in any way, so answer every
 question you want to answer in the same message. Archived threads and threads your tag filter hides are not listed.
 The mobile app does not have this page.
