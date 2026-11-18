@@ -384,10 +384,12 @@ import {
 } from "./board.ts";
 import {
   MemoryDecideInput,
+  MemoryPendingSubscribeInput,
   MemoryProjectInput,
   MemoryProposal,
   MemoryProposeInput,
   MemoryView,
+  PendingMemoryProposals,
 } from "./memory.ts";
 import {
   AgentsBoardError,
@@ -613,6 +615,7 @@ export const WS_METHODS = {
   boardDisconnect: "board.disconnect",
   teamCatalogPropose: "teamCatalog.propose",
   memorySubscribe: "memory.subscribe",
+  memorySubscribePending: "memory.subscribePending",
   memoryPropose: "memory.propose",
   memoryDecide: "memory.decide",
   agentsBoardSubscribe: "agentsBoard.subscribe",
@@ -1172,6 +1175,13 @@ const WsTeamCatalogProposeRpc = Rpc.make(WS_METHODS.teamCatalogPropose, {
 const WsMemorySubscribeRpc = Rpc.make(WS_METHODS.memorySubscribe, {
   payload: MemoryProjectInput,
   success: MemoryView,
+  error: EnvironmentAuthorizationError,
+  stream: true,
+});
+
+const WsMemorySubscribePendingRpc = Rpc.make(WS_METHODS.memorySubscribePending, {
+  payload: MemoryPendingSubscribeInput,
+  success: PendingMemoryProposals,
   error: EnvironmentAuthorizationError,
   stream: true,
 });
@@ -2385,6 +2395,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsBoardDisconnectRpc,
   WsTeamCatalogProposeRpc,
   WsMemorySubscribeRpc,
+  WsMemorySubscribePendingRpc,
   WsMemoryProposeRpc,
   WsMemoryDecideRpc,
   WsAgentsBoardSubscribeRpc,

@@ -27,7 +27,7 @@ import { Spinner } from "../ui/spinner";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { MemoryDocumentSection, type MemoryDraft } from "./MemoryDocumentSection";
-import { MemoryDecisionButtons, MemoryReplaces, useMemoryDecision } from "./MemoryProposalCard";
+import { MemoryProposalRow } from "./MemoryProposalRow";
 import { changeCount, type MemoryEdits, memoryFileText, NO_EDITS } from "./memoryRows.logic";
 import { VoiceAgentMemories } from "./VoiceAgentMemories";
 
@@ -317,9 +317,6 @@ function MemoryProposals(props: {
   readonly projectId: ProjectId;
   readonly proposals: ReadonlyArray<MemoryProposal>;
 }) {
-  const environmentId = props.threadRef.environmentId;
-  const decision = useMemoryDecision(environmentId, props.projectId);
-  const navigate = useNavigate();
   if (props.proposals.length === 0) {
     return (
       <p className="px-4 py-3 text-sm text-muted-foreground">
@@ -333,48 +330,13 @@ function MemoryProposals(props: {
       <p className="text-xs text-muted-foreground">
         Agents in this project's threads proposed these. Nothing changes until you accept.
       </p>
-      {decision.error !== null ? (
-        <p role="alert" className="text-xs text-destructive">
-          {decision.error}
-        </p>
-      ) : null}
       {props.proposals.map((proposal) => (
-        <div
+        <MemoryProposalRow
           key={proposal.id}
-          className="flex min-w-0 flex-col gap-1.5 rounded-lg border border-border/70 bg-card px-3 py-2.5"
-        >
-          <p className="text-sm [overflow-wrap:anywhere]">{proposal.text}</p>
-          {proposal.category === undefined ? null : (
-            <p className="text-xs text-muted-foreground">For the voice agent</p>
-          )}
-          <MemoryReplaces replaces={proposal.replaces ?? null} />
-          {proposal.reason !== "" ? (
-            <p className="text-xs text-muted-foreground">{proposal.reason}</p>
-          ) : null}
-          <p className="text-xs text-muted-foreground">
-            From{" "}
-            <button
-              type="button"
-              className="underline underline-offset-2 hover:text-foreground"
-              onClick={() =>
-                void navigate({
-                  to: "/$environmentId/$threadId",
-                  params: { environmentId, threadId: proposal.threadId },
-                })
-              }
-            >
-              {proposal.threadTitle || "a thread"}
-            </button>
-          </p>
-          <div className="flex flex-wrap gap-2">
-            <MemoryDecisionButtons
-              busy={decision.busy}
-              canDecide={decision.canDecide}
-              personalOnly={proposal.category !== undefined}
-              onChoose={(choice) => void decision.submit(proposal, choice, proposal.text)}
-            />
-          </div>
-        </div>
+          environmentId={props.threadRef.environmentId}
+          projectId={props.projectId}
+          proposal={proposal}
+        />
       ))}
     </div>
   );

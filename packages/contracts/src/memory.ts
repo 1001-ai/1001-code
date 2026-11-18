@@ -178,6 +178,18 @@ export type MemoryView = typeof MemoryView.Type;
 export const MemoryProjectInput = Schema.Struct({ projectId: ProjectId });
 export type MemoryProjectInput = typeof MemoryProjectInput.Type;
 
+export const MemoryPendingSubscribeInput = Schema.Struct({});
+
+export const PendingMemoryProposal = Schema.Struct({
+  projectId: ProjectId,
+  proposal: MemoryProposal,
+});
+export type PendingMemoryProposal = typeof PendingMemoryProposal.Type;
+
+/** Every project's unanswered proposals, newest first. */
+export const PendingMemoryProposals = Schema.Array(PendingMemoryProposal);
+export type PendingMemoryProposals = typeof PendingMemoryProposals.Type;
+
 export const MemoryProposeInput = Schema.Struct({
   projectId: ProjectId,
   scope: MemoryScope,

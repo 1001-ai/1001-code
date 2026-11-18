@@ -197,7 +197,7 @@ adds the line to that file and merges the pull request at once, so the repositor
 allow merging without a review; if they refuse, the card says so and the pull request stays open.
 The agent keeps working while the card waits, and deciding never starts a turn: an accepted
 memory applies from the next one. Unanswered proposals also wait under **Proposals** in the
-Memory panel. Only the web and desktop apps show the cards.
+Memory panel and on the [Questions page](./questions.md). Only the web and desktop apps show the cards.
 
 ### Voice agent memories
 
