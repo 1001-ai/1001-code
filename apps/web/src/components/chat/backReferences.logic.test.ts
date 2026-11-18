@@ -126,7 +126,7 @@ describe("searchBackReferenceHistory", () => {
 });
 
 describe("backReferenceSources", () => {
-  it("keeps finished messages as their rows show them, without a reply's Re: lines, a Re:-only reply, automation prompts, workflow openings or file-only messages, and reuses them per item", () => {
+  it("keeps finished messages as their rows show them, without a reply's Re: lines, a Re:-only reply, automation prompts, flagged workflow openings or file-only messages, and reuses them per item", () => {
     const user = { item: { id: "1", type: "user_message", text: "hi there", messageId: "u1" } };
     const reply = {
       item: {
@@ -169,7 +169,7 @@ describe("backReferenceSources", () => {
         messageId: "scheduled-task-message:task:1:scheduled",
       },
     };
-    const legacyWorkflow = {
+    const userCode = {
       item: {
         id: "9",
         type: "user_message",
@@ -231,21 +231,28 @@ describe("backReferenceSources", () => {
       automation,
       workflow,
       legacyAutomation,
-      legacyWorkflow,
+      userCode,
       guest,
       fileOnly,
     ]);
     expect(first).toEqual([
       { itemId: "1", messageId: "u1", text: "hi there" },
       { itemId: "2", messageId: "a1", text: "Hello back." },
+      { itemId: "9", messageId: "u4", text: 'export const meta = { name: "hi there" };' },
       { itemId: "10", messageId: "u5", text: "hello from Sam" },
     ]);
     expect(
-      sameBackReferenceSources(first, backReferenceSources([user, reply, streaming, guest])),
+      sameBackReferenceSources(
+        first,
+        backReferenceSources([user, reply, streaming, userCode, guest]),
+      ),
     ).toBe(true);
     const finished = { item: { ...streaming.item, streaming: false } };
     expect(
-      sameBackReferenceSources(first, backReferenceSources([user, reply, finished, guest])),
+      sameBackReferenceSources(
+        first,
+        backReferenceSources([user, reply, finished, userCode, guest]),
+      ),
     ).toBe(false);
   });
 });

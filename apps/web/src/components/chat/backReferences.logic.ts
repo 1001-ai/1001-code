@@ -1,4 +1,3 @@
-import { isWorkflowScriptMessage } from "@t3tools/client-runtime/state/subagentRuntime";
 import { resolveUserMessagePresentation } from "@t3tools/client-runtime/user-message";
 import type {
   ComposerContextId,
@@ -63,10 +62,11 @@ function revealableText<M extends string>(item: TurnItemLike<M>["item"]): string
   }
   // Automation prompts, workflow openings and attachment-only messages mount no reveal.
   if (type !== "user_message" || item.scheduledTaskId !== undefined) return null;
-  const message = { role: "user", text, workflowScript: item.workflowScript };
-  if (isWorkflowScriptMessage(message)) return null;
+  // Only the flag: unflagged script text may be a user's own code, and its row shows it.
+  if (item.workflowScript === true) return null;
   const presented = resolveUserMessagePresentation({
-    ...message,
+    role: "user",
+    text,
     ...(messageId === undefined ? {} : { id: messageId }),
     ...(item.createdBy === undefined ? {} : { createdBy: item.createdBy }),
     ...(item.creationSource === undefined ? {} : { creationSource: item.creationSource }),
