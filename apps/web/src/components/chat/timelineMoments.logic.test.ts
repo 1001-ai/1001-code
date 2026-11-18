@@ -201,10 +201,10 @@ describe("withDaySeparators", () => {
 
 describe("resolveMomentCardsVisible", () => {
   it.each([
-    [239, false, false],
-    [240, false, true],
-    [233, true, true],
-    [231, true, false],
+    [199, false, false],
+    [200, false, true],
+    [193, true, true],
+    [191, true, false],
   ])("a %d px gutter, shown before: %s, shows cards: %s", (gutter, visible, expected) => {
     expect(resolveMomentCardsVisible(gutter, visible)).toBe(expected);
   });

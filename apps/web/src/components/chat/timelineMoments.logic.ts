@@ -240,7 +240,7 @@ export function withDaySeparators(
   return entries;
 }
 
-const MOMENT_CARDS_MIN_GUTTER = 240;
+const MOMENT_CARDS_MIN_GUTTER = 200;
 const MOMENT_CARDS_HYSTERESIS = 8;
 
 /** Cards need a wide side gutter; the band below the threshold stops a resize from flickering. */
@@ -255,10 +255,7 @@ const MOMENT_CARD_CHROME = 96;
 const MOMENT_CARD_MAX_WIDTH = 300;
 
 export function resolveMomentCardMaxWidth(sideGutter: number): number {
-  return Math.max(
-    120,
-    Math.min(MOMENT_CARD_MAX_WIDTH, Math.floor(sideGutter) - MOMENT_CARD_CHROME),
-  );
+  return Math.max(80, Math.min(MOMENT_CARD_MAX_WIDTH, Math.floor(sideGutter) - MOMENT_CARD_CHROME));
 }
 
 /** The loaded timeline row that shows a message, keyed the way the minimap keys its strips. */
