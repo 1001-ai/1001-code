@@ -900,7 +900,6 @@ const ConversationTimeline = memo(function ConversationTimeline({
           ...(alwaysRenderKeys.length === 0 ? {} : { keys: alwaysRenderKeys }),
         };
   const [minimapHitStripWidth, setMinimapHitStripWidth] = useState(0);
-  const [timelineSideGutter, setTimelineSideGutter] = useState(0);
   const [minimapCurrentIndex, setMinimapCurrentIndex] = useState<number | null>(null);
   const [minimapAtEnd, setMinimapAtEnd] = useState(false);
   const handleAnchorReady = (info: { anchorIndex: number | undefined }) => {
@@ -1061,7 +1060,6 @@ const ConversationTimeline = memo(function ConversationTimeline({
       current === nextHasPersistentGutter ? current : nextHasPersistentGutter,
     );
     setMinimapHitStripWidth(resolveTimelineMinimapHitStripWidth(viewportWidth, contentWidth));
-    setTimelineSideGutter(Math.max(0, (viewportWidth - Math.min(viewportWidth, contentWidth)) / 2));
   };
   // Rows added, removed or rewrapped (chat width) change the content size,
   // which moves the scroll position, the overflow, and the content lane width.
@@ -1497,11 +1495,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
               ListHeaderComponent={listHeader}
               ListFooterComponent={timelineListFooter}
             />
-            <TimelineMomentsGutter
-              gutterWidth={timelineSideGutter}
-              rows={rows}
-              threadRef={citationThreadRef}
-            >
+            <TimelineMomentsGutter rows={rows} threadRef={citationThreadRef}>
               <TimelineMinimap
                 items={minimapItems}
                 hasPersistentGutter={minimapHasPersistentGutter}

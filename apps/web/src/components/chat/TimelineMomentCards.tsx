@@ -187,28 +187,28 @@ export function TimelineMomentCards({
   return (
     <div
       ref={rootRef}
-      className="pointer-events-none absolute inset-y-0 left-0 z-40 select-none"
+      className="pointer-events-none absolute inset-y-0 left-0 z-40 flex select-none flex-col"
       data-testid="timeline-moment-cards"
       style={{ width: gutterWidth }}
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setHovered(null);
       }}
     >
+      {teamProject ? (
+        <label className="pointer-events-auto flex w-fit items-center gap-2 px-3 pt-3 pb-1.5 text-muted-foreground text-xs">
+          <Switch
+            size="sm"
+            checked={showTeammates}
+            onCheckedChange={(checked) => setShowTeammates(checked)}
+          />
+          Teammates
+        </label>
+      ) : null}
       <div
         ref={attachStack}
-        className="pointer-events-auto flex h-full flex-col overflow-y-auto overscroll-contain [scrollbar-width:none]"
+        className="pointer-events-auto flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain [scrollbar-width:none]"
       >
         <div className="mt-auto flex flex-col gap-1.5 px-3 pt-3 pb-6">
-          {teamProject ? (
-            <label className="mb-1 flex w-fit items-center gap-2 text-muted-foreground text-xs">
-              <Switch
-                size="sm"
-                checked={showTeammates}
-                onCheckedChange={(checked) => setShowTeammates(checked)}
-              />
-              Teammates
-            </label>
-          ) : null}
           {entries.map((entry) => {
             if (entry.kind === "day") {
               return (
