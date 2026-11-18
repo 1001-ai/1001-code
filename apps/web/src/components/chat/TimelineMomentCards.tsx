@@ -264,7 +264,7 @@ export function TimelineMomentCards({
                   <span className="truncate">{card.label}</span>
                 </button>
                 <time
-                  className="shrink-0 font-mono text-2xs text-muted-foreground"
+                  className="shrink-0 text-2xs text-muted-foreground tabular-nums"
                   dateTime={card.at}
                 >
                   {formatShortTimestamp(card.at, timestampFormat)}
