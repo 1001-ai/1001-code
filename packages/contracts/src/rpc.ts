@@ -399,6 +399,7 @@ import {
   AgentsBoardSetBranchInput,
   AgentsBoardSnapshot,
 } from "./agentsBoard.ts";
+import { ProjectMomentsStreamItem, ProjectMomentsSubscribeInput } from "./projectMoments.ts";
 import {
   VoiceAgentError,
   VoiceAgentMediaStepInput,
@@ -622,6 +623,7 @@ export const WS_METHODS = {
   agentsBoardRefresh: "agentsBoard.refresh",
   agentsBoardSetBranch: "agentsBoard.setBranch",
   agentsBoardMedia: "agentsBoard.media",
+  projectMomentsSubscribe: "projectMoments.subscribe",
   voiceAgentSubscribe: "voiceAgent.subscribe",
   voiceAgentOpen: "voiceAgent.open",
   voiceAgentSay: "voiceAgent.say",
@@ -1201,6 +1203,13 @@ const WsMemoryDecideRpc = Rpc.make(WS_METHODS.memoryDecide, {
 const WsAgentsBoardSubscribeRpc = Rpc.make(WS_METHODS.agentsBoardSubscribe, {
   payload: AgentsBoardProjectInput,
   success: AgentsBoardSnapshot,
+  error: EnvironmentAuthorizationError,
+  stream: true,
+});
+
+const WsProjectMomentsSubscribeRpc = Rpc.make(WS_METHODS.projectMomentsSubscribe, {
+  payload: ProjectMomentsSubscribeInput,
+  success: ProjectMomentsStreamItem,
   error: EnvironmentAuthorizationError,
   stream: true,
 });
@@ -2402,6 +2411,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsAgentsBoardRefreshRpc,
   WsAgentsBoardSetBranchRpc,
   WsAgentsBoardMediaRpc,
+  WsProjectMomentsSubscribeRpc,
   WsVoiceAgentSubscribeRpc,
   WsVoiceAgentOpenRpc,
   WsVoiceAgentSayRpc,

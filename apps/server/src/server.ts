@@ -207,6 +207,7 @@ import * as LinearWriteWatch from "./board/LinearWriteWatch.ts";
 import * as LiveAppCheckout from "./liveAppCheckout.ts";
 import * as MemoryLayer from "./memory/layer.ts";
 import * as AgentsBoard from "./agentsBoard/AgentsBoard.ts";
+import * as ProjectMoments from "./projectMoments/ProjectMoments.ts";
 import * as VoiceAgent from "./voiceAgent/VoiceAgent.ts";
 import * as InboxAgent from "./inboxAgent/InboxAgent.ts";
 import * as BoardHttp from "./board/http.ts";
@@ -701,6 +702,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   ProviderInstallation.layer,
   ReplayMarkers.layer,
   ThreadCost.layer,
+  ProjectMoments.layer,
   TeamCatalog.layer,
   Layer.merge(LinearInbox.layer, LinearWriteWatch.layer).pipe(
     Layer.provideMerge(Board.layer),

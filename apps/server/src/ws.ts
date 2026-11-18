@@ -247,6 +247,7 @@ import * as TeamCatalog from "./teamCatalog/TeamCatalog.ts";
 import * as Board from "./board/Board.ts";
 import * as Memory from "./memory/Memory.ts";
 import * as AgentsBoard from "./agentsBoard/AgentsBoard.ts";
+import * as ProjectMoments from "./projectMoments/ProjectMoments.ts";
 import * as VoiceAgent from "./voiceAgent/VoiceAgent.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as TriageService from "./triage/TriageService.ts";
@@ -1504,6 +1505,7 @@ export const layerWsRpc = (
       const board = yield* Board.Board;
       const memory = yield* Memory.Memory;
       const agentsBoard = yield* AgentsBoard.AgentsBoard;
+      const projectMoments = yield* ProjectMoments.ProjectMoments;
       const voiceAgent = yield* VoiceAgent.VoiceAgent;
       const usageLimitSources = yield* UsageLimitSources.UsageLimitSources;
       const worktreeSetupTracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
@@ -2706,6 +2708,7 @@ export const layerWsRpc = (
         [WS_METHODS.agentsBoardRefresh]: (input) => agentsBoard.refresh(input.projectId),
         [WS_METHODS.agentsBoardSetBranch]: (input) => agentsBoard.setBranch(input),
         [WS_METHODS.agentsBoardMedia]: (input) => agentsBoard.media(input),
+        [WS_METHODS.projectMomentsSubscribe]: (input) => projectMoments.subscribe(input),
         [WS_METHODS.voiceAgentSubscribe]: (input) => voiceAgent.changes(input.threadId),
         [WS_METHODS.voiceAgentOpen]: (input) => voiceAgent.open(input),
         [WS_METHODS.voiceAgentSay]: (input) => voiceAgent.say(input),
