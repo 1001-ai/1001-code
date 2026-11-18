@@ -111,6 +111,7 @@ const RPC_AGGREGATES = {
   [WS_METHODS.agentsBoardRefresh]: "orchestration",
   [WS_METHODS.agentsBoardSetBranch]: "orchestration",
   [WS_METHODS.agentsBoardMedia]: "orchestration",
+  [WS_METHODS.projectMomentsSubscribe]: "orchestration",
   [WS_METHODS.voiceAgentSubscribe]: "orchestration",
   [WS_METHODS.voiceAgentOpen]: "orchestration",
   [WS_METHODS.voiceAgentSay]: "orchestration",

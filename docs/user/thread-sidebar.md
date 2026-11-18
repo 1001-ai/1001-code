@@ -247,6 +247,21 @@ thread** from its long-press menu on mobile.
 **Thread ID** copies the bare ID for scripts and the `t3` CLI. See
 [keybindings](./keybindings.md) for custom configuration.
 
+## Moments beside the chat
+
+On web and desktop, when the window leaves a wide margin left of the chat, that margin lists the
+project's moments from the last seven days as small cards, newest at the bottom: questions agents
+asked, new prompts, messages between agents, finished work, and pull requests in testing or
+merged. It covers every thread of the project, not just the open one. A narrower window shows the
+chat's turn markers there instead. Hover a card for details; click it, or **Jump to it**, to
+scroll to that point in this thread, or **Open thread** for a moment in another thread. **Open
+PR** opens its pull request.
+
+In a [team project](./team-projects.md), the list also shows when teammates' agents on the
+[Agents board](./team-projects.md#agents-board) start, ask a question, or finish. Their cards sit a
+little further left than yours. The **Teammates** switch at the top of the list hides them; the
+choice is kept in this browser.
+
 ## Inspect agent work
 
 **Limited** means the provider stopped on a usage or rate limit. The conversation

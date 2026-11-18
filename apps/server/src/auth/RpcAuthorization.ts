@@ -132,6 +132,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.agentsBoardRefresh]: AuthOrchestrationReadScope,
   [WS_METHODS.agentsBoardSetBranch]: AuthSettingsWriteScope,
   [WS_METHODS.agentsBoardMedia]: AuthOrchestrationReadScope,
+  [WS_METHODS.projectMomentsSubscribe]: AuthOrchestrationReadScope,
   [WS_METHODS.voiceAgentSubscribe]: AuthOrchestrationReadScope,
   [WS_METHODS.voiceAgentOpen]: AuthOrchestrationOperateScope,
   [WS_METHODS.voiceAgentSay]: AuthOrchestrationOperateScope,
