@@ -97,11 +97,15 @@ export function QuestionsPage() {
       })),
   );
   const project = effectiveProjectFilter(selectedProject, projectOptions);
+  // Forget a project once it has nothing waiting, so new items there do not narrow the list again.
+  if (project !== selectedProject) setSelectedProject(project);
   const projectTitle = projectOptions.find((option) => option.key === project)?.title ?? null;
-  const shown = summarized.filter(
-    ({ entry, summary }) =>
-      (project === ALL_PROJECTS || entryProjectKey(entry) === project) &&
-      matchesFilter(summary, entry.loaded, filter),
+  const inProject = summarized.filter(
+    ({ entry }) => project === ALL_PROJECTS || entryProjectKey(entry) === project,
+  );
+  const waitingInProject = inProject.reduce((total, { summary }) => total + summary.count, 0);
+  const shown = inProject.filter(({ entry, summary }) =>
+    matchesFilter(summary, entry.loaded, filter),
   );
 
   return (
@@ -172,8 +176,7 @@ export function QuestionsPage() {
                   {projectTitle === null ? null : ` in ${projectTitle}`}
                 </EmptyTitle>
                 <EmptyDescription>
-                  {pluralize(waiting, "item waits", "items wait")}{" "}
-                  {projectTitle === null ? "under All." : "under All in all projects."}
+                  {pluralize(waitingInProject, "item waits", "items wait")} under All.
                 </EmptyDescription>
               </EmptyHeader>
             </Empty>
