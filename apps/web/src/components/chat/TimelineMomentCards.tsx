@@ -65,7 +65,10 @@ const MOMENT_GLASS =
 
 interface HoveredCard {
   readonly card: MomentCard;
-  readonly top: number;
+  /** Set for a card in the upper half, which the detail grows down from. */
+  readonly top: number | null;
+  /** Set for a card in the lower half, which the detail grows up from, clear of the prompt box. */
+  readonly bottom: number | null;
   readonly left: number;
   readonly minWidth: number;
 }
@@ -165,9 +168,11 @@ export function TimelineMomentCards({
     if (!root) return;
     const rootRect = root.getBoundingClientRect();
     const rect = element.getBoundingClientRect();
+    const growsDown = rect.top - rootRect.top < rootRect.height / 2;
     setHovered({
       card,
-      top: rect.top - rootRect.top,
+      top: growsDown ? rect.top - rootRect.top : null,
+      bottom: growsDown ? null : rootRect.bottom - rect.bottom,
       left: rect.left - rootRect.left,
       minWidth: rect.width,
     });
@@ -316,10 +321,16 @@ function MomentCardDetail({
     // Overlaps the message column like the minimap's preview; it grows in place from the card.
     <div
       className={cn(
-        "pointer-events-auto absolute z-50 w-max max-w-80 origin-top-left rounded-xl p-3 text-left text-popover-foreground shadow-xl backdrop-blur-(--glass-blur) backdrop-saturate-(--glass-saturation) shadow-black/25 transition-[opacity,scale] duration-150 ease-out starting:scale-95 starting:opacity-0 motion-reduce:transition-none motion-reduce:starting:scale-100 motion-reduce:starting:opacity-100",
+        "pointer-events-auto absolute z-50 w-max max-w-80 rounded-xl p-3 text-left text-popover-foreground shadow-xl backdrop-blur-(--glass-blur) backdrop-saturate-(--glass-saturation) shadow-black/25 transition-[opacity,scale] duration-150 ease-out starting:scale-95 starting:opacity-0 motion-reduce:transition-none motion-reduce:starting:scale-100 motion-reduce:starting:opacity-100",
         MOMENT_GLASS,
+        hovered.top === null ? "origin-bottom-left" : "origin-top-left",
       )}
-      style={{ top: hovered.top, left: hovered.left, minWidth: hovered.minWidth }}
+      style={{
+        top: hovered.top ?? undefined,
+        bottom: hovered.bottom ?? undefined,
+        left: hovered.left,
+        minWidth: hovered.minWidth,
+      }}
       onPointerLeave={onLeave}
     >
       <button

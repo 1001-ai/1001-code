@@ -201,8 +201,13 @@ const make = Effect.gen(function* () {
         return removeThread(thread.id);
       }
       foreignThreads.delete(thread.id);
+      const previousTitle = projectThreads.get(thread.id);
       projectThreads.set(thread.id, thread.title);
-      return pullRequestItems(thread.id, thread.title, thread.pullRequests ?? []);
+      const retitled =
+        previousTitle === undefined || previousTitle === thread.title
+          ? []
+          : sent.retitled(thread.id, thread.title).flatMap(upsert);
+      return [...retitled, ...pullRequestItems(thread.id, thread.title, thread.pullRequests ?? [])];
     };
 
     const rememberForeign = (threadId: ThreadId) => {

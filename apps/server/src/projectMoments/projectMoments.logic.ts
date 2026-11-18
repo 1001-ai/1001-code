@@ -339,6 +339,16 @@ export function makeSentMoments() {
     forget(id: string): void {
       sent.delete(id);
     },
+    /** The thread's sent moments under a new title, for sending again. */
+    retitled(threadId: ThreadId, threadTitle: string): ReadonlyArray<ProjectMoment> {
+      const moments: ProjectMoment[] = [];
+      for (const entry of sent.values()) {
+        if (entry.threadId !== threadId) continue;
+        const moment = JSON.parse(entry.encoded) as ProjectMoment;
+        if (moment.threadTitle !== threadTitle) moments.push({ ...moment, threadTitle });
+      }
+      return moments;
+    },
     forgetThread(threadId: ThreadId): void {
       for (const [id, entry] of sent) {
         if (entry.threadId === threadId) sent.delete(id);

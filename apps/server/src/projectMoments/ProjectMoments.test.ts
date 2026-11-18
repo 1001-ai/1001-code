@@ -237,6 +237,36 @@ describe("ProjectMoments", () => {
       }),
     );
 
+    it.effect("sends a renamed thread's moments again under its new title", () =>
+      Effect.gen(function* () {
+        yield* TestClock.setTime(NOW);
+        const eventSink = yield* EventSink.EventSinkV2;
+        const projectId = ProjectId.make("project:moments:renamed");
+        const named = thread("named", projectId);
+        yield* eventSink.write({
+          events: [created(named), prompt(named.id, "named", hoursAgo(1))],
+        });
+        const fiber = yield* subscribe(projectId, 2);
+        yield* eventSink.write({
+          events: [
+            event({
+              type: "thread.metadata-updated",
+              threadId: named.id,
+              occurredAt: hoursAgo(0),
+              payload: { ...named, title: "Renamed" },
+            }),
+          ],
+        });
+        const items = [...(yield* Fiber.join(fiber))];
+        assert.deepStrictEqual(
+          items.map((item) =>
+            item.kind === "upsert" ? [item.moment.id, item.moment.threadTitle] : item.kind,
+          ),
+          ["snapshot", ["thread-started:message:moments:named", "Renamed"]],
+        );
+      }),
+    );
+
     it.effect("keeps the newest moments within the limit", () =>
       Effect.gen(function* () {
         yield* TestClock.setTime(NOW);
