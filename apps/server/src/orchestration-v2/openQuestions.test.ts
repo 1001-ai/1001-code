@@ -5,6 +5,7 @@ import {
   type ModelSelection,
   ProjectId,
   ProviderInstanceId,
+  ScheduledTaskId,
   ThreadId,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
@@ -27,6 +28,7 @@ type Message = {
   readonly second: number;
   readonly finished?: number;
   readonly streaming?: boolean;
+  readonly scheduledTaskId?: ScheduledTaskId;
 };
 const user = (second: number, text = "Go"): Message => ({
   role: "user",
@@ -40,6 +42,11 @@ const wake = (second: number): Message => ({
   text: "Background task finished.",
   second,
 });
+const errorInbox = ScheduledTaskId.make("scheduled-task:local-error-inbox");
+const automation = (second: number): Message => ({
+  ...user(second, "Investigate the error batch."),
+  scheduledTaskId: errorInbox,
+});
 const assistant = (second: number, text: string, streaming = false): Message => ({
   role: "assistant",
   createdBy: "agent",
@@ -48,7 +55,10 @@ const assistant = (second: number, text: string, streaming = false): Message => 
   streaming,
 });
 
-const cases: ReadonlyArray<readonly [string, ReadonlyArray<Message>, number | null]> = [
+// The last entry is the scheduled task that started the thread, absent when a person did.
+const cases: ReadonlyArray<
+  readonly [string, ReadonlyArray<Message>, number | null, ScheduledTaskId?]
+> = [
   ["no question", [user(1), assistant(2, "Done.")], null],
   ["a question since the user wrote", [user(1), assistant(2, card("Q1"))], 2],
   [
@@ -128,6 +138,18 @@ const cases: ReadonlyArray<readonly [string, ReadonlyArray<Message>, number | nu
     [user(1), assistant(2, card("Q1")), assistant(3, withdraw("Q1"), true)],
     2,
   ],
+  ["an automation's first message", [automation(1), assistant(2, "Done.")], null, errorInbox],
+  [
+    "an automation's first message a person replied to",
+    [automation(1), assistant(2, card("Q1")), user(3, "Q1: Yes")],
+    null,
+    errorInbox,
+  ],
+  [
+    "an automation message in a thread a person started",
+    [user(1), assistant(2, "Done."), automation(3), assistant(4, card("Q1"))],
+    4,
+  ],
 ];
 
 const layerTest = Layer.mergeAll(
@@ -141,8 +163,9 @@ const modelSelection = {
 
 describe("thread shell openQuestionsAt", () => {
   it.layer(layerTest)((it) => {
-    it.effect.each(cases)("stored and in-memory shells agree on %s", ([name, messages, expected]) =>
+    it.effect.each(cases)("stored and in-memory shells agree on %s", (testCase) =>
       Effect.gen(function* () {
+        const [name, messages, expected, startedBy] = testCase;
         const store = yield* ProjectionStore.ProjectionStoreV2;
         const key = name.replaceAll(/\W+/g, "-");
         const threadId = ThreadId.make(`thread:open-questions:${key}`);
@@ -190,6 +213,9 @@ describe("thread shell openQuestionsAt", () => {
               nodeId: null,
               role: message.role,
               text: message.text,
+              ...(message.scheduledTaskId === undefined
+                ? {}
+                : { scheduledTaskId: message.scheduledTaskId }),
               attachments: [],
               streaming: message.streaming ?? false,
               createdAt: at(message.second),
@@ -206,6 +232,8 @@ describe("thread shell openQuestionsAt", () => {
         const want = expected === null ? null : at(expected);
         assert.deepEqual(stored?.openQuestionsAt, want);
         assert.deepEqual(inMemory.openQuestionsAt, want);
+        assert.strictEqual(stored?.startedByScheduledTaskId, startedBy);
+        assert.strictEqual(inMemory.startedByScheduledTaskId, startedBy);
       }),
     );
   });

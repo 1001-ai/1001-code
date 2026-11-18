@@ -7,6 +7,7 @@ import {
   ProviderThreadId,
   RunId,
   RuntimeRequestId,
+  ScheduledTaskId,
   TurnItemId,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
@@ -96,6 +97,17 @@ describe("V2 client presentation", () => {
         pendingBackgroundTasks: [],
       }).runtime,
     ).toBeNull();
+  });
+
+  it("carries the scheduled task that started a thread, and nothing for other threads", () => {
+    const startedByScheduledTaskId = ScheduledTaskId.make("scheduled-task:local-error-inbox");
+    expect(
+      presentThreadShell(environmentId, { ...v2ThreadShell, startedByScheduledTaskId })
+        .startedByScheduledTaskId,
+    ).toBe(startedByScheduledTaskId);
+    expect(presentThreadShell(environmentId, v2ThreadShell)).not.toHaveProperty(
+      "startedByScheduledTaskId",
+    );
   });
 
   it.each([

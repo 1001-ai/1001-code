@@ -104,6 +104,12 @@ import {
   openQuestionsAtFromCandidates,
 } from "./openQuestions.ts";
 import {
+  type StartedByScheduledTask,
+  startedByScheduledTask,
+  startedByScheduledTaskFromColumn,
+  startedByScheduledTaskIdColumn,
+} from "./startedByScheduledTask.ts";
+import {
   isFoldableWorkItem,
   isThreadHistoryUserTurn,
   isConversationHistoryItem,
@@ -1101,6 +1107,7 @@ type ShellThreadRow = {
   readonly latest_user_message_at: string | null;
   readonly latest_user_authored_message_at: string | null;
   readonly open_question_candidates_json: string | null;
+  readonly started_by_scheduled_task_id: string | null;
   readonly has_actionable_proposed_plan: number;
 };
 
@@ -1772,6 +1779,7 @@ export function threadShellFromProjection(
     latestUserMessageAt: latestUserMessage?.updatedAt ?? null,
     latestUserAuthoredMessageAt,
     openQuestionsAt: openQuestionsAt(projection.messages),
+    ...startedByScheduledTask(projection.messages),
     hasActionableProposedPlan: projection.plans.some(
       (plan) => plan.kind === "proposed_plan" && plan.status === "active",
     ),
@@ -1904,6 +1912,7 @@ type ShellThreadState = {
   readonly latestUserMessageAt: DateTime.Utc | null;
   readonly latestUserAuthoredMessageAt: DateTime.Utc | null;
   readonly openQuestionsAt: DateTime.Utc | null;
+  readonly startedByScheduledTask: StartedByScheduledTask;
   readonly hasActionableProposedPlan: boolean;
   readonly pendingBackgroundTasks: OrchestrationV2ThreadShell["pendingBackgroundTasks"];
   readonly providerInstanceHistory: OrchestrationV2ThreadShell["providerInstanceHistory"];
@@ -2078,6 +2087,7 @@ function shellFromState(input: {
     latestUserMessageAt: input.state.latestUserMessageAt,
     latestUserAuthoredMessageAt: input.state.latestUserAuthoredMessageAt,
     openQuestionsAt: input.state.openQuestionsAt,
+    ...input.state.startedByScheduledTask,
     hasActionableProposedPlan: input.state.hasActionableProposedPlan,
     pendingBackgroundTasks: input.state.pendingBackgroundTasks,
     providerInstanceHistory: input.state.providerInstanceHistory,
@@ -7621,6 +7631,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 LIMIT 1
               ) AS latest_user_authored_message_at,
               ${openQuestionCandidatesColumn(sql, "t.thread_id")} AS open_question_candidates_json,
+              ${startedByScheduledTaskIdColumn(sql, "t.thread_id")} AS started_by_scheduled_task_id,
               EXISTS (
                 SELECT 1
                 FROM orchestration_v2_projection_plans plan
@@ -8230,6 +8241,9 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               : DateTime.makeUnsafe(row.latest_user_message_at),
           latestUserAuthoredMessageAt,
           openQuestionsAt: openQuestionsAtFromCandidates(row.open_question_candidates_json),
+          startedByScheduledTask: startedByScheduledTaskFromColumn(
+            row.started_by_scheduled_task_id,
+          ),
           hasActionableProposedPlan: row.has_actionable_proposed_plan === 1,
           pendingBackgroundTasks,
           providerInstanceHistory: providerInstanceHistoryForShell({
