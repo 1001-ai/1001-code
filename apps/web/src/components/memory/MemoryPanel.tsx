@@ -208,7 +208,16 @@ function MemoryDocuments(props: {
           value={[tab]}
           onValueChange={(next) => {
             const value = next[0];
-            if (isTab(value)) setTab(value);
+            if (!isTab(value)) return;
+            setTab(value);
+            // A tab switch closes any open editor, so drop the pins it left with no changes.
+            setDrafts((current) =>
+              Object.fromEntries(
+                Object.entries(current).filter(
+                  ([, draft]) => draft !== undefined && changeCount(draft.edits) > 0,
+                ),
+              ),
+            );
           }}
         >
           {TABS.map((candidate) => (
