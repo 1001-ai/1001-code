@@ -28,14 +28,21 @@ describe("managedUpdatesDenial", () => {
 });
 
 describe("forkBuildEnvDefaults", () => {
-  const baked = { T3CODE_LINEAR_CLIENT_ID: "baked-client", T3CODE_TEAM_CATALOG: "baked-catalog" };
+  const baked = {
+    T3CODE_LINEAR_CLIENT_ID: "baked-client",
+    T3CODE_TEAM_CATALOG: "baked-catalog",
+    T3CODE_UPDATE_COMMAND: '["/usr/local/bin/update","app"]',
+  };
 
   it.each([
     { name: "an empty environment", env: {}, defaults: baked },
     {
       name: "a variable set at launch",
       env: { T3CODE_TEAM_CATALOG: "launch-catalog" },
-      defaults: { T3CODE_LINEAR_CLIENT_ID: "baked-client" },
+      defaults: {
+        T3CODE_LINEAR_CLIENT_ID: "baked-client",
+        T3CODE_UPDATE_COMMAND: '["/usr/local/bin/update","app"]',
+      },
     },
     { name: "a blank variable", env: { T3CODE_TEAM_CATALOG: " " }, defaults: baked },
   ])("fills only what $name leaves unset", ({ env, defaults }) => {

@@ -54,10 +54,14 @@ export const FORK_DESKTOP = {
 } as const;
 
 /**
- * Backend settings a desktop build bakes in from its build environment, as defaults that a
- * variable set when the app starts still overrides.
+ * Settings a desktop build bakes in from its build environment, as defaults that a variable set
+ * when the app starts still overrides. `T3CODE_UPDATE_COMMAND` is the app's own, not the backend's.
  */
-const FORK_BUILD_ENV_DEFAULT_NAMES = ["T3CODE_LINEAR_CLIENT_ID", "T3CODE_TEAM_CATALOG"] as const;
+const FORK_BUILD_ENV_DEFAULT_NAMES = [
+  "T3CODE_LINEAR_CLIENT_ID",
+  "T3CODE_TEAM_CATALOG",
+  "T3CODE_UPDATE_COMMAND",
+] as const;
 
 const nonEmpty = (value: string | undefined): value is string =>
   value !== undefined && value.trim() !== "";
