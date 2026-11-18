@@ -173,7 +173,7 @@ describe("questionCardsInMarkdown", () => {
 describe("questionWithdrawalsInMarkdown", () => {
   it("reads each whole `Qn: no longer needed` line once, in order", () => {
     const text =
-      "You switched to CSV only, so two questions are moot.\n\n  Q3 :  no longer needed \nQ1: no longer needed\r\nQ3: no longer needed";
+      "You switched to CSV only, so two questions are moot.\n\n```\nQ2: no longer needed\n```\n  Q3 :  no longer needed \nQ1: no longer needed\r\nQ3: no longer needed";
     expect(questionWithdrawalsInMarkdown(text)).toEqual(["Q3", "Q1"]);
   });
 
@@ -183,6 +183,10 @@ describe("questionWithdrawalsInMarkdown", () => {
     ["a different case", "Q1: No longer needed"],
     ["an id that is not a card's", "Item1: no longer needed"],
     ["inline code", "Write `Q1: no longer needed` to withdraw it."],
+    ["a fenced code block", "The format:\n\n```\nQ1: no longer needed\n```"],
+    ["a tilde fence", "~~~~md\nQ1: no longer needed\n~~~~"],
+    ["an indented code block", "The format:\n\n    Q1: no longer needed"],
+    ["a tab-indented code block", "\tQ1: no longer needed"],
   ])("ignores %s", (_name, text) => {
     expect(questionWithdrawalsInMarkdown(text)).toEqual([]);
   });
