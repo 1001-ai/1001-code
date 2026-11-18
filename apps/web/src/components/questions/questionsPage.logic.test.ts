@@ -3,10 +3,13 @@ import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  ALL_PROJECTS,
   askedQuestionCards,
+  effectiveProjectFilter,
   matchesFilter,
   openQuestionCards,
   questionAnswersMessage,
+  waitingProjectOptions,
   waitingSummary,
   withoutSentAnswerLines,
 } from "./questionsPage.logic";
@@ -54,6 +57,7 @@ describe("waitingSummary", () => {
       all: matchesFilter(summary, entry.loaded, "all"),
       questions: matchesFilter(summary, entry.loaded, "questions"),
       approvals: matchesFilter(summary, entry.loaded, "approvals"),
+      memories: matchesFilter(summary, entry.loaded, "memories"),
     };
   };
   it.each([
@@ -65,8 +69,9 @@ describe("waitingSummary", () => {
         cardsAsked: false,
         cards: [1, 2],
         requests: { approvals: [1], userInputs: [{ questions: [1, 2] }] },
+        proposals: [1],
       },
-      { count: 5, all: true, questions: true, approvals: true },
+      { count: 6, all: true, questions: true, approvals: true, memories: true },
     ],
     [
       "a thread still loading",
@@ -76,8 +81,9 @@ describe("waitingSummary", () => {
         cardsAsked: false,
         cards: [],
         requests: none,
+        proposals: [],
       },
-      { count: 1, all: true, questions: true, approvals: true },
+      { count: 1, all: true, questions: true, approvals: true, memories: false },
     ],
     [
       "cards outside the loaded history",
@@ -87,8 +93,9 @@ describe("waitingSummary", () => {
         cardsAsked: false,
         cards: [],
         requests: none,
+        proposals: [],
       },
-      { count: 1, all: true, questions: true, approvals: false },
+      { count: 1, all: true, questions: true, approvals: false, memories: false },
     ],
     [
       "cards all answered before the shell caught up",
@@ -98,8 +105,9 @@ describe("waitingSummary", () => {
         cardsAsked: true,
         cards: [],
         requests: none,
+        proposals: [],
       },
-      { count: 0, all: false, questions: false, approvals: false },
+      { count: 0, all: false, questions: false, approvals: false, memories: false },
     ],
     [
       "a request kind the page does not render",
@@ -109,11 +117,52 @@ describe("waitingSummary", () => {
         cardsAsked: false,
         cards: [],
         requests: none,
+        proposals: [],
       },
-      { count: 2, all: true, questions: true, approvals: true },
+      { count: 2, all: true, questions: true, approvals: true, memories: false },
+    ],
+    [
+      "memory proposals alone",
+      { shell, loaded: true, cardsAsked: false, cards: [], requests: none, proposals: [1, 2] },
+      { count: 2, all: true, questions: false, approvals: false, memories: true },
+    ],
+    [
+      "a thread still loading, with a memory proposal",
+      {
+        shell: { ...shell, hasPendingApprovals: true },
+        loaded: false,
+        cardsAsked: false,
+        cards: [],
+        requests: none,
+        proposals: [1],
+      },
+      { count: 2, all: true, questions: true, approvals: true, memories: true },
     ],
   ])("%s", (_label, entry, expected) => {
     expect(counted(entry)).toEqual(expected);
+  });
+});
+
+describe("project filter", () => {
+  const options = waitingProjectOptions([
+    { key: "env-1:web", title: "Web app" },
+    { key: "env-2:api", title: "API" },
+    { key: "env-1:web", title: "Web app" },
+    { key: "env-1:gone", title: null },
+  ]);
+
+  it("lists each project with something waiting once, by title", () => {
+    expect(options).toEqual([
+      { key: "env-2:api", title: "API" },
+      { key: "env-1:gone", title: "Unknown project" },
+      { key: "env-1:web", title: "Web app" },
+    ]);
+  });
+
+  it("falls back to all projects once the chosen one has nothing waiting", () => {
+    expect(effectiveProjectFilter("env-2:api", options)).toBe("env-2:api");
+    expect(effectiveProjectFilter("env-3:docs", options)).toBe(ALL_PROJECTS);
+    expect(effectiveProjectFilter(ALL_PROJECTS, options)).toBe(ALL_PROJECTS);
   });
 });
 

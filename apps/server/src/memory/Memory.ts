@@ -13,6 +13,7 @@ import {
   type MemoryScope,
   type MemoryView,
   memoryFile,
+  type PendingMemoryProposal,
   type ProjectId,
   type TeamCatalogProject,
   type TeamCatalogProposal,
@@ -65,6 +66,11 @@ export class Memory extends Context.Service<
     readonly read: (projectId: ProjectId) => Effect.Effect<MemoryView>;
     /** The view now, then again whenever the catalog or the project's proposals change. */
     readonly changes: (projectId: ProjectId) => Stream.Stream<MemoryView>;
+    /**
+     * Every project's unanswered proposals, newest first, now and on each change. Reads only the
+     * proposals, never the catalog or its files.
+     */
+    readonly pendingChanges: Stream.Stream<ReadonlyArray<PendingMemoryProposal>>;
     /**
      * The block for a turn in the project, or undefined when there is none. Never fails and never
      * waits for git: a stale catalog is refreshed in the background for later turns.
@@ -330,6 +336,18 @@ const make = Effect.gen(function* () {
       Stream.mapEffect(() => read(projectId)),
       Stream.changesWith((a, b) => JSON.stringify(a) === JSON.stringify(b)),
     );
+
+  const pendingChanges: Memory["Service"]["pendingChanges"] = SubscriptionRef.changes(
+    proposalsRef,
+  ).pipe(
+    Stream.map((proposals) =>
+      proposals
+        .filter((proposal) => proposal.decision === null)
+        .toSorted((left, right) => right.createdAt.localeCompare(left.createdAt))
+        .map((proposal) => ({ projectId: proposal.projectId, proposal: onWire(proposal) })),
+    ),
+    Stream.changesWith((a, b) => JSON.stringify(a) === JSON.stringify(b)),
+  );
 
   const refreshWhenStale = Effect.fn("Memory.refreshWhenStale")(function* (
     catalog: TeamCatalogSnapshot,
@@ -674,6 +692,7 @@ const make = Effect.gen(function* () {
   return Memory.of({
     read,
     changes,
+    pendingChanges,
     instructions,
     voiceAgentInstructions,
     voiceAgentEarlier,

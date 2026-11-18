@@ -18,6 +18,8 @@ import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
@@ -485,6 +487,51 @@ it.effect("accepting adds the edited line to the chosen file and merges at once"
       ],
     ]);
     expect(fixture.merged).toHaveLength(2);
+  }).pipe(Effect.scoped),
+);
+
+it.effect("lists every project's unanswered proposals, newest first, without reading files", () =>
+  Effect.gen(function* () {
+    const otherProject = ProjectId.make("project-api");
+    const stored: ReadonlyArray<MemoryProposalStore.StoredMemoryProposal> = [
+      {
+        id: "api-pending",
+        projectId: otherProject,
+        threadId: ThreadId.make("thread-api"),
+        threadTitle: "Tune the API",
+        text: "Cache reads.",
+        reason: "",
+        createdAt: "1970-01-01T00:00:00.000Z",
+        decision: null,
+        decidedBySession: null,
+      },
+    ];
+    const fixture = makeMemory({ catalog: catalog(), stored });
+    const memory = yield* fixture.build;
+    const pending = Stream.runHead(memory.pendingChanges).pipe(
+      Effect.map((head) =>
+        Option.getOrThrow(head).map(({ projectId, proposal }) => [projectId, proposal.text]),
+      ),
+    );
+    yield* TestClock.adjust("1 minute");
+    const tabs = yield* memory.proposeFromAgent(agentProposal("Use tabs."));
+    yield* TestClock.adjust("1 minute");
+    yield* memory.proposeFromAgent(agentProposal("Prefer pnpm."));
+    expect(yield* pending).toEqual([
+      [PROJECT_ID, "Prefer pnpm."],
+      [PROJECT_ID, "Use tabs."],
+      [otherProject, "Cache reads."],
+    ]);
+
+    yield* memory.decide(
+      { projectId: PROJECT_ID, proposalId: tabs.id, choice: "reject", text: "Use tabs." },
+      "session-1",
+    );
+    expect(yield* pending).toEqual([
+      [PROJECT_ID, "Prefer pnpm."],
+      [otherProject, "Cache reads."],
+    ]);
+    expect(fixture.reads).toEqual([]);
   }).pipe(Effect.scoped),
 );
 

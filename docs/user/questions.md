@@ -1,8 +1,8 @@
 # Questions
 
 The Questions page lists everything an agent is waiting on you for, across every thread in every
-connected environment: question cards it asked in a reply, the agent's own questions, and tool
-approvals. Open it from the sidebar, the command palette ("Open questions"), or `mod+shift+u` on
+connected environment: question cards it asked in a reply, the agent's own questions, tool
+approvals, and memories it proposed that you have not accepted or rejected yet. Open it from the sidebar, the command palette ("Open questions"), or `mod+shift+u` on
 web and desktop. On Linux, input methods such as IBus take Ctrl+Shift+U for Unicode entry; rebind
 `questions.open` in your keybindings if the shortcut does nothing there. Each thread shows its project, environment and how long it has waited; **Open
 thread** jumps to the first question.
@@ -13,8 +13,12 @@ lines, using the thread's current model. The rest of your draft stays. If the ag
 working, the message reaches it the way a normal send would. Approvals and the agent's own
 questions work as they do above the composer; a question that needs a typed answer opens in the
 thread. A few requests, such as a link or a secret the agent asks for, show only as a pointer to
-the thread.
+the thread. Memory proposals have the same Accept and Reject buttons as in the Memory panel, and
+count as waiting until you answer them.
 
-A thread leaves the list once you reply to it in any way, so answer every question you want to
-answer in the same message. Archived threads and threads your tag filter hides are not listed.
+The filter in the header narrows the list to Questions, Approvals or Memories, and the project
+menu beside it to one project with something waiting.
+
+A thread's question cards leave the list once you reply to it in any way, so answer every
+question you want to answer in the same message. Archived threads and threads your tag filter hides are not listed.
 The mobile app does not have this page.
