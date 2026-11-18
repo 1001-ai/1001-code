@@ -126,6 +126,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.boardDisconnect]: AuthSettingsWriteScope,
   [WS_METHODS.teamCatalogPropose]: AuthSourceControlWriteScope,
   [WS_METHODS.memorySubscribe]: AuthOrchestrationReadScope,
+  [WS_METHODS.memorySubscribePending]: AuthOrchestrationReadScope,
   [WS_METHODS.memoryPropose]: AuthSourceControlWriteScope,
   [WS_METHODS.memoryDecide]: AuthSourceControlWriteScope,
   [WS_METHODS.agentsBoardSubscribe]: AuthOrchestrationReadScope,

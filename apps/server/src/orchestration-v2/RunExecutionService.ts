@@ -60,6 +60,7 @@ import * as TurnItemPositionStore from "./TurnItemPositionStore.ts";
 import * as Memory from "../memory/Memory.ts";
 import { memoryTurnInput } from "../memory/memoryProviders.ts";
 import { userFacingDatabaseErrorMessage } from "./UserFacingErrors.ts";
+import { isInboxThread } from "../inboxAgent/inboxAgentThreads.ts";
 
 export interface ProviderEventRoutingState {
   readonly ownedThreadIds: ReadonlySet<ThreadId>;
@@ -967,7 +968,9 @@ export const layer: Layer.Layer<
           );
           // Side chats share the parent's worktree; a snapshot would capture the parent's edits.
           yield* (
-            input.appThread.lineage.sideChat === true
+            input.appThread.lineage.sideChat === true ||
+            // Fork: so does the Inbox at the project root; see fork/README.md.
+            isInboxThread(input.appThread.id)
               ? Effect.void
               : checkpointService.captureBaseline({
                   scope: input.checkpointScope,

@@ -1,9 +1,11 @@
+import { QUESTION_SKIPPED_ANSWER } from "@t3tools/shared/questionCards";
 import { fromMarkdown } from "mdast-util-from-markdown";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
   findQuestionAnswer,
   findQuestionRefs,
+  isQuestionWithdrawn,
   latestQuestionCards,
   remarkQuestionRefs,
   readAnswerLine,
@@ -52,8 +54,10 @@ describe("multi answers", () => {
     expect(toggleMultiOption(options, toggleMultiOption(options, two, "Web"), "Mobile")).toBeNull();
   });
 
-  it("selects nothing from a typed answer", () => {
+  it("selects nothing from a typed or skipped answer, and a pick replaces it", () => {
     expect(selectedMultiOptions(options, "Whatever works").size).toBe(0);
+    expect(selectedMultiOptions(options, QUESTION_SKIPPED_ANSWER).size).toBe(0);
+    expect(toggleMultiOption(options, QUESTION_SKIPPED_ANSWER, "Desktop")).toBe("Desktop");
   });
 });
 
@@ -115,6 +119,51 @@ describe("findQuestionAnswer", () => {
       messageId: "m-u1",
     });
     expect(findQuestionAnswer(items, "missing", "Q1", [queued("q1", "Q1: No")])).toBeNull();
+  });
+});
+
+describe("isQuestionWithdrawn", () => {
+  const card = (id: string) => `> **${id} · Ship it?**\n>\n> - Yes\n> - No`;
+  const assistant = (id: string, text: string, streaming = false) => ({
+    item: { id, type: "assistant_message", text, messageId: `m-${id}`, streaming },
+  });
+  const user = (id: string, text: string) => ({
+    item: { id, type: "user_message", text, messageId: `m-${id}` },
+  });
+  const asked = assistant("a1", `${card("Q1")}\n\n${card("Q2")}`);
+
+  it("applies to a card of the latest message that asks cards", () => {
+    const items = [asked, user("u1", "CSV only"), assistant("a2", "Q2: no longer needed")];
+    expect(isQuestionWithdrawn(items, "a1", "Q2")).toBe(true);
+    expect(isQuestionWithdrawn(items, "a1", "Q1")).toBe(false);
+  });
+
+  it("applies when the withdrawing message asks new cards too", () => {
+    const items = [asked, assistant("a2", `Q2: no longer needed\n\n${card("Q3")}`)];
+    expect(isQuestionWithdrawn(items, "a1", "Q2")).toBe(true);
+  });
+
+  it("does not apply to a card from before the latest questions", () => {
+    const items = [asked, assistant("a2", card("Q3")), assistant("a3", "Q1: no longer needed")];
+    expect(isQuestionWithdrawn(items, "a1", "Q1")).toBe(false);
+  });
+
+  it("does not apply to a card the user answers, before or after the withdrawal", () => {
+    const withdrawal = assistant("a2", "Q1: no longer needed");
+    expect(isQuestionWithdrawn([asked, user("u1", "Q1: Yes"), withdrawal], "a1", "Q1")).toBe(false);
+    expect(isQuestionWithdrawn([asked, withdrawal, user("u1", "Q1: No")], "a1", "Q1")).toBe(false);
+  });
+
+  it("ignores a streaming message, a user's line and lines before the card", () => {
+    expect(
+      isQuestionWithdrawn([asked, assistant("a2", "Q1: no longer needed", true)], "a1", "Q1"),
+    ).toBe(false);
+    expect(isQuestionWithdrawn([asked, user("u1", "Q1: no longer needed")], "a1", "Q1")).toBe(
+      false,
+    );
+    expect(isQuestionWithdrawn([assistant("a0", "Q1: no longer needed"), asked], "a1", "Q1")).toBe(
+      false,
+    );
   });
 });
 

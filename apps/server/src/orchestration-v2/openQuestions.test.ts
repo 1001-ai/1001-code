@@ -16,6 +16,8 @@ import * as ProjectionStore from "./ProjectionStore.ts";
 
 const at = (second: number) => DateTime.makeUnsafe(Date.UTC(2026, 10, 14, 12, 0, second));
 const card = (id: string) => `Two choices.\n\n> **${id} · Ship it?**\n>\n> - Yes\n> - No`;
+const withdraw = (id: string) =>
+  `You chose CSV, so one question is moot.\n\n${id}: no longer needed`;
 
 type Message = {
   readonly role: "user" | "assistant";
@@ -80,6 +82,31 @@ const cases: ReadonlyArray<readonly [string, ReadonlyArray<Message>, number | nu
     5,
   ],
   ["a quote that is not a card", [user(1), assistant(2, "> **Q1 · Ship it?**")], null],
+  [
+    "a question its asker withdrew",
+    [user(1), assistant(2, card("Q1")), assistant(3, withdraw("Q1"))],
+    null,
+  ],
+  [
+    "one of two questions withdrawn",
+    [user(1), assistant(2, `${card("Q1")}\n\n${card("Q2")}`), assistant(3, withdraw("Q1"))],
+    2,
+  ],
+  [
+    "a withdrawal that falls back to an older question",
+    [user(1), assistant(2, card("Q1")), assistant(3, card("Q2")), assistant(4, withdraw("Q2"))],
+    2,
+  ],
+  [
+    "a withdrawal of a card from before the latest questions",
+    [user(1), assistant(2, card("Q1")), assistant(3, card("Q2")), assistant(4, withdraw("Q1"))],
+    3,
+  ],
+  [
+    "a withdrawal still streaming",
+    [user(1), assistant(2, card("Q1")), assistant(3, withdraw("Q1"), true)],
+    2,
+  ],
 ];
 
 const layerTest = Layer.mergeAll(

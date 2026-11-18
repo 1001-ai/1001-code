@@ -19,6 +19,7 @@ import * as CheckpointService from "./CheckpointService.ts";
 import * as EventSink from "./EventSink.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ProjectionStore from "./ProjectionStore.ts";
+import { isInboxThread } from "../inboxAgent/inboxAgentThreads.ts";
 
 export class CheckpointCaptureExecutionError extends Schema.TaggedError<CheckpointCaptureExecutionError>()(
   "CheckpointCaptureExecutionError",
@@ -111,7 +112,8 @@ export const layer: Layer.Layer<
           ordinalWithinScope,
           nodeId: rootNode.id,
           capturedAt: run.requestedAt,
-          forceMissing: sideChat,
+          // Fork: the Inbox never checkpoints the project root; see fork/README.md.
+          forceMissing: sideChat || isInboxThread(input.threadId),
         });
       const threadStartCheckpoint =
         baselineOrdinalWithinScope === 0 || isPreserved(0) ? null : yield* materializeBaseline(0);
@@ -125,7 +127,8 @@ export const layer: Layer.Layer<
         ordinalWithinScope: run.ordinal,
         appRunOrdinal: run.ordinal,
         capturedAt,
-        forceMissing: sideChat,
+        // Fork: the Inbox never checkpoints the project root; see fork/README.md.
+        forceMissing: sideChat || isInboxThread(input.threadId),
       });
       // Omit delegatedCompletion to preserve cohort writes made after capture loaded the run.
       const { delegatedCompletion: _delegatedCompletion, ...runWithoutDelegatedCompletion } = run;

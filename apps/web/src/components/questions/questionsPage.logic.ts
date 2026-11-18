@@ -2,7 +2,12 @@ import type { MessageId } from "@t3tools/contracts";
 import { questionCardsInMarkdown, type QuestionBlock } from "@t3tools/shared/questionCards";
 import * as DateTime from "effect/DateTime";
 
-import { findQuestionAnswer, readAnswerLine, writeAnswerLine } from "../chat/questionBlock.logic";
+import {
+  findQuestionAnswer,
+  isQuestionWithdrawn,
+  readAnswerLine,
+  writeAnswerLine,
+} from "../chat/questionBlock.logic";
 
 export interface WaitingShellInput {
   readonly archivedAt: string | null;
@@ -76,13 +81,15 @@ export function askedQuestionCards(
   return [...newest.values()];
 }
 
-/** The asked cards that no later `<id>: answer` line answers. */
+/** The asked cards that no later `<id>: answer` line answers and the agent has not withdrawn. */
 export function openQuestionCards(
   items: ReadonlyArray<TimelineItemLike>,
   asked: ReadonlyArray<OpenQuestionCard>,
 ): ReadonlyArray<OpenQuestionCard> {
   return asked.filter(
-    (card) => findQuestionAnswer(items, card.askedInItemId, card.question.id) === null,
+    (card) =>
+      findQuestionAnswer(items, card.askedInItemId, card.question.id) === null &&
+      !isQuestionWithdrawn(items, card.askedInItemId, card.question.id),
   );
 }
 
@@ -137,6 +144,8 @@ export function withoutSentAnswerLines(
   );
 }
 
+export type QuestionsFilter = "all" | "questions" | "approvals" | "memories";
+
 export interface WaitingEntryInput {
   readonly shell: Pick<
     WaitingShellInput,
@@ -150,11 +159,14 @@ export interface WaitingEntryInput {
     readonly approvals: ReadonlyArray<unknown>;
     readonly userInputs: ReadonlyArray<{ readonly questions: ReadonlyArray<unknown> }>;
   };
+  /** Unanswered memory proposals from the thread's agents; known without loading the thread. */
+  readonly proposals: ReadonlyArray<unknown>;
 }
 
 export interface WaitingSummary {
   readonly questions: number;
   readonly approvals: number;
+  readonly memories: number;
   /**
    * The shell says a question or an approval waits that the page cannot show: cards outside the
    * loaded history, or a request kind it does not render (links, secrets, dynamic tool calls).
@@ -170,30 +182,66 @@ export function waitingSummary(entry: WaitingEntryInput): WaitingSummary {
     entry.cards.length +
     entry.requests.userInputs.reduce((total, input) => total + input.questions.length, 0);
   const approvals = entry.requests.approvals.length;
+  const memories = entry.proposals.length;
   const unshownQuestion =
     entry.loaded &&
     questions === 0 &&
     ((Boolean(entry.shell.openQuestionsAt) && !entry.cardsAsked) ||
       entry.shell.hasPendingUserInput);
   const unshownApproval = entry.loaded && approvals === 0 && entry.shell.hasPendingApprovals;
-  const count = entry.loaded
-    ? questions + approvals + Number(unshownQuestion) + Number(unshownApproval)
-    : 1;
-  return { questions, approvals, unshownQuestion, unshownApproval, count };
+  const count =
+    memories +
+    (entry.loaded ? questions + approvals + Number(unshownQuestion) + Number(unshownApproval) : 1);
+  return { questions, approvals, memories, unshownQuestion, unshownApproval, count };
 }
 
 /**
- * Whether a thread shows under a filter; one still loading shows under all of them, and one
- * with nothing left waiting (cards answered before the shell caught up) under none.
+ * Whether a thread shows under a filter. One still loading shows under every filter but
+ * Memories, whose proposals need no loading; one with nothing left waiting (cards answered before
+ * the shell caught up) shows under none.
  */
 export function matchesFilter(
   summary: WaitingSummary,
   loaded: boolean,
-  filter: "all" | "questions" | "approvals",
+  filter: QuestionsFilter,
 ): boolean {
+  if (filter === "memories") return summary.memories > 0;
   if (!loaded) return true;
-  if (filter === "all") return summary.count > 0;
-  return filter === "questions"
-    ? summary.questions > 0 || summary.unshownQuestion
-    : summary.approvals > 0 || summary.unshownApproval;
+  switch (filter) {
+    case "all":
+      return summary.count > 0;
+    case "questions":
+      return summary.questions > 0 || summary.unshownQuestion;
+    case "approvals":
+      return summary.approvals > 0 || summary.unshownApproval;
+  }
+}
+
+export const ALL_PROJECTS = "all";
+
+export interface ProjectOption {
+  /** `${environmentId}:${projectId}` */
+  readonly key: string;
+  readonly title: string;
+}
+
+/** The projects that have something waiting, once each, by title. */
+export function waitingProjectOptions(
+  projects: ReadonlyArray<{ readonly key: string; readonly title: string | null }>,
+): ReadonlyArray<ProjectOption> {
+  const byKey = new Map<string, ProjectOption>();
+  for (const { key, title } of projects) {
+    if (!byKey.has(key)) byKey.set(key, { key, title: title ?? "Unknown project" });
+  }
+  return [...byKey.values()].toSorted(
+    (left, right) => left.title.localeCompare(right.title) || left.key.localeCompare(right.key),
+  );
+}
+
+/** The chosen project while it still has something waiting, else all projects. */
+export function effectiveProjectFilter(
+  selected: string,
+  options: ReadonlyArray<ProjectOption>,
+): string {
+  return options.some((option) => option.key === selected) ? selected : ALL_PROJECTS;
 }

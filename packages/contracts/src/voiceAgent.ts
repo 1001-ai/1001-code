@@ -2,7 +2,6 @@ import * as Schema from "effect/Schema";
 
 import { AgentsBoardAgentId, AgentsBoardMediaPath } from "./agentsBoard.ts";
 import { IsoDateTime, NonNegativeInt, ProjectId, ThreadId } from "./baseSchemas.ts";
-import { MEMORY_PROPOSE_TOOL_NAME } from "./memory.ts";
 
 /**
  * The voice agent speaks in the glass layer over a chat: it reports what the agents on the
@@ -19,31 +18,6 @@ export const VOICE_AGENT_NOTHING_NEW_LINE = "Nothing new to report. What do you 
 export const VOICE_AGENT_BOARD_TOOL_NAME = "voice_board";
 export const VOICE_AGENT_SEND_MESSAGE_TOOL_NAME = "voice_send_message";
 export const VOICE_AGENT_SHOW_MEDIA_TOOL_NAME = "voice_show_media";
-
-/** Every tool a voice agent thread may list or call. Nothing else reaches it. */
-export const VOICE_AGENT_TOOL_NAMES: ReadonlyArray<string> = [
-  VOICE_AGENT_BOARD_TOOL_NAME,
-  VOICE_AGENT_SEND_MESSAGE_TOOL_NAME,
-  VOICE_AGENT_SHOW_MEDIA_TOOL_NAME,
-  MEMORY_PROPOSE_TOOL_NAME,
-];
-
-/** The tools only a voice agent thread may list or call. */
-export const VOICE_AGENT_ONLY_TOOL_NAMES: ReadonlyArray<string> = [
-  VOICE_AGENT_BOARD_TOOL_NAME,
-  VOICE_AGENT_SEND_MESSAGE_TOOL_NAME,
-  VOICE_AGENT_SHOW_MEDIA_TOOL_NAME,
-];
-
-/**
- * Whether a caller may list or call a tool of T3's MCP server: a voice agent thread only its own
- * tools, and every other caller everything but those.
- */
-export function voiceAgentToolAllowed(tool: string, callerIsVoiceAgent: boolean): boolean {
-  return callerIsVoiceAgent
-    ? VOICE_AGENT_TOOL_NAMES.includes(tool)
-    : !VOICE_AGENT_ONLY_TOOL_NAMES.includes(tool);
-}
 
 /** A message to another agent is signed as a person and pushed to a shared branch: keep it short. */
 export const VOICE_AGENT_INBOX_MESSAGE_MAX_LENGTH = 600;

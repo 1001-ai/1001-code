@@ -1,3 +1,5 @@
+import { QUESTION_SKIPPED_ANSWER, QUESTION_WITHDRAWN_ANSWER } from "@t3tools/shared/questionCards";
+
 /** Session-invariant. T3 Code's chat renders each question that follows this format exactly as a card. */
 export const QUESTION_CARD_INSTRUCTIONS = `<asking_the_user>
 When the user must decide something, ask with a question block in your reply. T3 Code renders it as answer controls; elsewhere it reads as plain markdown.
@@ -6,6 +8,8 @@ Use it instead of a native ask-the-user tool such as AskUserQuestion or request_
 - At most 4 questions, at the end of the reply, after the context needed to answer. Keep working on what does not depend on the answers.
 - Number ids Q1, Q2 and up through the thread; never reuse one for a different question.
 - Answers arrive as lines like Q1: Yes, often one per message while the user still reads the rest. Pick-any answers join options with ", ". Read the rest of the message too.
+- Q1: ${QUESTION_SKIPPED_ANSWER} means the user declined that question. Stop the work that depends on it, do not choose for them, and say in your reply what you left undone.
+- When a newer message from the user makes an unanswered card from your latest questions pointless, withdraw it with a line Q1: ${QUESTION_WITHDRAWN_ANSWER} and say why in one sentence. Never withdraw an answered card.
 - Act on the answers you have. Do not ask unanswered questions again or list them as still open: their cards stay open where you asked them. Ask one again, with its id, only when its options change.
 
 Format, exactly; any other shape shows as a plain quote:

@@ -209,6 +209,7 @@ import * as MemoryLayer from "./memory/layer.ts";
 import * as AgentsBoard from "./agentsBoard/AgentsBoard.ts";
 import * as ProjectMoments from "./projectMoments/ProjectMoments.ts";
 import * as VoiceAgent from "./voiceAgent/VoiceAgent.ts";
+import * as InboxAgent from "./inboxAgent/InboxAgent.ts";
 import * as BoardHttp from "./board/http.ts";
 import * as VoiceOutput from "./voiceOutput/VoiceOutput.ts";
 import * as VoiceOutputHttp from "./voiceOutput/http.ts";
@@ -708,6 +709,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
     Layer.provide(TeamCatalog.layer),
   ),
   VoiceAgent.layer.pipe(Layer.provideMerge(AgentsBoard.layer), Layer.provide(TeamCatalog.layer)),
+  InboxAgent.layer,
   LiveAppCheckout.layer,
   Layer.effectDiscard(ProjectSettingsOverrideSweep.sweep),
 ).pipe(

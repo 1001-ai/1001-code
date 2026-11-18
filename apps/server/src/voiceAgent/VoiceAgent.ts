@@ -7,8 +7,6 @@ import {
   type ModelSelection,
   type OrchestrationV2ThreadShell,
   type ProjectId,
-  ProviderDriverKind,
-  type ServerProvider,
   ThreadId,
   VOICE_AGENT_DEFAULT_MODEL,
   VOICE_AGENT_INBOX_MESSAGE_MAX_LENGTH,
@@ -22,7 +20,6 @@ import {
   type VoiceAgentState,
   type VoiceAgentThreadInput,
   type VoiceAgentTranscript,
-  defaultInstanceIdForDriver,
 } from "@t3tools/contracts";
 import {
   voiceAgentOpenedMessage,
@@ -63,6 +60,7 @@ import {
   closedVoiceAgentSessions,
   voiceAgentTurns,
 } from "./voiceAgentState.ts";
+import { lockedAgentProvider } from "../lockedAgents/lockedAgentProvider.ts";
 import { isVoiceAgentThread } from "./voiceAgentThread.ts";
 
 /** A tool call the agent can read and act on: what it asked for cannot be done, and why. */
@@ -146,33 +144,12 @@ export class VoiceAgent extends Context.Service<
   }
 >()("t3/voiceAgent/VoiceAgent") {}
 
-const CLAUDE_DRIVER = ProviderDriverKind.make("claudeAgent");
 const BOARD_REFRESH_TIMEOUT = "8 seconds";
 
 const NO_CLAUDE_MESSAGE =
   "The voice agent runs on Claude, and no Claude provider is ready on this server. Install Claude Code and sign in to it under Settings, then open this again.";
 const CLAUDE_OFF_FOR_PROJECT_MESSAGE =
   "The voice agent runs on Claude, and Claude is turned off for this project. Turn it on in the project's settings, then open this again.";
-
-/**
- * The Claude provider the voice agent runs on, with the user's own sign-in. Other providers are
- * not supported in this step: the tool lock that keeps the agent to its own tools is written for
- * Claude's options only (`voiceAgentClaudeLock.ts`), so no other adapter may run this thread.
- */
-function voiceAgentProvider(providers: ReadonlyArray<ServerProvider>): ServerProvider | undefined {
-  const usable = providers.filter(
-    (provider) =>
-      provider.driver === CLAUDE_DRIVER &&
-      provider.enabled &&
-      provider.installed &&
-      provider.status !== "error" &&
-      provider.status !== "disabled" &&
-      provider.auth.status !== "unauthenticated" &&
-      provider.availability !== "unavailable",
-  );
-  const preferred = defaultInstanceIdForDriver(CLAUDE_DRIVER);
-  return usable.find((provider) => provider.instanceId === preferred) ?? usable[0];
-}
 
 /**
  * For trying the layer without a paid turn: a dev server started with `T3CODE_VOICE_AGENT_REPLAY=1`
@@ -430,7 +407,7 @@ const make = Effect.gen(function* () {
         ? null
         : { id: parentId, projectId: input.projectId, branch: null, worktreePath: null });
     if (parent === null) return yield* new VoiceAgentError({ reason: "thread-not-found" });
-    const provider = replay ? undefined : voiceAgentProvider(yield* registry.getProviders);
+    const provider = replay ? undefined : lockedAgentProvider(yield* registry.getProviders);
     const selection: ModelSelection | undefined = replay
       ? DEV_REPLAY_SELECTION
       : provider && { instanceId: provider.instanceId, model: VOICE_AGENT_DEFAULT_MODEL };

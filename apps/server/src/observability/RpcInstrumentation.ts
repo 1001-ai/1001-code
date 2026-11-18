@@ -105,6 +105,7 @@ const RPC_AGGREGATES = {
   [WS_METHODS.boardDisconnect]: "orchestration",
   [WS_METHODS.teamCatalogPropose]: "orchestration",
   [WS_METHODS.memorySubscribe]: "orchestration",
+  [WS_METHODS.memorySubscribePending]: "orchestration",
   [WS_METHODS.memoryPropose]: "orchestration",
   [WS_METHODS.memoryDecide]: "orchestration",
   [WS_METHODS.agentsBoardSubscribe]: "orchestration",
