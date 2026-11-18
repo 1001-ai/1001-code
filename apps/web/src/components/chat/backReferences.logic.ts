@@ -8,7 +8,7 @@ import {
   type QuoteWords,
 } from "@t3tools/shared/backReferences";
 import { formatComposerContextHref } from "@t3tools/shared/composerContextReferences";
-import { textAfterReLines } from "@t3tools/shared/replyMarkers";
+import { splitReLines } from "@t3tools/shared/replyMarkers";
 import type { PhrasingContent, Root, RootContent } from "mdast";
 
 /** A finished chat message a back-reference can point at, in timeline order. */
@@ -45,16 +45,17 @@ export function backReferenceSources<M extends string>(
     let source = sourceByItem.get(item) as BackReferenceSource<M> | null | undefined;
     if (source === undefined) {
       const { id, type, text, messageId, streaming } = item;
+      // Re: lines render above the reply, outside the text the reveal searches.
+      const shown =
+        typeof text === "string" && type === "assistant_message"
+          ? (splitReLines(text)?.body ?? text)
+          : text;
       source =
         (type === "user_message" || (type === "assistant_message" && streaming !== true)) &&
-        typeof text === "string" &&
+        typeof shown === "string" &&
+        shown.trim() !== "" &&
         messageId !== undefined
-          ? {
-              itemId: id,
-              messageId,
-              // Re: lines render above the reply, outside the text the reveal searches.
-              text: type === "assistant_message" ? textAfterReLines(text) : text,
-            }
+          ? { itemId: id, messageId, text: shown }
           : null;
       sourceByItem.set(item, source);
     }
