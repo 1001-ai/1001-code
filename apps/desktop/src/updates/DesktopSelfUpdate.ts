@@ -55,6 +55,8 @@ class DesktopSelfUpdateCommandError extends Schema.TaggedError<DesktopSelfUpdate
     step: Schema.Literals(["check", "stage", "finish"]),
     reason: Schema.Literals(["run", "exit", "output", "timeout"]),
     exitCode: Schema.optional(Schema.Number),
+    /** The command's last stderr line, shown in place of the exit code when there is one. */
+    stderr: Schema.optional(Schema.String),
     cause: Schema.optional(Schema.Defect()),
   },
 ) {
@@ -63,11 +65,11 @@ class DesktopSelfUpdateCommandError extends Schema.TaggedError<DesktopSelfUpdate
       this.reason === "run"
         ? "the update command did not run"
         : this.reason === "exit"
-          ? `the update command exited with code ${this.exitCode}`
+          ? this.stderr || `the update command exited with code ${this.exitCode}`
           : this.reason === "output"
             ? "the update command's answer was not understood"
             : "the update command took too long";
-    return `${STEP_MESSAGES[this.step]}: ${detail}.`;
+    return `${STEP_MESSAGES[this.step]}: ${detail.replace(/\.$/u, "")}.`;
   }
 }
 
@@ -84,6 +86,8 @@ export class DesktopSelfUpdate extends Context.Service<
 
 const { logInfo, logWarning, logError } =
   DesktopObservability.makeComponentLogger("desktop-self-update");
+
+const ANSI_ESCAPE = /\u001b\[[0-9;]*m/gu;
 
 const lastLine = (text: string): string =>
   text
@@ -168,7 +172,7 @@ const make = Effect.gen(function* () {
         step,
         reason: "exit",
         exitCode,
-        cause: lastLine(stderr),
+        stderr: lastLine(stderr.replace(ANSI_ESCAPE, "")),
       });
     }
     return lastLine(stdout);

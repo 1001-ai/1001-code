@@ -236,8 +236,10 @@ describe("DesktopSelfUpdate", () => {
     {
       name: "the check exits non-zero",
       reply: (flag: Flag) =>
-        flag === "--check" ? exited("", 1, "another update is running\n") : exited(""),
-      message: "Could not check for an update: the update command exited with code 1.",
+        flag === "--check"
+          ? exited("", 1, "\u001b[31mAnother update is running.\u001b[0m\n")
+          : exited(""),
+      message: "Could not check for an update: Another update is running.",
     },
     {
       name: "the check prints something else",
