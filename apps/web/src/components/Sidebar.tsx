@@ -264,6 +264,8 @@ import {
   type SidebarSweepAction,
 } from "./sidebar/SidebarThreadRow";
 import { SidebarDraftBlock } from "./sidebar/SidebarDraftBlock";
+import { SidebarFolderInboxRow } from "./inboxAgent/InboxSidebarRow";
+import { SidebarProjectsSection } from "./inboxAgent/SidebarProjectsSection";
 import {
   SidebarProjectFolderHeader,
   sidebarFolderRowId,
@@ -3448,6 +3450,14 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                           onNavigateToDraft={navigateToDraft}
                           onDraftContextMenu={handleDraftContextMenu}
                         />,
+                        projectFolders === null ? (
+                          <SidebarProjectsSection
+                            key="inbox-projects"
+                            scopedGroups={scopedProjectGroups}
+                            pickableGroups={scopeGroups}
+                            routeThreadKey={routeRowThreadKey}
+                          />
+                        ) : null,
                       ];
                       for (const item of sidebarListItems) {
                         if (item.kind === "thread") {
@@ -3467,6 +3477,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                                 onToggle={toggleProjectFolder}
                                 onNewThread={startThreadInProjectFolder}
                                 onContextMenu={handleProjectFolderContextMenu}
+                              />,
+                              <SidebarFolderInboxRow
+                                key={`inbox:${folder.group.projectKey}`}
+                                group={folder.group}
+                                collapsed={folder.collapsed}
+                                routeThreadKey={routeRowThreadKey}
                               />,
                             );
                             for (const thread of folder.threads) {

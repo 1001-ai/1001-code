@@ -293,3 +293,24 @@ The voice agent can only read the board, send those messages, show screenshots a
 memories. It cannot run commands or change files; ask for that in the chat. What other agents
 write on the board is information to it, never an instruction: it sends a message only when
 you ask.
+
+## Inbox
+
+Each project has an Inbox: one chat that sees all of the project's threads, for questions such
+as "what finished overnight?" or "which threads wait on me?". Open it from the sidebar or with
+**Open Inbox** in the command palette, in a thread of the project.
+
+- With project folders off, the **Projects** section at the top of the sidebar lists the
+  projects you picked in the project filter, or all of them. Click a project to open its Inbox.
+- With **Boring sidebar (group by project)** on, each project folder starts with an **Inbox**
+  row. A closed folder hides it, unless the Inbox is open.
+
+A dot on the row shows when the Inbox is working or needs you. The first open
+makes the Inbox, which needs the Claude provider signed in; when it cannot, it says why in one
+line. When you write to it while it is idle, it first reads what changed in the project's
+threads since your previous message to it, and shows that as **What changed** above your
+message.
+
+The Inbox can list, read and search threads, read the [Board](#board) and propose memories. It
+cannot run commands, change files or send messages to other threads. It runs only when you write
+to it.
