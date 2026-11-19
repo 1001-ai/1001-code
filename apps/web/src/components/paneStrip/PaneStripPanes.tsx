@@ -22,6 +22,7 @@ import { Button } from "../ui/button";
 import { shouldRevealActivePane } from "./paneStrip.logic";
 import { PANE_STRIP_COLUMN_CLASS, type PaneStripHandle, usePaneOnScreen } from "./paneStripMode";
 import { usePaneStripOrder } from "./paneStripPlacement";
+import { PaneStripWidthButton, usePaneStripWidth } from "./PaneStripWidth";
 
 type PanelProps = ComponentProps<typeof ChatRightPanel>;
 
@@ -129,6 +130,7 @@ function StripPane(props: {
 }) {
   const { surface, title, active } = props;
   const [observe, onScreen] = usePaneOnScreen();
+  const width = usePaneStripWidth(`pane:${surface.kind}`);
   // A pane's content mounts the first time it shows, and pauses whenever it is off screen.
   const [seen, setSeen] = useState(false);
   if (onScreen && !seen) setSeen(true);
@@ -143,15 +145,21 @@ function StripPane(props: {
       {...workspaceAreaProps(active ? "panel" : "pane-strip-pane", 4, `Workspace panel: ${title}`)}
       data-pane-strip-pane={surface.id}
       data-pane-strip-label={title}
+      {...width.attributes}
       onPointerDownCapture={activate}
       onFocusCapture={activate}
-      className={cn(PANE_STRIP_COLUMN_CLASS, "border-l border-border bg-background")}
+      className={cn(
+        PANE_STRIP_COLUMN_CLASS,
+        width.className,
+        "border-l border-border bg-background",
+      )}
     >
       {/* A side chat brings its own title row, with its own Close. */}
       {surface.kind === "side-chat" ? null : (
         <header className={cn(PANE_HEADER_CLASS, isElectron && "drag-region")}>
           <span className="min-w-0 max-w-60 truncate">{title}</span>
           <span className="flex [-webkit-app-region:no-drag]">
+            <PaneStripWidthButton widthKey={`pane:${surface.kind}`} preset={width.preset} />
             <Button
               variant="ghost"
               size="icon-xs"
