@@ -35,6 +35,7 @@ import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as PullRequestReviewGuideService from "../pullRequest/PullRequestReviewGuideService.ts";
+import * as PullRequestService from "../pullRequest/PullRequestService.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as VoiceAgent from "../voiceAgent/VoiceAgent.ts";
 import { voiceAgentThread } from "../voiceAgent/voiceAgentThread.ts";
@@ -161,6 +162,7 @@ it.effect(
               }),
               Layer.mock(ProjectService.ProjectService)({}),
               Layer.mock(PullRequestReviewGuideService.PullRequestReviewGuideService)({}),
+              Layer.mock(PullRequestService.PullRequestService)({}),
               Layer.mock(Orchestrator.OrchestratorV2)({}),
               Layer.mock(ProjectionStore.ProjectionStoreV2)({}),
               NodeServices.layer,
