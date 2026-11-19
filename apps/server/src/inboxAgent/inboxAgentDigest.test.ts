@@ -274,7 +274,7 @@ it("clips long text, strips envelope tags and keeps the newest past the cap", ()
   expect(digest.entries.some((entry) => entry.threadId === "t0")).toBe(false);
 });
 
-it("lists the Board tasks this project's agents completed in the window", () => {
+it("lists the Board tasks this project's agents completed and its stable moves in the window", () => {
   const task = (key: string, hour: number, fields: Partial<InboxTaskCompletion> = {}) => ({
     key,
     projectId: PROJECT,
@@ -298,8 +298,21 @@ it("lists the Board tasks this project's agents completed in the window", () => 
       // A thread that is not listed here (gone, or a side chat) is left out.
       task("unknown-thread", 14, { threadId: ThreadId.make("gone") }),
     ],
+    stableMoves: [PROJECT, ProjectId.make("project-other")].map((projectId) => ({
+      key: `stable:${projectId}`,
+      projectId,
+      commit: "1e161211f7b27f3498eda4948fdc041edc7b271b",
+      pullRequests: [
+        { number: 104, title: "One" },
+        { number: 107, title: "Two" },
+      ],
+      webUrl: null,
+      atMs: 13 * HOUR,
+      noteMessageId: null,
+    })),
   });
   expect(digest.entries.map((entry) => [entry.kind, entry.title, entry.detail])).toEqual([
+    ["stable-moved", "stable moved to 1e16121", "#104, #107"],
     [
       "task-completed",
       "Billing export",

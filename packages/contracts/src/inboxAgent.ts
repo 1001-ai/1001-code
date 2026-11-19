@@ -61,6 +61,8 @@ export const InboxAgentDigestEntryKind = Schema.Literals([
   "message-received",
   /** A teammate's message reached no thread; the detail says why. */
   "message-not-delivered",
+  /** The project's `stable` tag moved to a new build; the detail lists its pull requests. */
+  "stable-moved",
 ]);
 export type InboxAgentDigestEntryKind = typeof InboxAgentDigestEntryKind.Type;
 

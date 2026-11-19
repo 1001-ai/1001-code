@@ -16,7 +16,8 @@ import { isInboxThread } from "./inboxAgentThreads.ts";
 
 /**
  * When the server wakes a project's Inbox on its own: a question starts waiting for the user, a
- * pull request is merged or an agent completes a Board task in another thread of the project.
+ * pull request is merged or an agent completes a Board task in another thread of the project, or
+ * the project's `stable` tag moves to a new build.
  * Everything here is pure; `InboxWakeWatch` does the reading, writing and dispatching.
  */
 
@@ -52,9 +53,25 @@ export const InboxTaskCompletion = Schema.Struct({
 });
 export type InboxTaskCompletion = typeof InboxTaskCompletion.Type;
 
+/** The project's `stable` tag moved on its origin, as the server's own check saw it. */
+export const InboxStableMove = Schema.Struct({
+  key: Schema.String,
+  projectId: ProjectId,
+  /** The commit it moved to. */
+  commit: Schema.String,
+  /** Oldest first; empty when the range could not be read. */
+  pullRequests: Schema.Array(Schema.Struct({ number: Schema.Number, title: Schema.String })),
+  /** The repository's web address, for pull request links; null when not on GitHub. */
+  webUrl: Schema.NullOr(Schema.String),
+  atMs: Schema.Number,
+  /** The wake note that reported it, once one did. */
+  noteMessageId: Schema.NullOr(Schema.String),
+});
+export type InboxStableMove = typeof InboxStableMove.Type;
+
 /** Kept in the state directory, so a restart neither reports an event again nor resets the cap. */
 export const InboxWakeState = Schema.Struct({
-  version: Schema.Literal(1),
+  version: Schema.Literal(2),
   /** Events from before the first start are old news. */
   startedAtMs: Schema.Number,
   /** Each reported event's key, with the event's time. */
@@ -62,18 +79,23 @@ export const InboxWakeState = Schema.Struct({
   /** Per project id, when it was woken in the last day. */
   wakes: Schema.Record(Schema.String, Schema.Array(Schema.Number)),
   tasks: Schema.Array(InboxTaskCompletion),
+  /** Per project id, the commit `stable` named at the last check. */
+  stable: Schema.Record(Schema.String, Schema.String),
+  stableMoves: Schema.Array(InboxStableMove),
 });
 export type InboxWakeState = typeof InboxWakeState.Type;
 
 export const emptyInboxWakeState = (nowMs: number): InboxWakeState => ({
-  version: 1,
+  version: 2,
   startedAtMs: nowMs,
   reported: {},
   wakes: {},
   tasks: [],
+  stable: {},
+  stableMoves: [],
 });
 
-/** Drops what can no longer matter: keys past the lookback, wakes past a day, tasks past a week. */
+/** Drops what can no longer matter: keys past the lookback, wakes past a day, tasks and moves past a week. */
 export function prunedInboxWakeState(state: InboxWakeState, nowMs: number): InboxWakeState {
   const reported = Object.fromEntries(
     Object.entries(state.reported).filter(([, atMs]) => nowMs - atMs < LOOKBACK_MS + DAY_MS),
@@ -84,7 +106,8 @@ export function prunedInboxWakeState(state: InboxWakeState, nowMs: number): Inbo
       .filter(([, times]) => times.length > 0),
   );
   const tasks = state.tasks.filter((task) => nowMs - task.atMs < TASK_KEEP_MS);
-  return { ...state, reported, wakes, tasks };
+  const stableMoves = state.stableMoves.filter((move) => nowMs - move.atMs < TASK_KEEP_MS);
+  return { ...state, reported, wakes, tasks, stableMoves };
 }
 
 /** Adds a completed task once; the same tool item updated again is not a second completion. */
@@ -97,6 +120,34 @@ export function withInboxTaskCompletion(
     : { ...state, tasks: [...state.tasks, task] };
 }
 
+/**
+ * Records what `stable` named at a check. A change from a known commit is a move; the first
+ * commit seen for a project, or a tag that disappeared, is only remembered.
+ */
+export function withInboxStableCheck(
+  state: InboxWakeState,
+  check: {
+    readonly projectId: ProjectId;
+    readonly commit: string | null;
+    readonly move: Omit<InboxStableMove, "key" | "projectId" | "commit" | "noteMessageId"> | null;
+  },
+): InboxWakeState {
+  const { [check.projectId]: _previous, ...others } = state.stable;
+  if (check.commit === null) return { ...state, stable: others };
+  const stable = { ...others, [check.projectId]: check.commit };
+  if (check.move === null) return { ...state, stable };
+  const key = `stable:${check.projectId}:${check.commit}`;
+  if (state.stableMoves.some((move) => move.key === key)) return { ...state, stable };
+  const move: InboxStableMove = {
+    ...check.move,
+    key,
+    projectId: check.projectId,
+    commit: check.commit,
+    noteMessageId: null,
+  };
+  return { ...state, stable, stableMoves: [...state.stableMoves, move] };
+}
+
 /** Records a wake: its events are reported and it counts toward the caps. */
 export function withInboxWake(
   state: InboxWakeState,
@@ -104,10 +155,17 @@ export function withInboxWake(
     readonly projectId: ProjectId;
     readonly events: ReadonlyArray<InboxWakeEvent>;
     readonly nowMs: number;
+    readonly messageId: string;
   },
 ): InboxWakeState {
+  const reportedKeys = new Set(wake.events.map((event) => event.key));
   return {
     ...state,
+    stableMoves: state.stableMoves.map((move) =>
+      reportedKeys.has(move.key) && move.noteMessageId === null
+        ? { ...move, noteMessageId: wake.messageId }
+        : move,
+    ),
     reported: {
       ...state.reported,
       ...Object.fromEntries(wake.events.map((event) => [event.key, event.atMs])),
@@ -129,6 +187,10 @@ export function publishInboxWakeState(state: InboxWakeState): void {
 
 export function inboxTaskCompletions(): ReadonlyArray<InboxTaskCompletion> {
   return published?.tasks ?? [];
+}
+
+export function inboxStableMoves(): ReadonlyArray<InboxStableMove> {
+  return published?.stableMoves ?? [];
 }
 
 /** When the app last woke the project's Inbox, or null. */
@@ -153,7 +215,7 @@ export function isInboxReportedThread(
 
 export interface InboxWakeEvent {
   readonly key: string;
-  readonly kind: "question" | "pull-request-merged" | "task-completed";
+  readonly kind: "question" | "pull-request-merged" | "task-completed" | "stable-moved";
   readonly threadId: ThreadId;
   readonly title: string;
   readonly atMs: number;
@@ -181,6 +243,7 @@ export function inboxWakeEvents(input: {
   readonly projectId: ProjectId;
   readonly inboxThreadId: ThreadId;
   readonly tasks: ReadonlyArray<InboxTaskCompletion>;
+  readonly stableMoves?: ReadonlyArray<InboxStableMove>;
   readonly reported: Readonly<Record<string, number>>;
   readonly sinceMs: number;
   readonly nowMs: number;
@@ -244,12 +307,51 @@ export function inboxWakeEvents(input: {
       detail: inboxTaskDetail(task),
     });
   }
+  for (const move of input.stableMoves ?? []) {
+    if (move.projectId !== input.projectId) continue;
+    add({
+      key: move.key,
+      kind: "stable-moved",
+      threadId: input.inboxThreadId,
+      title: "",
+      atMs: move.atMs,
+      detail: inboxStableMoveText(move),
+    });
+  }
   return events.sort(
     (left, right) =>
       Number(right.kind === "question") - Number(left.kind === "question") ||
       right.atMs - left.atMs,
   );
 }
+
+export const shortCommit = (commit: string) => commit.slice(0, 7);
+
+/** A move's pull requests as markdown links where the repository is on GitHub. */
+function stablePullRequestLinks(move: Pick<InboxStableMove, "pullRequests" | "webUrl">): string {
+  return move.pullRequests
+    .map((pr) => {
+      const label = `#${pr.number}`;
+      const link = move.webUrl === null ? label : `[${label}](${move.webUrl}/pull/${pr.number})`;
+      // A commit title is anyone's text: no brackets, so it cannot add a link of its own.
+      const title = inboxAgentPlainText(pr.title.replaceAll(/[[\]]/g, "")).trim();
+      return title === "" ? link : `${link} ${title}`;
+    })
+    .join(", ");
+}
+
+/** The wake note's line for a move, after "New build: ". */
+function inboxStableMoveText(
+  move: Pick<InboxStableMove, "commit" | "pullRequests" | "webUrl">,
+): string {
+  const moved = `\`stable\` moved to \`${shortCommit(move.commit)}\``;
+  const prs = stablePullRequestLinks(move);
+  return `${moved}${prs === "" ? "" : ` with ${prs}`}. Run your update command to get it.`;
+}
+
+/** The pull request numbers of a move, for its timeline card. */
+export const inboxStableMoveNumbers = (move: Pick<InboxStableMove, "pullRequests">) =>
+  move.pullRequests.map((pr) => `#${pr.number}`).join(", ");
 
 export const inboxTaskDetail = (task: Pick<InboxTaskCompletion, "identifier" | "title" | "url">) =>
   `${task.identifier} ${task.title} ${task.url}`;
@@ -273,6 +375,7 @@ const KIND_TEXT: Record<InboxWakeEvent["kind"], string> = {
   question: "Waiting for you",
   "pull-request-merged": "Pull request merged",
   "task-completed": "Task completed",
+  "stable-moved": "New build",
 };
 
 function clip(text: string, max: number): string {
@@ -289,6 +392,8 @@ export function inboxWakeText(
   environmentId: EnvironmentId,
 ): string {
   const lines = events.slice(0, MAX_WAKE_LINES).map((event) => {
+    // Not a thread's news, and its links are the line itself: never clipped.
+    if (event.kind === "stable-moved") return `- ${KIND_TEXT[event.kind]}: ${event.detail}`;
     const link = formatThreadLink(
       { environmentId, threadId: event.threadId },
       clip(event.title, INBOX_AGENT_DIGEST_TITLE_MAX_LENGTH) || event.threadId,

@@ -358,13 +358,16 @@ starts.
 When you write to it while it is idle, it first reads what changed in the project's threads
 since the previous message to it, and shows that as **What changed** above your message: new
 threads, runs that finished (with the first line of the answer) or failed, questions waiting for
-you, pull requests linked or merged, and Board tasks an agent completed.
+you, pull requests linked or merged, Board tasks an agent completed, and new builds.
 
 It also writes to you on its own. When, in another thread of the project, a question starts
 waiting for you, a pull request is merged or an agent completes a Board task, the app sends the
 Inbox a short **[Inbox update]** note, and the Inbox answers with one line per event, a link to
 each thread, questions first, and the next step. Events of the same two minutes come in one
 note, at most 40 notes a day per project, and a note waits while the Inbox is answering you.
+It also writes when the project's `stable` tag moves on its remote: the note says **New build**,
+lists the pull requests since the last move, and reminds you to run your update command. The app
+checks the tag every 10 minutes.
 Your next message's **What changed** starts after the last note. Tasks you or a teammate move in Linear
 itself are not noticed, only those an agent completes.
 

@@ -1,5 +1,5 @@
 import {
-  type MessageId,
+  MessageId,
   PROJECT_MOMENT_SNIPPET_MAX_LENGTH,
   PROJECT_MOMENTS_LIMIT,
   type ProjectMoment,
@@ -9,6 +9,7 @@ import {
 } from "@t3tools/contracts";
 import { questionCardsInMarkdown } from "@t3tools/shared/questionCards";
 import { resolveT3McpToolId } from "@t3tools/shared/t3McpToolPresentation";
+import * as DateTime from "effect/DateTime";
 
 /** The thread fields that decide whether a thread's moments show and how they are labelled. */
 export interface MomentThread {
@@ -285,6 +286,28 @@ export function pullRequestMoments(
     }
   }
   return moments;
+}
+
+/** A move of the project's `stable` tag, shown on its Inbox thread at the note that reported it. */
+export function stableMoveMoment(
+  move: {
+    readonly commit: string;
+    readonly pullRequests: ReadonlyArray<{ readonly number: number }>;
+    readonly atMs: number;
+    readonly noteMessageId: string | null;
+  },
+  inboxThreadId: ThreadId,
+  inboxTitle: string,
+): ProjectMoment {
+  return {
+    id: `stable-moved:${move.commit}`,
+    kind: "stable-moved",
+    threadId: inboxThreadId,
+    threadTitle: inboxTitle,
+    at: DateTime.formatIso(DateTime.makeUnsafe(move.atMs)),
+    messageId: move.noteMessageId === null ? null : MessageId.make(move.noteMessageId),
+    snippet: momentSnippet(move.pullRequests.map((pr) => `#${pr.number}`).join(", ")),
+  };
 }
 
 /** The ids a thread's previous pull request moments had that its new ones lack. */

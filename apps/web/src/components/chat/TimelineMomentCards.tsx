@@ -8,6 +8,7 @@ import {
   MessageCircleQuestionMarkIcon,
   MessageSquarePlusIcon,
   PlayIcon,
+  TagIcon,
 } from "lucide-react";
 import * as Schema from "effect/Schema";
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from "react";
@@ -52,6 +53,7 @@ const TONE_ICON: Record<MomentTone, { readonly Icon: LucideIcon; readonly color:
     color: PULL_REQUEST_STATE_PRESENTATION.merged.toneClassName,
   },
   started: { Icon: PlayIcon, color: "text-info" },
+  release: { Icon: TagIcon, color: "text-success" },
 };
 
 function MomentIcon({ tone, className }: { tone: MomentTone; className?: string }) {

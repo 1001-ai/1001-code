@@ -34,6 +34,8 @@ export const ProjectMomentKind = Schema.Literals([
   /** A pull request whose checks are running. */
   "pr-testing",
   "pr-merged",
+  /** The project's `stable` tag moved to a new build; the snippet lists its pull requests. */
+  "stable-moved",
 ]);
 export type ProjectMomentKind = typeof ProjectMomentKind.Type;
 

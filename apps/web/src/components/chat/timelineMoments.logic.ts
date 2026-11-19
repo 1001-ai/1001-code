@@ -48,7 +48,15 @@ export function applyProjectMomentsItem(
 }
 
 /** Picks the card's icon and its colour. */
-export type MomentTone = "ask" | "prompt" | "agent" | "done" | "testing" | "merged" | "started";
+export type MomentTone =
+  | "ask"
+  | "prompt"
+  | "agent"
+  | "done"
+  | "testing"
+  | "merged"
+  | "started"
+  | "release";
 
 export interface MomentCard {
   readonly id: string;
@@ -83,6 +91,10 @@ function momentLabel(moment: ProjectMoment): string {
       return `PR #${moment.pullRequest?.number ?? "?"} is in testing`;
     case "pr-merged":
       return `PR #${moment.pullRequest?.number ?? "?"} merged`;
+    case "stable-moved": {
+      const count = moment.snippet.match(/#\d+/g)?.length ?? 0;
+      return count === 0 ? "Stable moved" : `Stable moved · ${count} ${count === 1 ? "PR" : "PRs"}`;
+    }
   }
 }
 
@@ -95,6 +107,7 @@ const TONE_BY_KIND: Record<ProjectMoment["kind"], MomentTone> = {
   done: "done",
   "pr-testing": "testing",
   "pr-merged": "merged",
+  "stable-moved": "release",
 };
 
 function projectMomentCard(moment: ProjectMoment): MomentCard {
@@ -105,7 +118,8 @@ function projectMomentCard(moment: ProjectMoment): MomentCard {
     detail: moment.snippet,
     tone: TONE_BY_KIND[moment.kind],
     personal: true,
-    person: "You",
+    // Nobody's agent moved it: the project's own news.
+    person: moment.kind === "stable-moved" ? "Project" : "You",
     threadId: moment.threadId,
     threadTitle: moment.threadTitle,
     messageId: moment.messageId,

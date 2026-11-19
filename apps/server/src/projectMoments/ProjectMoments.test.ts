@@ -18,6 +18,12 @@ import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 
+import { recordInboxThread } from "../inboxAgent/inboxAgentThreads.ts";
+import {
+  type InboxStableMove,
+  emptyInboxWakeState,
+  publishInboxWakeState,
+} from "../inboxAgent/inboxAgentWake.ts";
 import * as EventSink from "../orchestration-v2/EventSink.ts";
 import * as EventStore from "../orchestration-v2/EventStore.ts";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
@@ -264,6 +270,52 @@ describe("ProjectMoments", () => {
           ),
           ["snapshot", ["thread-started:message:moments:named", "Renamed"]],
         );
+      }),
+    );
+
+    it.effect("shows a stable move on the Inbox, at its wake note once one reports it", () =>
+      Effect.gen(function* () {
+        yield* TestClock.setTime(NOW);
+        const eventSink = yield* EventSink.EventSinkV2;
+        const projectId = ProjectId.make("project:moments:stable");
+        const inbox = thread("inbox", projectId, { title: "Inbox" });
+        recordInboxThread(projectId, inbox.id);
+        const move: InboxStableMove = {
+          key: "stable:moments",
+          projectId,
+          commit: "1e161211f7b27f3498eda4948fdc041edc7b271b",
+          pullRequests: [
+            { number: 104, title: "One" },
+            { number: 107, title: "Two" },
+          ],
+          webUrl: null,
+          atMs: NOW - 60_000,
+          noteMessageId: null,
+        };
+        const publish = (moves: ReadonlyArray<InboxStableMove>) =>
+          publishInboxWakeState({ ...emptyInboxWakeState(0), stableMoves: moves });
+        publish([move, { ...move, key: "other", projectId: ProjectId.make("project:other") }]);
+        yield* eventSink.write({ events: [created(inbox)] });
+        const fiber = yield* subscribe(projectId, 3);
+        publish([{ ...move, noteMessageId: "note-1" }]);
+        yield* eventSink.write({ events: [prompt(inbox.id, "inbox", hoursAgo(0))] });
+        const items = [...(yield* Fiber.join(fiber))];
+        publish([]);
+
+        const card = {
+          id: `stable-moved:${move.commit}`,
+          kind: "stable-moved",
+          threadId: inbox.id,
+          threadTitle: "Inbox",
+          at: DateTime.formatIso(DateTime.makeUnsafe(move.atMs)),
+          messageId: null,
+          snippet: "#104, #107",
+        } as const;
+        assert.deepStrictEqual(snapshotOf(items).moments, [card]);
+        assert.deepStrictEqual(items[1], {
+          kind: "upsert",
+          moment: { ...card, messageId: MessageId.make("note-1") },
+        });
       }),
     );
 
