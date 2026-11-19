@@ -6,7 +6,8 @@ import { TeamCatalogViewer } from "./teamCatalog.ts";
 /**
  * Memory is what agents are told to follow and remember, kept as markdown in the team catalog
  * repository: one file for the whole team, one per catalog project, one per person, and one per
- * person in a project. Agents propose additions with `memory_propose`; a person accepts each one.
+ * person in a project. Agents propose additions, changes and removals with `memory_propose`; a
+ * person accepts each one.
  */
 export const MEMORY_DIRECTORY = "memory";
 export const MEMORY_TAG = "memory";
@@ -53,6 +54,7 @@ export function voiceAgentMemoryFile(login: string): string {
 }
 
 export const MEMORY_PROPOSE_TOOL_NAME = "memory_propose";
+export const MEMORY_WITHDRAW_TOOL_NAME = "memory_withdraw";
 export const MEMORY_PROPOSAL_MAX_LENGTH = 500;
 export const MEMORY_PROPOSAL_REASON_MAX_LENGTH = 300;
 
@@ -65,21 +67,50 @@ export const MemoryProposalText = TrimmedNonEmptyString.check(
   Schema.isMaxLength(MEMORY_PROPOSAL_MAX_LENGTH),
 );
 
-/** Accept for me (this person in this project), accept for the team (this project), or reject. */
-export const MemoryChoice = Schema.Literals(["me", "team", "reject"]);
+/**
+ * Accept for me (this person in this project), accept for the team (this project), or reject. A
+ * change or removal of an existing memory already has its file, so it is accepted or rejected.
+ */
+export const MemoryChoice = Schema.Literals(["me", "team", "reject", "accept"]);
 export type MemoryChoice = typeof MemoryChoice.Type;
 
+/** A person's choice, or the agent taking its proposal back, which no person can send. */
+export const MemoryDecisionChoice = Schema.Literals([
+  "me",
+  "team",
+  "reject",
+  "accept",
+  "withdrawn",
+]);
+export type MemoryDecisionChoice = typeof MemoryDecisionChoice.Type;
+
+/** A change or removal of an existing line; an addition has no kind, as older proposals do not. */
+export const MemoryProposalKind = Schema.Literals(["change", "remove"]);
+export type MemoryProposalKind = typeof MemoryProposalKind.Type;
+
+export const MemoryProposalUndo = Schema.Struct({
+  undoneAt: Schema.String,
+  pullRequestUrl: Schema.NullOr(TrimmedNonEmptyString),
+  merged: Schema.Boolean,
+  problem: Schema.NullOr(Schema.String),
+});
+export type MemoryProposalUndo = typeof MemoryProposalUndo.Type;
+
 export const MemoryProposalDecision = Schema.Struct({
-  choice: MemoryChoice,
-  /** What was saved, as the person left it; null for a rejection. */
+  choice: MemoryDecisionChoice,
+  /** What was saved, as the person left it; null for a rejection, a withdrawal or a removal. */
   text: Schema.NullOr(Schema.String),
-  /** The file it was added to; null for a rejection. */
+  /** The file it was added to or edited in; null for a rejection or a withdrawal. */
   file: Schema.NullOr(TrimmedNonEmptyString),
   decidedAt: Schema.String,
   pullRequestUrl: Schema.NullOr(TrimmedNonEmptyString),
   merged: Schema.Boolean,
   /** Why an accepted memory is not merged yet. */
   problem: Schema.NullOr(Schema.String),
+  /** The agent's reason for withdrawing it. */
+  reason: Schema.optional(Schema.String),
+  /** Set once a person undid what accepting did. */
+  undo: Schema.optional(MemoryProposalUndo),
 });
 export type MemoryProposalDecision = typeof MemoryProposalDecision.Type;
 
@@ -87,6 +118,7 @@ export const MemoryProposal = Schema.Struct({
   id: TrimmedNonEmptyString,
   threadId: ThreadId,
   threadTitle: Schema.String,
+  /** The new line; for a removal, the line it removes, so the required field stays simple. */
   text: MemoryProposalText,
   /** Why the agent proposed it; shown, never saved. */
   reason: Schema.String,
@@ -94,8 +126,15 @@ export const MemoryProposal = Schema.Struct({
   decision: Schema.NullOr(MemoryProposalDecision),
   /** Set when the proposal is for a category's own file instead of the general memory files. */
   category: Schema.optional(MemoryCategory),
-  /** The active memory of that category this one takes the place of; absent for a new subject. */
+  /**
+   * The existing line this one takes the place of: with a category, its active memory; otherwise
+   * the line a change or removal edits. Absent for an addition.
+   */
   replaces: Schema.optional(Schema.String),
+  kind: Schema.optional(MemoryProposalKind),
+  /** Where the line a change or removal edits is, as found when it was proposed. */
+  scope: Schema.optional(MemoryScope),
+  file: Schema.optional(TrimmedNonEmptyString),
 });
 export type MemoryProposal = typeof MemoryProposal.Type;
 
@@ -203,10 +242,16 @@ export const MemoryDecideInput = Schema.Struct({
   projectId: ProjectId,
   proposalId: TrimmedNonEmptyString,
   choice: MemoryChoice,
-  /** The proposal as the person edited it; ignored for a rejection. */
+  /** The proposal as the person edited it; ignored for a rejection or a removal. */
   text: MemoryProposalText,
 });
 export type MemoryDecideInput = typeof MemoryDecideInput.Type;
+
+export const MemoryUndoInput = Schema.Struct({
+  projectId: ProjectId,
+  proposalId: TrimmedNonEmptyString,
+});
+export type MemoryUndoInput = typeof MemoryUndoInput.Type;
 
 const byteLength = (text: string) => new TextEncoder().encode(text).length;
 
@@ -258,7 +303,7 @@ export function buildMemoryBlock(input: {
   ].join("\n");
   const footer = [
     input.proposable
-      ? `When the user states a preference, corrects you on the same thing twice, or you learn a fact about this project that later threads will need, call ${MEMORY_PROPOSE_TOOL_NAME} with one short line in plain words and why. The user accepts it for themselves or the team from a card in the chat. Keep working; do not wait for or ask about the answer. To change what is saved, ask the user to edit it in the Memory panel.`
+      ? `When the user states a preference, corrects you on the same thing twice, or you learn a fact about this project that later threads will need, call ${MEMORY_PROPOSE_TOOL_NAME} with one short line in plain words and why. The user accepts it for themselves or the team from a card in the chat. Keep working; do not wait for or ask about the answer. To change or remove a saved line, call ${MEMORY_PROPOSE_TOOL_NAME} with replaces set to its exact text, and text for the new line or no text to remove it.`
       : `To add or change a memory, open a pull request that edits these files under ${MEMORY_DIRECTORY}/${input.repository === null ? " in the team repository" : ` in ${input.repository}`}, or ask the user to change it in the Memory panel.`,
     closing,
   ].join("\n");

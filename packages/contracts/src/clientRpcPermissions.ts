@@ -35,6 +35,7 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   [WS_METHODS.teamCatalogPropose]: AuthSourceControlWriteScope,
   [WS_METHODS.memoryPropose]: AuthSourceControlWriteScope,
   [WS_METHODS.memoryDecide]: AuthSourceControlWriteScope,
+  [WS_METHODS.memoryUndo]: AuthSourceControlWriteScope,
   [WS_METHODS.agentsBoardSetBranch]: AuthSettingsWriteScope,
   // Each starts or steers a turn of the voice agent, or ends its conversation.
   [WS_METHODS.voiceAgentOpen]: AuthOrchestrationOperateScope,

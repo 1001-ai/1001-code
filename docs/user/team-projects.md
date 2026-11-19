@@ -226,6 +226,13 @@ The agent keeps working while the card waits, and deciding never starts a turn: 
 memory applies from the next one. Unanswered proposals also wait under **Proposals** in the
 Memory panel and on the [Questions page](./questions.md). Only the web and desktop apps show the cards.
 
+An agent can also propose changing or removing a saved line. The card shows the old line struck
+through, the new one below it for a change, and which file it is in; **Accept change** or
+**Accept removal** edits that line in its own file. If someone edited the line since, reject the
+proposal. An agent can withdraw a proposal you have not answered, and the card then says why.
+An accepted card has an **Undo** button, which merges another pull request that takes the line
+back out, changes it back, or adds it back.
+
 ### Voice agent memories
 
 The [voice agent](#voice-agent) tells you aloud what agents are doing in a repository. It keeps
