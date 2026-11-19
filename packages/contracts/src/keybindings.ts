@@ -90,6 +90,8 @@ export const STATIC_KEYBINDING_COMMANDS = [
   "paneStrip.focusLeft",
   "paneStrip.focusRight",
   "paneStrip.focusThread",
+  "paneStrip.widthNext",
+  "paneStrip.widthPrevious",
   "theme.select",
   "appearance.cycle",
   "themeEditor.toggle",

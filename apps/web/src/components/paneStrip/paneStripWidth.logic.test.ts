@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
-  paneStripWidthKeyDirection,
   paneStripWidthPreset,
   stepPaneStripWidth,
   withPaneStripWidth,
@@ -44,27 +43,5 @@ describe("withPaneStripWidth", () => {
     const stored = withPaneStripWidth({ thread: "half" }, "pane:diff", "third");
     expect(stored).toEqual({ thread: "half", "pane:diff": "third" });
     expect(withPaneStripWidth(stored, "thread", "fit")).toEqual({ "pane:diff": "third" });
-  });
-});
-
-describe("paneStripWidthKeyDirection", () => {
-  const key = (modifiers: Partial<KeyboardEvent>) => ({
-    code: "KeyR",
-    altKey: true,
-    shiftKey: false,
-    metaKey: false,
-    ctrlKey: false,
-    ...modifiers,
-  });
-
-  it.each([
-    { name: "mac", event: key({ metaKey: true }), mac: true, expected: 1 },
-    { name: "mac back", event: key({ metaKey: true, shiftKey: true }), mac: true, expected: -1 },
-    { name: "mac with ctrl", event: key({ ctrlKey: true }), mac: true, expected: null },
-    { name: "other", event: key({ ctrlKey: true }), mac: false, expected: 1 },
-    { name: "no alt", event: key({ ctrlKey: true, altKey: false }), mac: false, expected: null },
-    { name: "other key", event: key({ ctrlKey: true, code: "KeyT" }), mac: false, expected: null },
-  ])("$name", ({ event, mac, expected }) => {
-    expect(paneStripWidthKeyDirection(event, mac)).toBe(expected);
   });
 });

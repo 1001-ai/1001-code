@@ -92,6 +92,8 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+alt+arrowleft", command: "paneStrip.focusLeft" },
   { key: "mod+alt+arrowright", command: "paneStrip.focusRight" },
   { key: "mod+alt+arrowdown", command: "paneStrip.focusThread" },
+  { key: "mod+alt+r", command: "paneStrip.widthNext" },
+  { key: "mod+alt+shift+r", command: "paneStrip.widthPrevious" },
   { key: "mod+alt+a", command: "theme.select", when: "!terminalFocus" },
   { key: "mod+alt+shift+a", command: "appearance.cycle", when: "!terminalFocus" },
   { key: "mod+alt+shift+t", command: "themeEditor.toggle" },

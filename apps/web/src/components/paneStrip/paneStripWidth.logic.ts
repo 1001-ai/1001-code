@@ -60,13 +60,3 @@ export const PANE_STRIP_WIDTH_LABELS: Record<
   "two-thirds": { short: "⅔", long: "Two thirds" },
   full: { short: "Full", long: "The whole strip" },
 };
-
-/** Whether a keydown steps the focused column's width: Mod+Alt+R, with Shift to step back. */
-export function paneStripWidthKeyDirection(
-  event: Pick<KeyboardEvent, "code" | "altKey" | "shiftKey" | "metaKey" | "ctrlKey">,
-  mac: boolean,
-): 1 | -1 | null {
-  if (event.code !== "KeyR" || !event.altKey) return null;
-  if (mac ? !event.metaKey || event.ctrlKey : !event.ctrlKey || event.metaKey) return null;
-  return event.shiftKey ? -1 : 1;
-}

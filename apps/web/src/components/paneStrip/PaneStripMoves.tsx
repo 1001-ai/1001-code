@@ -35,7 +35,8 @@ const maxLeft = (scroller: HTMLElement) => scroller.scrollWidth - scroller.clien
 const scrollBehavior = (): ScrollBehavior =>
   window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
 
-function revealColumn(scroller: HTMLElement, column: HTMLElement) {
+/** Scrolls the least far that shows the column whole and still rests on a column start. */
+export function revealColumn(scroller: HTMLElement, column: HTMLElement) {
   const left = paneStripRevealLeft(readColumns(scroller).map(measure), measure(column), {
     scrollLeft: scroller.scrollLeft,
     viewportWidth: scroller.clientWidth,
@@ -183,14 +184,14 @@ export function PaneStripMoves(props: { readonly scroller: HTMLElement | null })
       window.clearTimeout(settle);
     };
     const onWheel = (event: WheelEvent) => {
-      const vertical = Math.abs(event.deltaY) >= Math.abs(event.deltaX);
-      const legacy = event as WheelEvent & { wheelDeltaX?: number; wheelDeltaY?: number };
+      // macOS moves a shifted notch to the sideways axis, so the per-axis values can miss it.
+      const legacy = event as WheelEvent & { wheelDelta?: number };
       const direction = paneStripWheelDirection({
         shiftKey: event.shiftKey,
         deltaX: event.deltaX,
         deltaY: event.deltaY,
         deltaMode: event.deltaMode,
-        wheelDelta: vertical ? legacy.wheelDeltaY : legacy.wheelDeltaX,
+        wheelDelta: legacy.wheelDelta,
       });
       if (direction === null || innerScrollerTakes(event.target, scroller, direction)) return;
       event.preventDefault();

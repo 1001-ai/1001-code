@@ -1,19 +1,22 @@
-import { isMacPlatform } from "@t3tools/shared/keybindings";
+import { useAtomValue } from "@effect/atom-react";
 import * as Schema from "effect/Schema";
 import { type MouseEvent, useEffect } from "react";
 import { flushSync } from "react-dom";
 
 import { useLocalStorage, writeLocalStorageValue } from "../../hooks/useLocalStorage";
+import { shortcutLabelForCommand } from "../../keybindings";
+import { primaryServerKeybindingsAtom } from "../../state/server";
+import { registerCommands } from "../../shortcuts/dispatcher";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { PANE_STRIP_ATTRIBUTE } from "./paneStrip.logic";
+import { revealColumn } from "./PaneStripMoves";
 import {
   PANE_STRIP_WIDTH_ATTRIBUTE,
   PANE_STRIP_WIDTH_LABELS,
   PANE_STRIP_WIDTHS_STORAGE_KEY,
   type PaneStripWidthKey,
   type PaneStripWidthPreset,
-  paneStripWidthKeyDirection,
   paneStripWidthPreset,
   stepPaneStripWidth,
   withPaneStripWidth,
@@ -63,37 +66,34 @@ function stepColumnWidth(column: HTMLElement, key: PaneStripWidthKey, direction:
       StoredWidths,
     ),
   );
-  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  column.scrollIntoView({
-    inline: "nearest",
-    block: "nearest",
-    behavior: reducedMotion ? "auto" : "smooth",
-  });
+  const scroller = column.closest<HTMLElement>(`[${PANE_STRIP_ATTRIBUTE}]`);
+  if (scroller !== null) revealColumn(scroller, column);
 }
 
 const asWidthKey = (value: string | null): PaneStripWidthKey | null =>
   value === "thread" || value?.startsWith("pane:") === true ? (value as PaneStripWidthKey) : null;
 
-const shortcutLabel = () => (isMacPlatform(navigator.platform) ? "⌘⌥R" : "Ctrl+Alt+R");
-
-/** Steps the width of the column holding focus with Mod+Alt+R, and back with Shift. */
+/** Steps the width of the column holding focus on the `paneStrip.width*` shortcuts. */
 export function usePaneStripWidthKeys(scroller: HTMLElement | null) {
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- listens for the width shortcut on the strip's DOM scroller, which portaled panes bubble keys to
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- registers the width shortcuts with the app's key dispatcher while the strip is mounted
   useEffect(() => {
     if (scroller === null) return;
-    const mac = isMacPlatform(navigator.platform);
-    const onKeyDown = (event: KeyboardEvent) => {
-      const direction = paneStripWidthKeyDirection(event, mac);
-      if (direction === null || !(event.target instanceof Element)) return;
+    const step = (direction: 1 | -1) => (event: KeyboardEvent) => {
+      if (!(event.target instanceof Element)) return false;
       const column = event.target.closest<HTMLElement>(`[${PANE_STRIP_WIDTH_ATTRIBUTE}]`);
       const key = asWidthKey(column?.getAttribute(PANE_STRIP_WIDTH_ATTRIBUTE) ?? null);
-      if (column === null || key === null) return;
-      if (column.closest(`[${PANE_STRIP_ATTRIBUTE}]`) !== scroller) return;
+      if (column === null || key === null) return false;
+      if (column.closest(`[${PANE_STRIP_ATTRIBUTE}]`) !== scroller) return false;
       event.preventDefault();
-      stepColumnWidth(column, key, direction);
+      event.stopPropagation();
+      // A held key steps once, not through every preset.
+      if (!event.repeat) stepColumnWidth(column, key, direction);
     };
-    scroller.addEventListener("keydown", onKeyDown);
-    return () => scroller.removeEventListener("keydown", onKeyDown);
+    return registerCommands(
+      { "paneStrip.widthNext": step(1), "paneStrip.widthPrevious": step(-1) },
+      // Capture, so the keys also work from a terminal, which consumes keys itself.
+      { capture: true },
+    );
   }, [scroller]);
 }
 
@@ -103,6 +103,10 @@ export function PaneStripWidthButton(props: {
   readonly preset: PaneStripWidthPreset;
 }) {
   const { widthKey, preset } = props;
+  const shortcut = shortcutLabelForCommand(
+    useAtomValue(primaryServerKeybindingsAtom),
+    "paneStrip.widthNext",
+  );
   const next = PANE_STRIP_WIDTH_LABELS[stepPaneStripWidth(widthKey, preset, 1)].long;
   const previous = PANE_STRIP_WIDTH_LABELS[stepPaneStripWidth(widthKey, preset, -1)].long;
   const step = (event: MouseEvent<HTMLButtonElement>) => {
@@ -124,8 +128,8 @@ export function PaneStripWidthButton(props: {
         }
       />
       <TooltipPopup side="bottom">
-        Width: {PANE_STRIP_WIDTH_LABELS[preset].long}. Click for {next}, Shift-click for {previous}{" "}
-        ({shortcutLabel()})
+        Width: {PANE_STRIP_WIDTH_LABELS[preset].long}. Click for {next}, Shift-click for {previous}
+        {shortcut ? ` (${shortcut})` : null}
       </TooltipPopup>
     </Tooltip>
   );

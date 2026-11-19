@@ -12,14 +12,14 @@ import { createPortal } from "react-dom";
 
 import { useBrowserDefaults } from "~/browser/browserDefaults";
 import { isElectron } from "../../env";
-import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { cn } from "../../lib/utils";
 import { workspaceAreaProps } from "../../lib/workspaceFocus";
 import type { RightPanelSurface } from "../../rightPanelStore";
 import { ChatRightPanel } from "../chat/ChatRightPanel";
 import { RightPanelEmptyState, surfaceTitle } from "../RightPanelTabs";
 import { Button } from "../ui/button";
-import { shouldRevealActivePane } from "./paneStrip.logic";
+import { PANE_STRIP_ATTRIBUTE, shouldRevealActivePane } from "./paneStrip.logic";
+import { revealColumn } from "./PaneStripMoves";
 import { PANE_STRIP_COLUMN_CLASS, type PaneStripHandle, usePaneOnScreen } from "./paneStripMode";
 import { usePaneStripOrder } from "./paneStripPlacement";
 import { PaneStripWidthButton, usePaneStripWidth } from "./PaneStripWidth";
@@ -50,7 +50,6 @@ function PaneStripPanes(
 ) {
   const { host, threadKey, activeSurfaceId } = props;
   const browserProfiles = useBrowserDefaults().profiles;
-  const reducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
   const surfaces = usePaneStripOrder(props.surfaces);
   const shown = useRef<{ threadKey: string; activeSurfaceId: string | null } | null>(null);
 
@@ -60,16 +59,18 @@ function PaneStripPanes(
     const reveal = shouldRevealActivePane(shown.current, next);
     shown.current = next;
     if (!reveal) return;
+    const scroller = host.closest<HTMLElement>(`[${PANE_STRIP_ATTRIBUTE}]`);
     for (const pane of host.children) {
-      if (pane instanceof HTMLElement && pane.dataset.paneStripPane === activeSurfaceId) {
-        pane.scrollIntoView({
-          inline: "nearest",
-          block: "nearest",
-          behavior: reducedMotion ? "auto" : "smooth",
-        });
+      if (
+        scroller !== null &&
+        pane instanceof HTMLElement &&
+        pane.dataset.paneStripPane === activeSurfaceId
+      ) {
+        // The same resting place a key or palette move scrolls to, so the two never pull apart.
+        revealColumn(scroller, pane);
       }
     }
-  }, [activeSurfaceId, host, reducedMotion, threadKey]);
+  }, [activeSurfaceId, host, threadKey]);
 
   return (
     <>
