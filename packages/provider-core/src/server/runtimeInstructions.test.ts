@@ -14,6 +14,10 @@ describe("buildRuntimeInstructions", () => {
     assert.notInclude(instructions, "<pull_request_linking>");
     assert.notInclude(instructions, "<asking_the_user>");
     assert.notInclude(instructions, "<reply_markers>");
+    // Fork: agents repeat this name in their reports, so it names this app, not upstream's.
+    assert.include(instructions, "you are running in 1001 Code through the Antigravity harness");
+    assert.include(instructions, "open it in 1001 Code's files viewer.");
+    assert.notInclude(instructions, "T3 Code");
   });
 
   it("links PRs the agent creates, takes over, or pushes to, and no others", () => {
