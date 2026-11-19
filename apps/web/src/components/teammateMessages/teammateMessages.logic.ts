@@ -1,15 +1,6 @@
-import type {
-  EnvironmentId,
-  MessageId,
-  OrchestrationThreadSearchMatch,
-  ThreadId,
-} from "@t3tools/contracts";
-
-/** What the server's thread search is asked for: every routed comment's first words. */
-export const TEAMMATE_MESSAGE_QUERY = "Linear comment";
+import type { EnvironmentId, MessageId, ThreadId } from "@t3tools/contracts";
 
 // The first line of a routed comment: `[Linear comment <nonce> on <issue> from <sender>]`.
-// The search snippet collapses newlines, so the body follows the header on the same line there.
 const HEADER = /^\[Linear comment ([0-9a-f]+) on (.+?) from ([^\]\n]+)\]/;
 const LINEAR_URL = /On Linear: (https:\/\/[^\s\]]+)/;
 
@@ -79,42 +70,108 @@ export interface TeammateMessage extends LinearCommentHeader {
   readonly at: string;
 }
 
-/** A search hit that is a routed comment; null for any other match. */
-export function teammateMessageFromMatch(
+/** Messages read from each candidate thread: its newest ones, where a fresh arrival is. */
+export const SCAN_MESSAGE_COUNT = 10;
+
+/** The routed comments among a thread's newest messages. */
+export function teammateMessagesIn(
   environmentId: EnvironmentId,
-  match: Pick<
-    OrchestrationThreadSearchMatch,
-    "threadId" | "source" | "snippet" | "messageCreatedAt" | "messageId"
-  >,
-): TeammateMessage | null {
-  if (match.source !== "user" || match.messageCreatedAt === null) return null;
-  const header = parseHeader(match.snippet);
-  if (header === null) return null;
-  const closing = header.rest.indexOf(closingMarker(header.nonce));
-  return {
-    nonce: header.nonce,
-    issue: header.issue,
-    sender: header.sender,
-    environmentId,
-    threadId: match.threadId,
-    messageId: match.messageId ?? null,
-    preview: (closing === -1 ? header.rest : header.rest.slice(0, closing)).trim(),
-    at: match.messageCreatedAt,
-  };
+  threadId: ThreadId,
+  messages: ReadonlyArray<{
+    readonly id: MessageId;
+    readonly role: string;
+    readonly text: string;
+    readonly createdAt: string;
+  }>,
+): ReadonlyArray<TeammateMessage> {
+  return messages.slice(-SCAN_MESSAGE_COUNT).flatMap((message) => {
+    if (message.role !== "user") return [];
+    const comment = parseLinearComment(message.text);
+    if (comment === null) return [];
+    return [
+      {
+        nonce: comment.nonce,
+        issue: comment.issue,
+        sender: comment.sender,
+        environmentId,
+        threadId,
+        messageId: message.id,
+        preview: firstBodyLine(comment.body),
+        at: message.createdAt,
+      },
+    ];
+  });
+}
+
+export interface ScanShell {
+  readonly environmentId: EnvironmentId;
+  readonly id: ThreadId;
+  readonly latestUserMessageAt: string | null;
+  readonly latestUserAuthoredMessageAt?: string | null | undefined;
+  readonly updatedAt: string;
+  readonly archivedAt: string | null;
+  readonly deletedAt: string | null;
+}
+
+export interface ScanCandidate {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+  /** The scan watermark once this thread is read. */
+  readonly latestUserMessageAt: string;
+}
+
+const SCAN_WINDOW_MS = 7 * 24 * 60 * 60_000;
+/** Threads read per pass; the rest wait for the next one. */
+const SCAN_THREAD_LIMIT = 20;
+
+export function scanKey(environmentId: EnvironmentId, threadId: ThreadId): string {
+  return `${environmentId}\u0000${threadId}`;
+}
+
+/**
+ * Threads to read, newest first: active in the last week, whose last user-role message the user
+ * did not type (an agent's message, a wake or a routed comment), and newer than this device's
+ * last read of them. The server's message search leaves agent messages out, so they are read.
+ */
+export function scanCandidates(
+  shells: ReadonlyArray<ScanShell>,
+  scannedAt: Readonly<Record<string, string>>,
+  nowMs: number,
+): ReadonlyArray<ScanCandidate> {
+  const since = new Date(nowMs - SCAN_WINDOW_MS).toISOString();
+  return shells
+    .flatMap((shell): ScanCandidate[] => {
+      const at = shell.latestUserMessageAt;
+      if (at === null || shell.archivedAt !== null || shell.deletedAt !== null) return [];
+      if (shell.updatedAt < since) return [];
+      const authored = shell.latestUserAuthoredMessageAt ?? null;
+      if (authored !== null && at <= authored) return [];
+      if (at <= (scannedAt[scanKey(shell.environmentId, shell.id)] ?? "")) return [];
+      return [{ environmentId: shell.environmentId, threadId: shell.id, latestUserMessageAt: at }];
+    })
+    .toSorted((left, right) => right.latestUserMessageAt.localeCompare(left.latestUserMessageAt))
+    .slice(0, SCAN_THREAD_LIMIT);
 }
 
 export interface TeammateMessagesState {
   /** Every routed comment seen and not yet handled, by nonce. */
   readonly unread: Readonly<Record<string, TeammateMessage>>;
-  /** When each comment was opened or dismissed, by nonce, so a later search does not bring it back. */
+  /** When each comment was opened or dismissed, by nonce, so a later read does not bring it back. */
   readonly handled: Readonly<Record<string, string>>;
+  /** Per thread (`scanKey`), the last user-role message time this device has read up to. */
+  readonly scannedAt: Readonly<Record<string, string>>;
 }
 
-export const EMPTY_TEAMMATE_MESSAGES: TeammateMessagesState = { unread: {}, handled: {} };
+export const EMPTY_TEAMMATE_MESSAGES: TeammateMessagesState = {
+  unread: {},
+  handled: {},
+  scannedAt: {},
+};
 
-/** Handled marks kept; older ones are older than anything a search still returns in practice. */
+/** Marks kept; older ones fall outside the week a pass looks at. */
 const HANDLED_LIMIT = 500;
 const UNREAD_LIMIT = 200;
+const SCANNED_LIMIT = 500;
 
 function newestEntries<T>(
   record: Readonly<Record<string, T>>,
@@ -129,7 +186,7 @@ function newestEntries<T>(
 }
 
 /**
- * Adds what a search found. A comment seen in two threads (the Inbox forwarded it) keeps the
+ * Adds what a read found. A comment seen in two threads (the Inbox forwarded it) keeps the
  * newer delivery, which is where it was sent on to.
  */
 export function rememberTeammateMessages(
@@ -170,14 +227,14 @@ export function handleTeammateMessages(
     delete unread[nonce];
     handled[nonce] = nowIso;
   }
-  return { unread, handled: newestEntries(handled, (at) => at, HANDLED_LIMIT) };
+  return { ...state, unread, handled: newestEntries(handled, (at) => at, HANDLED_LIMIT) };
 }
 
 /** Newest first. */
 export function unreadTeammateMessages(
-  state: TeammateMessagesState,
+  unread: TeammateMessagesState["unread"],
 ): ReadonlyArray<TeammateMessage> {
-  return Object.values(state.unread).toSorted((left, right) => right.at.localeCompare(left.at));
+  return Object.values(unread).toSorted((left, right) => right.at.localeCompare(left.at));
 }
 
 /** The count on the bell: a digit, or 9+. */
@@ -186,24 +243,21 @@ export function unreadBadgeLabel(count: number): string | null {
   return count > 9 ? "9+" : String(count);
 }
 
-/**
- * Changes whenever a message that the user did not write lands in one of these threads as the
- * user's (agents' messages and wakes do; a routed comment is one of them). Shells carry no
- * message text, so this is the cue to search again.
- */
-export function agentMessageArrivalSignal(
-  shells: ReadonlyArray<{
-    readonly latestUserMessageAt: string | null;
-    readonly latestUserAuthoredMessageAt?: string | null | undefined;
-  }>,
-): string {
-  let latest = "";
-  for (const shell of shells) {
-    const at = shell.latestUserMessageAt;
-    if (at === null || at === (shell.latestUserAuthoredMessageAt ?? null)) continue;
-    if (at > latest) latest = at;
-  }
-  return latest;
+/** A thread was read up to `at`; a later arrival there makes it a candidate again. */
+export function recordScan(
+  state: TeammateMessagesState,
+  candidate: ScanCandidate,
+): TeammateMessagesState {
+  const key = scanKey(candidate.environmentId, candidate.threadId);
+  if ((state.scannedAt[key] ?? "") >= candidate.latestUserMessageAt) return state;
+  return {
+    ...state,
+    scannedAt: newestEntries(
+      { ...state.scannedAt, [key]: candidate.latestUserMessageAt },
+      (at) => at,
+      SCANNED_LIMIT,
+    ),
+  };
 }
 
 export type RoutedSenderTarget =
