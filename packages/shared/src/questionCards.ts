@@ -175,12 +175,13 @@ export function questionWithdrawalsInMarkdown(text: string): ReadonlyArray<strin
   return ids;
 }
 
-const ANSWER_LINE = /^[ \t]*([A-Za-z][A-Za-z0-9_-]*)[ \t]*:[ \t]*(.*?)[ \t]*$/;
+// The value is trimmed in code: a lazy capture before trailing blanks backtracks polynomially.
+const ANSWER_LINE = /^[ \t]*([A-Za-z][A-Za-z0-9_-]*)[ \t]*:(.*)$/;
 
 /** The answer one line gives `id` (empty for a bare `<id>:`), or null when it is not that id's line. */
 export function answerOnLine(line: string, id: string): string | null {
   const match = ANSWER_LINE.exec(line);
-  return match?.[1] === id ? (match[2] ?? "") : null;
+  return match?.[1] === id ? (match[2] ?? "").trim() : null;
 }
 
 /** The answer a `<id>: answer` line in `text` gives, or null when no line answers it. */
