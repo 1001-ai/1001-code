@@ -150,6 +150,16 @@ const make = Effect.gen(function* () {
     );
   });
   const restarting = yield* Ref.make(false);
+  // For a new holder of the cycle. `ready` is set only under the cycle, so it is stable here,
+  // where a look before the claim could miss a build that finished in between.
+  const releaseIfReady = Effect.fn("DesktopSelfUpdate.releaseIfReady")(function* (
+    answer: CheckAnswer,
+  ) {
+    if ((yield* Ref.get(stateRef)).status !== "ready") return false;
+    yield* releaseCycle;
+    yield* Deferred.succeed(answer, { status: "ready" });
+    return true;
+  });
 
   const setState = Effect.fn("DesktopSelfUpdate.setState")(function* (
     state: DesktopSelfUpdateState,
@@ -264,10 +274,9 @@ const make = Effect.gen(function* () {
     command: UpdateCommand,
     scope: Scope.Scope,
   ) {
-    // A staged build waits for the user's restart; checking again would only rebuild it.
-    if ((yield* Ref.get(stateRef)).status === "ready") return;
     const { claimed, answer } = yield* claimCycle;
-    if (!claimed) return;
+    // A staged build waits for the user's restart; checking again would only rebuild it.
+    if (!claimed || (yield* releaseIfReady(answer))) return;
     yield* checkAndStage(command, scope, answer).pipe(Effect.forkIn(scope));
   });
 
@@ -276,13 +285,13 @@ const make = Effect.gen(function* () {
     if (Option.isNone(active)) return { status: "off" } as const;
     const { command, scope } = active.value;
     yield* shellEnvironment.awaitDiscovery;
-    if ((yield* Ref.get(stateRef)).status === "ready") return { status: "ready" } as const;
     const { claimed, answer } = yield* claimCycle;
     if (!claimed) {
       const { status } = yield* Ref.get(stateRef);
       if (status === "ready" || status === "building") return { status } as const;
       return wait ? yield* Deferred.await(answer) : ({ status: "checking" } as const);
     }
+    if (yield* releaseIfReady(answer)) return { status: "ready" } as const;
     const fiber = yield* checkAndStage(command, scope, answer).pipe(Effect.forkIn(scope));
     return yield* Fiber.join(fiber);
   });
