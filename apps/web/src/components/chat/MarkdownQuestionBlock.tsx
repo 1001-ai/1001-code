@@ -284,7 +284,8 @@ export function QuestionCard({
             Skip
           </Button>
         ) : null}
-        {showControls && sendingAnswer === null && canDismiss ? (
+        {/* Only an unanswered card: dismissing while changing an answer would replace it. */}
+        {showControls && answer === null && sendingAnswer === null && canDismiss ? (
           <Tooltip>
             <TooltipTrigger
               render={
