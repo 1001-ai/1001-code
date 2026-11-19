@@ -93,8 +93,9 @@ export const readStableCommit = Effect.fn("StableTag.read")(function* (
 });
 
 /**
- * The pull requests between two `stable` commits. Fetches the new one without touching the
- * checkout's refs or FETCH_HEAD; an unreadable range gives no list rather than a wrong one.
+ * The pull requests between two `stable` commits. Fetches the new one, and the old one when a
+ * forced move or a shallow clone left it out, without touching the checkout's refs or FETCH_HEAD;
+ * an unreadable range gives no list rather than a wrong one.
  */
 export const readStablePullRequests = Effect.fn("StableTag.pullRequests")(function* (
   run: Run,
@@ -104,15 +105,11 @@ export const readStablePullRequests = Effect.fn("StableTag.pullRequests")(functi
 ) {
   const git = (args: ReadonlyArray<string>) =>
     run({ command: "git", args, cwd, env, timeout: GIT_TIMEOUT });
-  yield* git([
-    "fetch",
-    "--quiet",
-    "--no-tags",
-    "--no-write-fetch-head",
-    "--",
-    "origin",
-    `refs/tags/${STABLE_TAG}`,
-  ]);
+  const fetch = (ref: string) =>
+    git(["fetch", "--quiet", "--no-tags", "--no-write-fetch-head", "--", "origin", ref]);
+  yield* fetch(`refs/tags/${STABLE_TAG}`);
+  const hasFrom = yield* git(["cat-file", "-e", `${range.from}^{commit}`]);
+  if (hasFrom.code !== 0) yield* fetch(range.from);
   const log = yield* git([
     "log",
     "--first-parent",
