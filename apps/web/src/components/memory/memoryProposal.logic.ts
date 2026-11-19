@@ -42,7 +42,7 @@ export function memoryProposalInput(input: unknown): MemoryProposalInput | null 
   const old = lineText(replaces);
   return text === null
     ? { text: old, reason, voiceAgent, replaces: old, kind: "remove" }
-    : { text, reason, voiceAgent, replaces: old, kind: "change" };
+    : { text: lineText(text), reason, voiceAgent, replaces: old, kind: "change" };
 }
 
 export interface MemoryProposalTarget {

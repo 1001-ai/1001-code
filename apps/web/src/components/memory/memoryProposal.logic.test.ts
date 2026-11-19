@@ -78,7 +78,7 @@ describe("memoryProposalInput", () => {
   });
 
   it("reads a change or removal of a saved line, and what a voice agent memory replaces", () => {
-    expect(memoryProposalInput({ text: "Use tabs.", replaces: "- Use spaces." })).toMatchObject({
+    expect(memoryProposalInput({ text: "- Use tabs.", replaces: "- Use spaces." })).toMatchObject({
       text: "Use tabs.",
       replaces: "Use spaces.",
       kind: "change",
