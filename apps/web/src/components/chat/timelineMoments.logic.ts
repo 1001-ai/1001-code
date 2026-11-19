@@ -1,5 +1,8 @@
 import {
   type AgentsBoardData,
+  type AgentsBoardStatus,
+  isListedThreadLineage,
+  type OrchestrationV2AppThreadLineage,
   PROJECT_MOMENTS_LIMIT,
   type ProjectMoment,
   type ProjectMomentsStreamItem,
@@ -152,6 +155,13 @@ function isViewersBoardAgent(
 }
 
 const PR_URL = /^https?:\/\/\S+$/;
+const BOARD_TONES: Record<AgentsBoardStatus, MomentTone | null> = {
+  question: "ask",
+  blocked: "ask",
+  done: "done",
+  started: "started",
+  working: null,
+};
 
 /** Who is looking: the team catalog's viewer, by GitHub login and board name. */
 export interface AgentsBoardViewer {
@@ -160,20 +170,88 @@ export interface AgentsBoardViewer {
 }
 
 /**
- * Agents board cards: questions and blocks, finished work and starts; working updates are left
- * out. The viewer's own agents are personal cards under "You", like this environment's moments.
+ * The branches exactly one of this environment's listed threads in the project is on. A branch
+ * several threads share, such as the default branch, says nothing about which thread an agent is;
+ * subagents, side chats and the voice agent run on their parent's branch, so they do not count.
+ */
+export function singleThreadBranches(
+  threads: ReadonlyArray<{
+    readonly branch: string | null;
+    readonly lineage: OrchestrationV2AppThreadLineage;
+  }>,
+): ReadonlySet<string> {
+  const counts = new Map<string, number>();
+  for (const { branch, lineage } of threads) {
+    if (branch === null || !isListedThreadLineage(lineage) || lineage.voiceAgent === true) continue;
+    counts.set(branch, (counts.get(branch) ?? 0) + 1);
+  }
+  return new Set([...counts].filter(([, count]) => count === 1).map(([branch]) => branch));
+}
+
+/** What this environment already shows, so the viewer's local agents are not shown twice. */
+export interface LocalMoments {
+  readonly branches: ReadonlySet<string>;
+  readonly moments: ReadonlyArray<ProjectMoment>;
+}
+
+// A board card with no branch to go by duplicates a local moment of its kind this close to it.
+const DUPLICATE_WINDOW_MILLIS = 2 * 60 * 1000;
+const LOCAL_KINDS_BY_TONE: Partial<Record<MomentTone, ReadonlyArray<ProjectMoment["kind"]>>> = {
+  done: ["done"],
+  ask: ["question", "input-request"],
+  started: ["thread-started"],
+};
+
+function duplicatesLocalMoment(
+  tone: MomentTone,
+  at: string,
+  moments: ReadonlyArray<ProjectMoment>,
+): boolean {
+  const kinds = LOCAL_KINDS_BY_TONE[tone] ?? [];
+  const millis = Date.parse(at);
+  return moments.some(
+    (moment) =>
+      kinds.includes(moment.kind) &&
+      Math.abs(Date.parse(moment.at) - millis) <= DUPLICATE_WINDOW_MILLIS,
+  );
+}
+
+/**
+ * Agents board cards (questions, blocks, finished work, starts). The viewer's own are "You" cards,
+ * minus repeats of local moments: an agent on a single local thread's branch loses every card, one
+ * that names no branch loses each card a local moment of its kind is within two minutes of.
  */
 export function agentsBoardMomentCards(
   board: AgentsBoardData | null,
   viewer: AgentsBoardViewer | null,
+  local: LocalMoments = { branches: new Set(), moments: [] },
 ): ReadonlyArray<MomentCard> {
   if (board === null) return [];
   const owners = new Map(board.agents.map((agent) => [agent.id, agent.owner]));
+  const branches = new Map<string, Set<string>>();
+  for (const message of board.messages) {
+    if (message._tag !== "agent" || message.branch === null) continue;
+    const named = branches.get(message.agentId) ?? new Set<string>();
+    named.add(message.branch.trim());
+    branches.set(message.agentId, named);
+  }
   const cards: MomentCard[] = [];
   for (const message of board.messages) {
     if (message._tag !== "agent") continue;
     const owner = owners.get(message.agentId) ?? null;
     const mine = isViewersBoardAgent(message.agentId, owner, viewer);
+    if (mine) {
+      const named = branches.get(message.agentId);
+      if (named !== undefined && [...named].some((branch) => local.branches.has(branch))) continue;
+      const tone = BOARD_TONES[message.status ?? "working"];
+      if (
+        named === undefined &&
+        tone !== null &&
+        duplicatesLocalMoment(tone, message.at, local.moments)
+      ) {
+        continue;
+      }
+    }
     const base = {
       id: `board:${message.id}`,
       at: message.at,

@@ -20,6 +20,7 @@ import { useOpenPrLink } from "~/lib/openPullRequestLink";
 import { cn } from "~/lib/utils";
 import { agentsBoardRefresh, useAgentsBoard } from "~/state/agentsBoard";
 import { useTeamCatalog } from "~/state/teamCatalog";
+import { useThreadShellsForProjectRefs } from "~/state/entities";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { formatShortTimestamp } from "~/timestampFormat";
 import { PULL_REQUEST_STATE_PRESENTATION } from "../pullRequest/pullRequestIcons";
@@ -34,6 +35,7 @@ import {
   momentStackEntries,
   newestMomentArrival,
   resolveMomentCardMaxWidth,
+  singleThreadBranches,
   agentsBoardMomentCards,
 } from "./timelineMoments.logic";
 
@@ -99,6 +101,9 @@ export function TimelineMomentCards({
   const environmentId = threadRef.environmentId;
   const board = useAgentsBoard(environmentId, projectId);
   const viewer = useTeamCatalog(environmentId)?.viewer ?? null;
+  const localThreads = useThreadShellsForProjectRefs(
+    projectId === null ? [] : [{ environmentId, projectId }],
+  );
   const refreshBoard = useAtomCommand(agentsBoardRefresh);
   const timestampFormat = useClientSettings((settings) => settings.timestampFormat);
   const [showTeammates, setShowTeammates] = useLocalStorage(
@@ -134,7 +139,12 @@ export function TimelineMomentCards({
 
   const cards = mergeMomentCards({
     moments,
-    board: boardReady ? agentsBoardMomentCards(board.board, viewer) : [],
+    board: boardReady
+      ? agentsBoardMomentCards(board.board, viewer, {
+          branches: singleThreadBranches(localThreads),
+          moments,
+        })
+      : [],
     showTeammates,
     sinceMillis: nowMillis - WINDOW_MILLIS,
   });
