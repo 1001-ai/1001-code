@@ -15,6 +15,7 @@ import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "../../workspaceTitlebar"
 import { TimelineMomentCards } from "../chat/TimelineMomentCards";
 import { PANE_STRIP_ATTRIBUTE } from "./paneStrip.logic";
 import { PaneStripIndicator } from "./PaneStripIndicator";
+import { PaneStripMoves } from "./PaneStripMoves";
 import { PaneStripContext, usePaneOnScreen, usePaneStripSetting } from "./paneStripMode";
 
 // The cards were written for a chat's margin: these stand in for the open chat's rows and minimap.
@@ -115,6 +116,7 @@ function PaneStrip(props: {
         <div ref={setPanesHost} className="contents" />
       </div>
       <PaneStripIndicator scroller={scroller} />
+      <PaneStripMoves scroller={scroller} />
     </div>
   );
 }
