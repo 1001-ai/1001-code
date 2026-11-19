@@ -5,11 +5,11 @@ import type {
   ThreadCostEstimate,
   TurnTokenUsage,
 } from "@t3tools/contracts";
-import { EMPTY_TOTALS } from "@t3tools/provider-core/server/usage";
 import { cursorRateModel } from "@t3tools/provider-cursor/server/accountUsage";
+import { piUsageReader } from "@t3tools/provider-pi/server/usage";
 import * as DateTime from "effect/DateTime";
 
-import { withRateModel } from "../provider/Drivers/antigravityUsageReader.ts";
+import { antigravityRateModel } from "../provider/Drivers/antigravityUsageReader.ts";
 import {
   lookupRate,
   type PricedRecord,
@@ -79,13 +79,34 @@ function billedTurns(
   return covered;
 }
 
+// The usage readers' own rate naming (UsageService's providerRateModels).
+const PROVIDER_RATE_MODELS = new Map<string, (model: string) => string>([
+  ["antigravity", antigravityRateModel],
+  ["cursor", cursorRateModel],
+  ["pi", piUsageReader.rateModel!],
+]);
+
+// UsageAggregator's #mapModel: an alias replaces the model and its rate model; an alias the rate
+// table does not list prices under its provider's own naming.
+function aliasRateModel(
+  pricing: ThreadCostPricing,
+  provider: string | null,
+  alias: string,
+): string | undefined {
+  if (lookupRate(pricing.rates, alias) !== null || provider === null) return undefined;
+  return PROVIDER_RATE_MODELS.get(provider)?.(alias);
+}
+
 // The Usage page's order: an alias replaces the model and its rate model, then priceUsage.
+// Billed records are Cursor's account history.
 function billedCost(pricing: ThreadCostPricing, record: BilledRecord) {
   const alias = pricing.aliases.get(record.model);
+  if (alias === undefined) return priceUsage(pricing.rates, record, pricing.overrides);
   const { rateModel: _rateModel, ...rest } = record;
+  const rateModel = aliasRateModel(pricing, "cursor", alias);
   return priceUsage(
     pricing.rates,
-    alias === undefined ? record : { ...rest, model: alias },
+    rateModel === undefined ? { ...rest, model: alias } : { ...rest, model: alias, rateModel },
     pricing.overrides,
   );
 }
@@ -119,17 +140,8 @@ function priceNames(
     };
   }
   if (driver === "antigravity") {
-    const { rateModel } = withRateModel({
-      provider: "antigravity",
-      timestampMs: 0,
-      model: reported,
-      sessionId: "",
-      totals: EMPTY_TOTALS,
-      reportedCostUsd: null,
-      speed: "standard",
-      dedupeKey: null,
-    });
-    return { model: reported, rateModel };
+    const rateModel = antigravityRateModel(reported);
+    return { model: reported, rateModel: rateModel === reported ? undefined : rateModel };
   }
   if (driver === "cursor") return { model: reported, rateModel: cursorRateModel(reported) };
   return { model: reported, rateModel: undefined };
@@ -144,7 +156,8 @@ function rateFor(
   const names = priceNames(driver, reported);
   const aliased = pricing.aliases.get(names.model);
   const model = aliased ?? names.model;
-  const rateModel = aliased === undefined ? names.rateModel : undefined;
+  const rateModel =
+    aliased === undefined ? names.rateModel : aliasRateModel(pricing, driver, aliased);
   return (
     pricing.overrides.get(model.trim()) ??
     (rateModel === undefined ? null : lookupRate(pricing.rates, rateModel)) ??

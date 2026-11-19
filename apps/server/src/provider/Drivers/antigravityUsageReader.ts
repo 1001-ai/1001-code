@@ -140,7 +140,7 @@ export const antigravityRateModel = (model: string) => {
         : base;
 };
 
-export function withRateModel(record: UsageRecord): UsageRecord {
+function withRateModel(record: UsageRecord): UsageRecord {
   const rateModel = antigravityRateModel(record.model);
   return rateModel === record.model ? record : { ...record, rateModel };
 }
