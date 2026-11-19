@@ -108,7 +108,8 @@ function PaneStrip(props: {
             panesOpen
               ? PANE_STRIP_COLUMN_CLASS
               : "flex min-h-0 min-w-0 shrink-0 basis-full snap-start",
-            "flex-row",
+            // The thread's controls are pinned to the window's corner; here they stay with the thread.
+            "flex-row [&_[data-workspace-titlebar-controls]]:absolute",
           )}
         >
           <PaneStripContext value={narrow ? null : { panesHost }}>
