@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 
 import ChatView from "./ChatView";
 import { BackgroundThreadContext } from "./chat/backgroundThread";
+import { PaneStripLayout } from "./paneStrip/PaneStripLayout";
 import { SidebarInset } from "./ui/sidebar";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useSidebarPendingFileDropStore } from "../sidebarPendingFileDropStore";
@@ -229,7 +230,9 @@ export function ThreadRouteView({
       className="h-svh min-h-0 overflow-hidden overscroll-y-none md:h-dvh"
       inert={background}
     >
-      <BackgroundThreadContext value={background}>{view}</BackgroundThreadContext>
+      <PaneStripLayout threadRef={serverThreadRef}>
+        <BackgroundThreadContext value={background}>{view}</BackgroundThreadContext>
+      </PaneStripLayout>
       {background ? null : redirect}
     </SidebarInset>
   );

@@ -323,7 +323,7 @@ function SurfaceMenuItem(props: {
   return <DisabledReasonTooltip reason={props.disabledReason} trigger={item} />;
 }
 
-function RightPanelEmptyState(props: {
+export function RightPanelEmptyState(props: {
   onAddBrowser: () => void;
   onAddBrowserInProfile: (profileId: string) => void;
   browserProfiles: ReadonlyArray<{ readonly id: string; readonly name: string }>;
@@ -581,7 +581,7 @@ function RightPanelEmptyState(props: {
   );
 }
 
-function surfaceTitle(
+export function surfaceTitle(
   surface: RightPanelSurface,
   sessions: Readonly<Record<string, PreviewSessionSnapshot>>,
   terminalLabelsById: ReadonlyMap<string, string>,

@@ -6,6 +6,7 @@ import { hasCloudPublicConfig } from "~/cloud/publicConfig";
 import { useT3ConnectAuthPrompt } from "../clerk/useT3ConnectAuthPrompt";
 import { Button } from "../ui/button";
 import { Switch } from "../ui/switch";
+import { PaneStripRow } from "../paneStrip/PaneStripRow";
 import { ScopedSwitch } from "./ScopedSwitch";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
@@ -19,6 +20,7 @@ export function LabsSettingsPanel() {
     <SettingsPageContainer>
       <SettingsSection id="beta" title="Beta">
         <BoringSidebarRow />
+        <PaneStripRow />
         {/* Clerk is only mounted when this build has T3 Connect. */}
         {hasCloudPublicConfig() ? <GuestLinksRowWithSignIn /> : <GuestLinksRow />}
         <LinkedEnvironmentsRow />
