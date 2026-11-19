@@ -3462,7 +3462,7 @@ export default function ChatView(props: ChatViewProps) {
                 composerRef={composerRef}
                 canSend={
                   canOperateThread &&
-                  !activePendingProgress &&
+                  !activePendingUserInput &&
                   !pendingApprovals.some(({ requestId }) => !heldApprovalRequestIds.has(requestId))
                 }
               >

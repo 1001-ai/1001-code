@@ -4,6 +4,7 @@ import { canForkProjectedAssistantItem } from "@t3tools/client-runtime/state/thr
 import { agentWorkingDirectories } from "@t3tools/client-runtime/workspace-basename-lookup";
 import { memo, use, useState } from "react";
 import { type ChatMessage, type TurnDiffSummary } from "../../types";
+import ChatMarkdown from "../ChatMarkdown";
 import { GitForkIcon, ReplyIcon } from "lucide-react";
 import { captureAssistantMessageOpening } from "~/lib/assistantTextSelection";
 import { responseContextRecord } from "~/lib/composerContextRecords";
