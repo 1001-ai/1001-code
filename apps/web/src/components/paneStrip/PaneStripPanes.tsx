@@ -137,7 +137,8 @@ function StripPane(props: {
   return (
     <section
       ref={observe}
-      {...workspaceAreaProps("panel", 4, `Workspace panel: ${title}`)}
+      // Workspace focus looks up "panel" for the active surface; the other panes are areas of their own.
+      {...workspaceAreaProps(active ? "panel" : "pane-strip-pane", 4, `Workspace panel: ${title}`)}
       data-pane-strip-pane={surface.id}
       data-pane-strip-label={title}
       onPointerDownCapture={activate}
