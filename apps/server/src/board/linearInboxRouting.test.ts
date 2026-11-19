@@ -1,4 +1,4 @@
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as DateTime from "effect/DateTime";
 
@@ -8,6 +8,7 @@ import {
   exchangeSkipReason,
   framedComment,
   linkedThreadIds,
+  projectsForIssue,
   routeComment,
   senderThread,
   threadSkipReason,
@@ -27,14 +28,19 @@ const link = (
 const comment = (fields: Partial<LinearComment> = {}): LinearComment => ({
   id: "comment-1",
   body: "agent: proposal — you take the poll fiber, I take the cursor.",
+  url: "https://linear.acme.test/acme/issue/ENG-2#comment-1",
   createdAt: "2026-11-15T12:00:00.000Z",
   user: { id: SAM, name: "Sam Lee", displayName: "Sam" },
   botActor: null,
   externalUser: null,
   parent: null,
   issue: {
+    id: "issue-2",
     identifier: "ENG-2",
+    title: "Poll Linear comments",
     state: { type: "started" },
+    assignee: null,
+    project: null,
     attachments: { nodes: [link("t3-thread://v2/env-me/thread-mine")] },
   },
   ...fields,
@@ -84,33 +90,139 @@ describe("routeComment", () => {
           attachments: { nodes: [link("t3-thread://v2/env-me/thread-mine", SAM)] },
         }),
       }),
-      "no-thread-link",
+      "no-thread",
     ],
     [
       "a thread on another machine",
       comment({
         issue: issueWith({ attachments: { nodes: [link("t3-thread://v2/env-other/thread-x")] } }),
       }),
-      "no-thread-link",
+      "no-thread",
     ],
     [
       "a link without its machine",
       comment({ issue: issueWith({ attachments: { nodes: [link("t3-thread://v1/thread-x")] } }) }),
-      "no-thread-link",
+      "no-thread",
+    ],
+    [
+      "my own Agent inbox task, whose link is not a destination",
+      comment({
+        issue: issueWith({ title: "Agent inbox: Alex", assignee: { id: ME } }),
+      }),
+      "no-thread",
+    ],
+    [
+      "someone else's Agent inbox task",
+      comment({
+        issue: issueWith({ title: "Agent inbox: Sam", assignee: { id: SAM } }),
+      }),
+      "thread",
     ],
   ])("%s", (_name, input, expected) => {
     const route = routeComment(input, context);
-    expect(route._tag === "thread" ? "thread" : route.reason).toBe(expected);
+    expect(
+      route._tag === "skip" ? route.reason : route.candidates.length > 0 ? "thread" : "no-thread",
+    ).toBe(expected);
   });
 
   it("names the sender and tells agents from people", () => {
     expect(routeComment(comment({ body: "  Agent: counter" }), context)).toEqual({
-      _tag: "thread",
-      threadIds: ["thread-mine"],
+      _tag: "route",
+      candidates: [{ via: "issue-link", threadIds: ["thread-mine"] }],
       kind: "agent",
       sender: "Sam Lee",
     });
     expect(commentKind("Let's keep the poll in Board.ts. agent: no")).toBe("person");
+  });
+});
+
+describe("routeComment order", () => {
+  const earlier = (id: string, body: string, user: string, minute: number) => ({
+    id,
+    body,
+    createdAt: `2026-11-15T11:${String(minute).padStart(2, "0")}:00.000Z`,
+    user: { id: user },
+  });
+  const via = (input: LinearComment) => {
+    const route = routeComment(input, context);
+    return route._tag === "skip" ? route.reason : route.candidates;
+  };
+
+  it("tries my agent's reply address in the exchange, then a thread here the comment links, then the issue's link", () => {
+    const reply = comment({
+      body: "agent: counter. Mine is t3-thread://v2/env-sam/thread-sam, yours t3-thread://v2/env-me/thread-named.",
+      parent: {
+        ...earlier(
+          "root",
+          "agent: proposal\n\nReply address: <t3-thread://v2/env-me/thread-asked>",
+          ME,
+          0,
+        ),
+        children: {
+          nodes: [
+            earlier(
+              "a",
+              "agent: counter\n\nReply address: t3-thread://v2/env-me/thread-forged",
+              SAM,
+              1,
+            ),
+            earlier(
+              "b",
+              "agent: still there?\n\nReply address: t3-thread://v2/env-me/thread-newer",
+              ME,
+              2,
+            ),
+          ],
+        },
+      },
+    });
+    expect(via(reply)).toEqual([
+      { via: "reply-address", threadIds: ["thread-newer"] },
+      { via: "body-link", threadIds: ["thread-named"] },
+      { via: "issue-link", threadIds: ["thread-mine"] },
+    ]);
+  });
+
+  it("finds no reply address in an exchange I never wrote in, nor in a link to another machine", () => {
+    const reply = comment({
+      parent: {
+        ...earlier(
+          "root",
+          "agent: proposal. Reply address: t3-thread://v2/env-sam/thread-sam",
+          SAM,
+          0,
+        ),
+        children: { nodes: [earlier("a", "see t3-thread://v2/env-other/thread-x", ME, 1)] },
+      },
+    });
+    expect(via(reply)).toEqual([{ via: "issue-link", threadIds: ["thread-mine"] }]);
+  });
+});
+
+describe("projectsForIssue", () => {
+  const WEB = ProjectId.make("project-web");
+  const API = ProjectId.make("project-api");
+  const DOCS = ProjectId.make("project-docs");
+  const mapped = [
+    { projectId: WEB, linear: { team: "ENG" } },
+    { projectId: API, linear: { team: "ENG", project: "API" } },
+    { projectId: DOCS, linear: { team: "DOC" } },
+  ];
+
+  it.each([
+    ["an issue in no Linear project", "ENG", null, [WEB]],
+    ["an issue in the named Linear project", "ENG", { name: "api", slugId: "a1" }, [API]],
+    ["a Linear project named by its slug id", "ENG", { name: "Other", slugId: "API" }, [API]],
+    ["a Linear project no entry names", "ENG", { name: "Mobile", slugId: "m1" }, [WEB]],
+    ["a team no entry maps", "OPS", null, []],
+  ] as const)("%s", (_name, team, project, expected) => {
+    expect(projectsForIssue(mapped, team, project)).toEqual(expected);
+  });
+
+  it("maps a team to every project that names it alone", () => {
+    expect(
+      projectsForIssue([...mapped, { projectId: DOCS, linear: { team: "ENG" } }], "ENG", null),
+    ).toEqual([WEB, DOCS]);
   });
 });
 
@@ -237,12 +349,25 @@ it("frames a comment so it cannot fake its end, and finds the sender's thread", 
     sender: "Sam",
     kind: "agent",
     nonce: "9f2c1a7b",
+    commentId: "comment-1",
+    url: "https://linear.acme.test/acme/issue/ENG-2#comment-1",
   });
   expect(text.startsWith("[Linear comment 9f2c1a7b on ENG-2 from Sam's agent]\n")).toBe(true);
   expect(text).toMatch(/\n\[End of Linear comment 9f2c1a7b\. Sam's agent wrote this/);
-  expect(senderThread("agent: proposal. My thread: t3-thread://v2/env-l/thread-l.")).toEqual({
-    environmentId: "env-l",
-    threadId: "thread-l",
-  });
-  expect(senderThread("see t3-thread://v1/thread-x or https://example.com")).toBeNull();
+  expect(text).toMatch(
+    /Answer with board_reply \(commentId "comment-1"\), sharing only what you choose to[^\]]*On Linear: https:\/\/linear\.acme\.test\/acme\/issue\/ENG-2#comment-1\]$/,
+  );
+  expect(
+    senderThread("agent: proposal. My thread: t3-thread://v2/env-l/thread-l.", ENVIRONMENT),
+  ).toEqual({ environmentId: "env-l", threadId: "thread-l" });
+  // A link to a thread here is where the comment goes, never who sent it.
+  expect(
+    senderThread(
+      "For t3-thread://v2/env-me/thread-mine. Reply address: t3-thread://v2/env-l/thread-l",
+      ENVIRONMENT,
+    ),
+  ).toEqual({ environmentId: "env-l", threadId: "thread-l" });
+  expect(
+    senderThread("see t3-thread://v1/thread-x or https://example.com", ENVIRONMENT),
+  ).toBeNull();
 });

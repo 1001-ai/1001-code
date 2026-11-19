@@ -143,6 +143,30 @@ the chat shows the task instead of the tool call: a card with its status and ass
 that open it on the board or in Linear when it files or takes the task, and a short line with the
 new status when it moves one.
 
+### Teammates' messages
+
+Teammates and their agents reach your agents through Linear comments. While you are signed in,
+the environment checks your board teams for new comments every 10 seconds and passes each one
+from a member of the team, on an open issue, into the thread it is for: the thread your agent
+asked from (its comment carries a reply address), a thread of yours the comment links to, or the
+thread linked to the issue. An agent's message that is for no thread goes to the project's
+[Inbox](#inbox). It arrives as a message from the teammate (or "Sam's agent") and starts a turn,
+whatever the thread's access mode. Claude and Codex threads active in the last week take them,
+and a thread takes at most twelve a day.
+
+Your agents answer with the board's own tools: `board_reply` answers a comment that reached the
+thread, and `board_message` asks a teammate's agent something, on a task or on that person's
+**Agent inbox** task, which it files for them the first time. Both post as you and add the
+thread's reply address, so the answer comes back to the same thread. An agent shares only what it
+chooses to write.
+
+The Inbox's **What changed** lists the teammates' messages of its project: where each one went,
+or why it did not arrive, such as no thread being linked to the issue.
+
+The bell in the sidebar footer counts teammates' messages until you open or dismiss them; click
+one to jump to it in the thread it went to. In the chat, click the sender's name to see the
+thread it came from, or the comment on Linear.
+
 ### Set up Linear sign-in
 
 Sign-in needs a Linear OAuth application, created once for the team by a Linear workspace
@@ -313,7 +337,17 @@ keeps its name and stays on Claude. If you delete it, the server makes a new one
 starts.
 
 When you write to it while it is idle, it first reads what changed in the project's threads
-since your previous message to it, and shows that as **What changed** above your message.
+since the previous message to it, and shows that as **What changed** above your message: new
+threads, runs that finished (with the first line of the answer) or failed, questions waiting for
+you, pull requests linked or merged, and Board tasks an agent completed.
+
+It also writes to you on its own. When, in another thread of the project, a question starts
+waiting for you, a pull request is merged or an agent completes a Board task, the app sends the
+Inbox a short **[Inbox update]** note, and the Inbox answers with one line per event, a link to
+each thread, questions first, and the next step. Events of the same two minutes come in one
+note, at most 40 notes a day per project, and a note waits while the Inbox is answering you.
+Your next message's **What changed** starts after the last note. Tasks you or a teammate move in Linear
+itself are not noticed, only those an agent completes.
 
 The Inbox can list, read and search threads, read the [Board](#board) and propose memories. When
 you ask, it also messages threads of its own project: to ask how something stands or to pass on
@@ -325,4 +359,10 @@ it found as a question, and sends only to those you tick.
 
 It messages threads only in a turn you started with your own message, never threads of another
 project. It cannot run commands or change files, and it has no branch, commit or terminal
-controls. It runs only when you write to it.
+controls. It runs when you write to it, when the app sends it an update, and when a teammate's
+agent sends a message that is for no thread (see [Teammates' messages](#teammates-messages)): it
+then passes the message on, unchanged, to the one thread of the project it belongs to and says
+which and why, or leaves it for you when none fits.
+
+When you must decide something, such as retrying a failed run, it asks with a question you can
+answer in place.

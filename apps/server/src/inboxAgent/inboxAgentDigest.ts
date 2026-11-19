@@ -16,7 +16,6 @@ import {
   type ProjectId,
   type ThreadId,
   inboxAgentDigestOf,
-  isListedThreadLineage,
 } from "@t3tools/contracts";
 import {
   inboxAgentPlainText,
@@ -25,12 +24,24 @@ import {
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 
+import { type LinearInboxLogEntry, linearInboxLog } from "../board/linearInboxLog.ts";
+import { skipReasonText } from "../board/linearInboxRouting.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
+import {
+  type InboxTaskCompletion,
+  inboxTaskCompletions,
+  inboxTaskDetail,
+  isInboxReportedThread,
+  lastInboxWakeMs,
+} from "./inboxAgentWake.ts";
 import { isInboxThread } from "./inboxAgentThreads.ts";
 
 /** The first message to the Inbox looks back this far. */
 const FIRST_DIGEST_LOOKBACK_MS = 24 * 60 * 60 * 1000;
 const DIGEST_CONTEXT_ID = ComposerContextId.make("inbox-digest");
+/** Finished runs that get the first line of their last answer; each costs one small read. */
+const RUN_SUMMARY_MAX_THREADS = 8;
+const RUN_SUMMARY_MAX_LENGTH = 140;
 
 type DigestShell = Pick<
   OrchestrationV2ThreadShell,
@@ -41,6 +52,7 @@ type DigestShell = Pick<
   | "createdAt"
   | "status"
   | "lastError"
+  | "latestRunId"
   | "latestRunRequestedAt"
   | "latestRunStartedAt"
   | "latestRunCompletedAt"
@@ -57,10 +69,10 @@ function clip(text: string, max: number): string {
 const iso = (millis: number) => DateTime.formatIso(DateTime.makeUnsafe(millis));
 
 /**
- * What changed in one project's listed threads after `sinceMs` and up to `untilMs`: threads made,
- * each thread's latest run started, finished or failed, questions opened and pull requests
- * linked. Side chats, subagents, other projects and the Inbox itself are left out. Newest first;
- * the oldest are cut past the cap.
+ * What changed in one project's listed threads in (`sinceMs`, `untilMs`], with teammates'
+ * messages from the Linear inbox's log and the Board tasks its agents completed. Side chats,
+ * subagents, other projects and the Inbox itself are left out. Newest first; the oldest are cut
+ * past the cap.
  */
 export function inboxAgentDigest(input: {
   readonly shells: ReadonlyArray<DigestShell>;
@@ -68,6 +80,8 @@ export function inboxAgentDigest(input: {
   readonly inboxThreadId: ThreadId;
   readonly sinceMs: number;
   readonly untilMs: number;
+  readonly messages?: ReadonlyArray<LinearInboxLogEntry>;
+  readonly tasks?: ReadonlyArray<InboxTaskCompletion>;
 }): InboxAgentDigest {
   const entries: Array<InboxAgentDigestEntry & { readonly ms: number }> = [];
   const inWindow = (time: DateTime.Utc | null | undefined): number | null => {
@@ -75,16 +89,11 @@ export function inboxAgentDigest(input: {
     const ms = DateTime.toEpochMillis(time);
     return ms > input.sinceMs && ms <= input.untilMs ? ms : null;
   };
+  const reported = new Map<ThreadId, string>();
   for (const shell of input.shells) {
-    if (
-      shell.projectId !== input.projectId ||
-      shell.id === input.inboxThreadId ||
-      isInboxThread(shell.id) ||
-      !isListedThreadLineage(shell.lineage)
-    ) {
-      continue;
-    }
+    if (!isInboxReportedThread(shell, input.projectId, input.inboxThreadId)) continue;
     const title = clip(shell.title, INBOX_AGENT_DIGEST_TITLE_MAX_LENGTH);
+    reported.set(shell.id, title);
     const add = (
       kind: InboxAgentDigestEntry["kind"],
       ms: number,
@@ -138,13 +147,61 @@ export function inboxAgentDigest(input: {
     for (const link of shell.pullRequests ?? []) {
       if (link.source === "stack-dismissed") continue;
       const linked = inWindow(DateTime.makeUnsafe(link.linkedAt));
-      if (linked === null) continue;
-      add(
-        "pull-request",
-        linked,
-        link.snapshot === null ? link.url : `${link.url} ${link.snapshot.title}`,
-      );
+      if (linked !== null) {
+        add(
+          "pull-request",
+          linked,
+          link.snapshot === null ? link.url : `${link.url} ${link.snapshot.title}`,
+        );
+      }
+      const merged =
+        link.snapshot?.state === "merged"
+          ? Date.parse(link.snapshot.mergedAt ?? link.snapshot.syncedAt)
+          : Number.NaN;
+      if (merged > input.sinceMs && merged <= input.untilMs) {
+        add("pull-request-merged", merged, `${link.url} ${link.snapshot?.title ?? ""}`);
+      }
     }
+  }
+  for (const task of input.tasks ?? []) {
+    const title = reported.get(task.threadId);
+    if (task.projectId !== input.projectId || title === undefined) continue;
+    if (!(task.atMs > input.sinceMs && task.atMs <= input.untilMs)) continue;
+    entries.push({
+      kind: "task-completed",
+      threadId: task.threadId,
+      title,
+      at: iso(task.atMs),
+      ms: task.atMs,
+      detail: clip(inboxTaskDetail(task), INBOX_AGENT_DIGEST_DETAIL_MAX_LENGTH),
+    });
+  }
+  const titles = new Map(input.shells.map((shell) => [shell.id, shell.title]));
+  const titleOf = (threadId: ThreadId | undefined) =>
+    threadId === input.inboxThreadId
+      ? "the Inbox"
+      : threadId === undefined
+        ? "a thread"
+        : `"${titles.get(threadId) ?? "a thread"}"`;
+  for (const message of input.messages ?? []) {
+    if (!message.projectIds.includes(input.projectId)) continue;
+    const ms = Date.parse(message.at);
+    if (!(ms > input.sinceMs && ms <= input.untilMs)) continue;
+    const from = message.kind === "agent" ? `${message.sender}'s agent` : message.sender;
+    const detail =
+      message.outcome === "not-delivered"
+        ? `Not delivered: ${skipReasonText(message.reason)}.`
+        : message.via === "forward"
+          ? `Forwarded by the Inbox to ${titleOf(message.threadId)}.`
+          : `Delivered to ${titleOf(message.threadId)}.`;
+    entries.push({
+      kind: message.outcome === "delivered" ? "message-received" : "message-not-delivered",
+      threadId: message.threadId ?? input.inboxThreadId,
+      title: clip(`${message.issue} from ${from}`, INBOX_AGENT_DIGEST_TITLE_MAX_LENGTH),
+      at: iso(ms),
+      ms,
+      detail: clip(detail, INBOX_AGENT_DIGEST_DETAIL_MAX_LENGTH),
+    });
   }
   entries.sort((left, right) => right.ms - left.ms);
   const kept = entries
@@ -158,14 +215,109 @@ export function inboxAgentDigest(input: {
   };
 }
 
-/** Where the digest starts: the user's previous Inbox message, or a day back for the first. */
+/**
+ * Where the digest starts: the previous message to the Inbox, the user's or the app's wake note
+ * (so a wake's news is not repeated), or a day back for the first.
+ */
 export function inboxAgentDigestSinceMs(
   inbox: Pick<OrchestrationV2ThreadShell, "latestUserAuthoredMessageAt" | "latestUserMessageAt">,
   untilMs: number,
+  lastWakeMs: number | null = null,
 ): number {
   const previous = inbox.latestUserAuthoredMessageAt ?? inbox.latestUserMessageAt ?? null;
-  return previous === null ? untilMs - FIRST_DIGEST_LOOKBACK_MS : DateTime.toEpochMillis(previous);
+  const times = [previous === null ? null : DateTime.toEpochMillis(previous), lastWakeMs].filter(
+    (ms): ms is number => ms !== null,
+  );
+  return times.length === 0 ? untilMs - FIRST_DIGEST_LOOKBACK_MS : Math.max(...times);
 }
+
+/** The first non-empty line of an answer, as plain text, clipped. */
+export function inboxRunSummaryLine(text: string): string | null {
+  for (const line of text.split("\n")) {
+    const plain = inboxAgentPlainText(line.replace(/^[\s#>*-]+/, ""));
+    if (plain === "") continue;
+    return plain.length <= RUN_SUMMARY_MAX_LENGTH
+      ? plain
+      : `${plain.slice(0, RUN_SUMMARY_MAX_LENGTH - 1)}…`;
+  }
+  return null;
+}
+
+/** Finished runs (not stopped ones) get the first line of their thread's last answer. */
+export function withInboxRunSummaries(
+  digest: InboxAgentDigest,
+  summaries: ReadonlyMap<ThreadId, string>,
+): InboxAgentDigest {
+  return {
+    ...digest,
+    entries: digest.entries.map((entry) => {
+      const summary = summaries.get(entry.threadId);
+      return entry.kind === "run-finished" && entry.detail === undefined && summary !== undefined
+        ? { ...entry, detail: summary }
+        : entry;
+    }),
+  };
+}
+
+/** The finished runs whose answers to read: the newest few, one per thread. */
+export function inboxRunSummaryThreads(digest: InboxAgentDigest): ReadonlyArray<ThreadId> {
+  const threadIds = digest.entries
+    .filter((entry) => entry.kind === "run-finished" && entry.detail === undefined)
+    .map((entry) => entry.threadId);
+  return [...new Set(threadIds)].slice(0, RUN_SUMMARY_MAX_THREADS);
+}
+
+/**
+ * The project's digest for `inbox` in (`sinceMs`, `untilMs`], with the first line of each finished
+ * run's last answer, read from that run's assistant messages only.
+ */
+export const buildInboxAgentDigest = Effect.fn("InboxAgent.buildDigest")(function* (input: {
+  readonly inbox: Pick<OrchestrationV2ThreadShell, "id" | "projectId">;
+  readonly sinceMs: number;
+  readonly untilMs: number;
+}) {
+  const threads = yield* ThreadManagementService.ThreadManagementService;
+  const snapshot = yield* threads.getShellSnapshot({ projectId: input.inbox.projectId });
+  const digest = inboxAgentDigest({
+    shells: snapshot.threads,
+    projectId: input.inbox.projectId,
+    inboxThreadId: input.inbox.id,
+    sinceMs: input.sinceMs,
+    untilMs: input.untilMs,
+    messages: linearInboxLog(),
+    tasks: inboxTaskCompletions(),
+  });
+  const runIds = new Map(snapshot.threads.map((shell) => [shell.id, shell.latestRunId ?? null]));
+  const summaries = new Map<ThreadId, string>();
+  yield* Effect.forEach(
+    inboxRunSummaryThreads(digest),
+    (threadId) => {
+      const runId = runIds.get(threadId) ?? null;
+      if (runId === null) return Effect.void;
+      return threads
+        .getThreadRecords(threadId, ["messages"], {
+          messageRoles: ["assistant"],
+          messageRunIds: [runId],
+        })
+        .pipe(
+          Effect.map(({ messages }) => {
+            const last = messages
+              .filter((message) => !message.streaming)
+              .toSorted(
+                (left, right) =>
+                  DateTime.toEpochMillis(right.createdAt) - DateTime.toEpochMillis(left.createdAt),
+              )[0];
+            const line = last === undefined ? null : inboxRunSummaryLine(last.text);
+            if (line !== null) summaries.set(threadId, line);
+          }),
+          Effect.orElseSucceed(() => undefined),
+          Effect.catchDefect(() => Effect.void),
+        );
+    },
+    { concurrency: 4, discard: true },
+  );
+  return withInboxRunSummaries(digest, summaries);
+});
 
 function withoutDigestRecord(
   context: OrchestrationMessageContext | undefined,
@@ -179,8 +331,8 @@ function withoutDigestRecord(
   };
 }
 
-/** The user's message with the digest as one more context record, which the message keeps. */
-function withInboxAgentDigestRecord(
+/** The message with the digest as one more context record, which the message keeps. */
+export function withInboxAgentDigestRecord(
   context: OrchestrationMessageContext | undefined,
   digest: InboxAgentDigest,
 ): OrchestrationMessageContext | undefined {
@@ -203,10 +355,10 @@ function withInboxAgentDigestRecord(
 type MessageDispatch = Extract<OrchestrationV2Command, { readonly type: "message.dispatch" }>;
 
 /**
- * A message the user sends to a project's Inbox gets a digest of what changed since their
- * previous one, kept on the message so every reader sees what the agent saw. A message sent
- * while a run is under way (steered or queued) gets none. Only the server writes the record: one
- * a client sent is dropped. Any failure sends the message without a digest.
+ * A message the user sends to a project's Inbox gets a digest of what changed since the previous
+ * message to it (theirs or a wake note), kept on the message so every reader sees what the agent
+ * saw. A message sent while a run is under way (steered or queued) gets none. Only the server
+ * writes the record: one a client sent is dropped. Any failure sends the message without one.
  */
 export const attachInboxAgentDigest = Effect.fn("InboxAgent.attachDigest")(function* (
   command: MessageDispatch,
@@ -234,15 +386,12 @@ export const attachInboxAgentDigest = Effect.fn("InboxAgent.attachDigest")(funct
     return plain;
   }
   const untilMs = DateTime.toEpochMillis(yield* DateTime.now);
-  return yield* threads.getShellSnapshot({ projectId: inbox.projectId }).pipe(
-    Effect.map((snapshot) => {
-      const digest = inboxAgentDigest({
-        shells: snapshot.threads,
-        projectId: inbox.projectId,
-        inboxThreadId: inbox.id,
-        sinceMs: inboxAgentDigestSinceMs(inbox, untilMs),
-        untilMs,
-      });
+  return yield* buildInboxAgentDigest({
+    inbox,
+    sinceMs: inboxAgentDigestSinceMs(inbox, untilMs, lastInboxWakeMs(inbox.projectId)),
+    untilMs,
+  }).pipe(
+    Effect.map((digest) => {
       const context = withInboxAgentDigestRecord(plain.context, digest);
       return context === undefined ? plain : { ...plain, context };
     }),

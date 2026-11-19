@@ -142,6 +142,7 @@ import { ThreadActivityAnnouncer } from "./ThreadActivityAnnouncer";
 import { useStableHandoffRuns, useIncrementalTimelineRows, useStableRows } from "./useTimelineRows";
 import { useClientSettings } from "../../hooks/useSettings";
 import { ExchangeThreadView, useExchangeThread } from "./ExchangeThread";
+import { TeammateThreadPeek } from "../teammateMessages/TeammateThreadPeek";
 import { useLampLayer } from "../lamp/LampLayer";
 import { LampTranscriptTimelineRow, useLampTranscriptRows } from "../lamp/LampTranscript";
 
@@ -1525,6 +1526,11 @@ const ConversationTimeline = memo(function ConversationTimeline({
               />
             ) : null}
             {lampLayer.element}
+            <TeammateThreadPeek
+              threadKey={routeThreadKey}
+              bottomInset={contentInsetEndAdjustment}
+              topFadeEnabled={topFadeEnabled}
+            />
           </TooltipScrollDismissArea>
         </TimelineRowActivityCtx>
       </MarkdownFindContext>

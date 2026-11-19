@@ -268,6 +268,9 @@ export const BoardDisconnectInput = Schema.Struct({});
 export const BOARD_ADD_TOOL_NAME = "board_add";
 export const BOARD_UPDATE_TOOL_NAME = "board_update";
 export const BOARD_LIST_TOOL_NAME = "board_list";
+/** Fork: agents message teammates' agents on Linear; see fork/README.md. */
+export const BOARD_MESSAGE_TOOL_NAME = "board_message";
+export const BOARD_REPLY_TOOL_NAME = "board_reply";
 
 /** A task as an agent's board tools return it, and as a chat card shows it. */
 export const BoardTask = Schema.Struct({

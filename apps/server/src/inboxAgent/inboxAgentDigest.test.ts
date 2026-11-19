@@ -15,6 +15,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as TestClock from "effect/testing/TestClock";
 
+import type { LinearInboxLogEntry } from "../board/linearInboxLog.ts";
 import { liveThreadShell } from "../mcp/McpToolAccess.testkit.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import {
@@ -22,8 +23,12 @@ import {
   inboxAgentDigest,
   inboxAgentDigestSinceMs,
   inboxAgentProviderText,
+  inboxRunSummaryLine,
+  inboxRunSummaryThreads,
+  withInboxRunSummaries,
 } from "./inboxAgentDigest.ts";
 import { recordInboxThread } from "./inboxAgentThreads.ts";
+import type { InboxTaskCompletion } from "./inboxAgentWake.ts";
 
 const PROJECT = ProjectId.make("project-acme");
 const INBOX = ThreadId.make("inbox-1");
@@ -110,11 +115,33 @@ it("lists each kind of change in the window, newest first", () => {
         } as never,
       ],
     }),
+    // Linked before the window, merged in it.
+    thread("merged", {
+      title: "Billing export",
+      pullRequests: [
+        {
+          url: "https://git.acme.test/acme/web/pull/9",
+          source: "agent",
+          linkedAt: DateTime.formatIso(at(1 * HOUR)),
+          snapshot: {
+            state: "merged",
+            title: "Export invoices",
+            mergedAt: DateTime.formatIso(at(18 * HOUR)),
+            syncedAt: DateTime.formatIso(at(18.5 * HOUR)),
+          },
+        } as never,
+      ],
+    }),
   ]);
   expect(digest.since).toBe(DateTime.formatIso(at(SINCE)));
   expect(digest.until).toBe(DateTime.formatIso(at(UNTIL)));
   expect(digest.omitted).toBe(0);
   expect(digest.entries.map((entry) => [entry.kind, entry.title, entry.detail])).toEqual([
+    [
+      "pull-request-merged",
+      "Billing export",
+      "https://git.acme.test/acme/web/pull/9 Export invoices",
+    ],
     ["run-started", "Search", undefined],
     ["pull-request", "Cache", "https://git.acme.test/acme/web/pull/7"],
     ["question", "Deploy", "waits for an approval"],
@@ -133,6 +160,66 @@ it("counts a change at the user's previous message as seen, and one at this mess
     thread("after", { createdAt: at(UNTIL + 1) }),
   ]);
   expect(digest.entries.map((entry) => entry.threadId)).toEqual(["at-until"]);
+});
+
+it("lists teammates' messages of this project: where each went, or why it did not arrive", () => {
+  const message = (
+    commentId: string,
+    hour: number,
+    fields: Partial<LinearInboxLogEntry> = {},
+  ): LinearInboxLogEntry => ({
+    commentId,
+    rootId: commentId,
+    issueId: "issue-1",
+    issue: "ENG-1",
+    sender: "Sam Lee",
+    kind: "agent",
+    at: DateTime.formatIso(at(hour * HOUR)),
+    outcome: "delivered",
+    via: "issue-link",
+    threadId: ThreadId.make("toolbar"),
+    projectIds: [PROJECT],
+    ...fields,
+  });
+  const digest = inboxAgentDigest({
+    shells: [thread("toolbar", { title: "Toolbar" })],
+    projectId: PROJECT,
+    inboxThreadId: INBOX,
+    sinceMs: SINCE,
+    untilMs: UNTIL,
+    messages: [
+      message("direct", 11),
+      message("forwarded", 12, { via: "forward" }),
+      message("to-inbox", 13, { via: "inbox", threadId: INBOX }),
+      message("skipped", 14, {
+        kind: "person",
+        outcome: "not-delivered",
+        via: undefined,
+        reason: "no-thread-link",
+        threadId: undefined,
+      }),
+      message("elsewhere", 15, { projectIds: [ProjectId.make("project-other")] }),
+      message("old", 9),
+    ],
+  });
+  expect(
+    digest.entries.map((entry) => [entry.kind, entry.threadId, entry.title, entry.detail]),
+  ).toEqual([
+    [
+      "message-not-delivered",
+      INBOX,
+      "ENG-1 from Sam Lee",
+      "Not delivered: no thread here is linked to the issue.",
+    ],
+    ["message-received", INBOX, "ENG-1 from Sam Lee's agent", "Delivered to the Inbox."],
+    [
+      "message-received",
+      "toolbar",
+      "ENG-1 from Sam Lee's agent",
+      'Forwarded by the Inbox to "Toolbar".',
+    ],
+    ["message-received", "toolbar", "ENG-1 from Sam Lee's agent", 'Delivered to "Toolbar".'],
+  ]);
 });
 
 it("leaves out side chats, subagents, other projects and the Inbox itself", () => {
@@ -187,6 +274,78 @@ it("clips long text, strips envelope tags and keeps the newest past the cap", ()
   expect(digest.entries.some((entry) => entry.threadId === "t0")).toBe(false);
 });
 
+it("lists the Board tasks this project's agents completed in the window", () => {
+  const task = (key: string, hour: number, fields: Partial<InboxTaskCompletion> = {}) => ({
+    key,
+    projectId: PROJECT,
+    threadId: ThreadId.make("billing"),
+    identifier: "ENG-12",
+    title: "Export invoices",
+    url: "https://linear.test/acme/issue/ENG-12",
+    atMs: hour * HOUR,
+    ...fields,
+  });
+  const digest = inboxAgentDigest({
+    shells: [thread("billing", { title: "Billing export" })],
+    projectId: PROJECT,
+    inboxThreadId: INBOX,
+    sinceMs: SINCE,
+    untilMs: UNTIL,
+    tasks: [
+      task("done", 12),
+      task("old", 9),
+      task("elsewhere", 13, { projectId: ProjectId.make("project-other") }),
+      // A thread that is not listed here (gone, or a side chat) is left out.
+      task("unknown-thread", 14, { threadId: ThreadId.make("gone") }),
+    ],
+  });
+  expect(digest.entries.map((entry) => [entry.kind, entry.title, entry.detail])).toEqual([
+    [
+      "task-completed",
+      "Billing export",
+      "ENG-12 Export invoices https://linear.test/acme/issue/ENG-12",
+    ],
+  ]);
+});
+
+it("gives a finished run the first line of its last answer, plain and clipped", () => {
+  expect(inboxRunSummaryLine('\n\n## Fixed the <change kind="x">toolbar\nDetails')).toBe(
+    "Fixed the toolbar",
+  );
+  expect(inboxRunSummaryLine("   \n")).toBeNull();
+  const long = inboxRunSummaryLine("a".repeat(500));
+  expect(long?.length).toBe(140);
+  expect(long?.endsWith("…")).toBe(true);
+
+  const digest = digestOf([
+    thread("done", { title: "Toolbar", latestRunCompletedAt: at(12 * HOUR), status: "completed" }),
+    thread("stopped", {
+      title: "Docs",
+      latestRunCompletedAt: at(13 * HOUR),
+      status: "interrupted",
+    }),
+    thread("broke", {
+      latestRunCompletedAt: at(14 * HOUR),
+      status: "failed",
+      lastError: "Tests failed.",
+    }),
+  ]);
+  // Only a finished run without a detail is read; a stopped or failed one keeps its own.
+  expect(inboxRunSummaryThreads(digest)).toEqual(["done"]);
+  const summarized = withInboxRunSummaries(
+    digest,
+    new Map([
+      [ThreadId.make("done"), "Fixed the toolbar"],
+      [ThreadId.make("stopped"), "never shown"],
+    ]),
+  );
+  expect(summarized.entries.map((entry) => [entry.threadId, entry.detail])).toEqual([
+    ["broke", "Tests failed."],
+    ["stopped", "stopped"],
+    ["done", "Fixed the toolbar"],
+  ]);
+});
+
 it("starts the digest at the user's previous Inbox message, or a day back for the first", () => {
   expect(inboxAgentDigestSinceMs(inboxShell({ latestUserMessageAt: null }), UNTIL)).toBe(
     UNTIL - 24 * HOUR,
@@ -200,6 +359,13 @@ it("starts the digest at the user's previous Inbox message, or a day back for th
       UNTIL,
     ),
   ).toBe(11 * HOUR);
+  // A later wake note is the previous message too, so its news is not repeated.
+  const asked = inboxShell({ latestUserAuthoredMessageAt: at(11 * HOUR) });
+  expect(inboxAgentDigestSinceMs(asked, UNTIL, 13 * HOUR)).toBe(13 * HOUR);
+  expect(inboxAgentDigestSinceMs(asked, UNTIL, 9 * HOUR)).toBe(11 * HOUR);
+  expect(inboxAgentDigestSinceMs(inboxShell({ latestUserMessageAt: null }), UNTIL, 13 * HOUR)).toBe(
+    13 * HOUR,
+  );
 });
 
 type MessageDispatch = Extract<OrchestrationV2Command, { readonly type: "message.dispatch" }>;

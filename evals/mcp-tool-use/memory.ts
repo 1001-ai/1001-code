@@ -1,7 +1,8 @@
 /**
  * A thread with T3's memory block and `memory_propose`, from source. `voiceAgent` makes it the
  * voice agent's (its instructions, memories and tools, no project memory); `inboxAgent` makes it
- * a project's Inbox (its instructions, the project memory, its read tools listed from the start).
+ * a project's Inbox (its instructions, the project memory, its read tools and its forward listed
+ * from the start).
  */
 import { BOARD_LIST_TOOL_NAME, buildMemoryBlock } from "@t3tools/contracts";
 import {
@@ -13,6 +14,7 @@ import { Tool } from "effect/ai";
 
 import { advertisedJsonSchema } from "../../apps/server/src/mcp/advertisedJsonSchema.ts";
 import { BoardToolkit } from "../../apps/server/src/mcp/toolkits/board/tools.ts";
+import { InboxAgentToolkit } from "../../apps/server/src/mcp/toolkits/inboxAgent/tools.ts";
 import { MemoryToolkit } from "../../apps/server/src/mcp/toolkits/memory/tools.ts";
 import { VoiceAgentToolkit } from "../../apps/server/src/mcp/toolkits/voiceAgent/tools.ts";
 import { buildVoiceAgentMemoryBlock } from "../../apps/server/src/memory/voiceAgentMemories.ts";
@@ -57,12 +59,14 @@ const listed = (tools: Record<string, Tool.Any>) =>
 export const memoryTools = (setup: MemorySetup) =>
   setup.inboxAgent === true
     ? {
-        // The thread tools are T3's own and come with them; the Board's list and memory join here.
+        // The thread tools are T3's own and come with them; the Board's list, memory and the
+        // forward join here.
         loaded: [
           ...listed(BoardToolkit.tools).filter(
             (tool) => tool.name === `mcp__t3-code__${BOARD_LIST_TOOL_NAME}`,
           ),
           ...listed(MemoryToolkit.tools),
+          ...listed(InboxAgentToolkit.tools),
         ],
         deferred: [],
       }

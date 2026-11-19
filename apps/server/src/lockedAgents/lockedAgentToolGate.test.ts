@@ -17,6 +17,7 @@ import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
 import { HttpBody, HttpClient, HttpRouter } from "effect/http";
 
+import { INBOX_FORWARD_NOT_TEAMMATE } from "../inboxAgent/inboxAgentForward.ts";
 import { INBOX_SEND_OTHER_PROJECT } from "../inboxAgent/inboxAgentSend.ts";
 import { recordInboxThread } from "../inboxAgent/inboxAgentThreads.ts";
 import * as McpHttpServer from "../mcp/McpHttpServer.ts";
@@ -54,6 +55,7 @@ const NAMED_TOOLS = [
   "t3_thread_send",
   "t3_thread_wait",
   "t3_thread_interrupt",
+  "inbox_forward",
 ] as const;
 const probe = (name: string) =>
   Tool.make(name, {
@@ -61,6 +63,7 @@ const probe = (name: string) =>
     parameters: Schema.Struct({
       threadId: Schema.optional(Schema.String),
       message: Schema.optional(Schema.String),
+      commentId: Schema.optional(Schema.String),
     }),
     success: Schema.Struct({ ok: Schema.Boolean }),
     failure: OrchestratorMcpFailure,
@@ -238,6 +241,7 @@ it.effect(
         const inbox = yield* session(INBOX);
         expect(yield* inbox.listed).toEqual([
           "board_list",
+          "inbox_forward",
           "memory_propose",
           "t3_thread_list",
           "t3_thread_read",
@@ -253,6 +257,10 @@ it.effect(
           INBOX_SEND_OTHER_PROJECT,
         );
         expect(yield* inbox.ran("t3_thread_send")).toBe(false);
+        // A forward needs a teammate's message that reached this Inbox.
+        expect(
+          yield* inbox.refusal("inbox_forward", { threadId: CHAT, commentId: "comment-1" }),
+        ).toBe(INBOX_FORWARD_NOT_TEAMMATE);
         expect(yield* inbox.ran("t3_thread_interrupt", { threadId: CHAT })).toBe(false);
         expect(yield* inbox.ran("link_pull_request")).toBe(false);
         expect(yield* inbox.ran("voice_board")).toBe(false);
@@ -263,6 +271,7 @@ it.effect(
         expect(ordinaryTools).toContain("link_pull_request");
         expect(ordinaryTools.filter((tool) => tool.startsWith("voice_"))).toEqual([]);
         expect(ordinaryTools).toContain("t3_thread_send");
+        expect(ordinaryTools).not.toContain("inbox_forward");
         expect(yield* ordinary.ran("voice_board")).toBe(false);
         expect(boardCalls).toEqual([VOICE]);
 

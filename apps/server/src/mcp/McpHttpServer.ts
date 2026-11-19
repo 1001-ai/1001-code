@@ -91,6 +91,8 @@ import { MemoryToolkit } from "./toolkits/memory/tools.ts";
 import * as LockedAgentToolGate from "../lockedAgents/lockedAgentToolGate.ts";
 import * as VoiceAgentHandlers from "./toolkits/voiceAgent/handlers.ts";
 import { VoiceAgentToolkit } from "./toolkits/voiceAgent/tools.ts";
+import * as InboxAgentHandlers from "./toolkits/inboxAgent/handlers.ts";
+import { InboxAgentToolkit } from "./toolkits/inboxAgent/tools.ts";
 import { requestUrl } from "../requestUrl.ts";
 
 const mcpResourceMetadataUrl = (request: HttpServerRequest.HttpServerRequest) =>
@@ -1389,6 +1391,8 @@ export const layer = layerMcpTransport(
     toolkitRegistration(BoardToolkit, BoardHandlers.layer),
     // Fork: the voice agent's tools, and the gate that keeps locked agents to theirs; see fork/README.md.
     toolkitRegistration(VoiceAgentToolkit, VoiceAgentHandlers.layer),
+    // Fork: the Inbox's forward of a teammate's message; see fork/README.md.
+    toolkitRegistration(InboxAgentToolkit, InboxAgentHandlers.layer),
     layerLockedAgentToolGate,
   ),
 );

@@ -20,6 +20,7 @@ import {
   INBOX_SEND_UNREADABLE,
   inboxSendRefusal,
 } from "./inboxAgentSend.ts";
+import { INBOX_WAKE_CREATED_BY, INBOX_WAKE_CREATION_SOURCE } from "./inboxAgentWake.ts";
 
 const HERE = EnvironmentId.make("environment-here");
 const INBOX = ThreadId.make("thread-inbox");
@@ -87,6 +88,14 @@ const CASES: ReadonlyArray<{
   {
     name: "refuses a run another agent's message started",
     setup: { message: { createdBy: "agent", creationSource: "mcp", senderThreadId: SAME_PROJECT } },
+    args: { threadId: SAME_PROJECT },
+    refused: INBOX_SEND_NOT_USER_STARTED,
+  },
+  {
+    name: "refuses a run the app's wake note started",
+    setup: {
+      message: { createdBy: INBOX_WAKE_CREATED_BY, creationSource: INBOX_WAKE_CREATION_SOURCE },
+    },
     args: { threadId: SAME_PROJECT },
     refused: INBOX_SEND_NOT_USER_STARTED,
   },

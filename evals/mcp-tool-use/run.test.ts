@@ -762,8 +762,13 @@ it("gives an inbox agent case its instructions, the project memory and its tools
   assert.isAtLeast(cases.length, 12);
   for (const testCase of cases) {
     assert.isTrue(testCase.setup.memory?.inboxAgent, testCase.id);
-    // Each message carries its digest first, as the server sends it.
-    assert.match(testCase.prompt, /^<inbox_digest since="[^"]+" until="[^"]+">\n/, testCase.id);
+    // The user's message carries its digest first, as the server sends it; a teammate's message
+    // from Linear arrives framed and without one.
+    assert.match(
+      testCase.prompt,
+      /^(?:<inbox_digest since="[^"]+" until="[^"]+">\n|\[Linear comment [0-9a-f]+ on )/,
+      testCase.id,
+    );
   }
   const base = buildBase(template, {
     model: "claude-haiku-5-5",
@@ -775,8 +780,13 @@ it("gives an inbox agent case its instructions, the project memory and its tools
   assert.include(system, "call memory_propose");
   assert.notInclude(system, "<voice_agent_memories>");
   const loaded = base.nativeTools.map((tool) => tool.name);
-  assert.includeMembers(loaded, ["mcp__t3-code__board_list", "mcp__t3-code__memory_propose"]);
+  assert.includeMembers(loaded, [
+    "mcp__t3-code__board_list",
+    "mcp__t3-code__memory_propose",
+    "mcp__t3-code__inbox_forward",
+  ]);
   assert.notInclude(loaded, "mcp__t3-code__board_add");
+  assert.notInclude(loaded, "mcp__t3-code__board_reply");
   const t3 = base.t3.map((tool) => tool.name);
   assert.includeMembers(t3, [
     "mcp__t3-code__t3_thread_list",

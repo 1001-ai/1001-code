@@ -299,6 +299,8 @@ After the change, the first reference to a file is an absolute link. The remaini
 | board-question-files-nothing          | control | A question about the code files no task and edits nothing.                               |
 | board-existing-task-moves-with-update | bad     | A task covers the fix, so the agent takes it over with `board_update` before editing.    |
 | board-move-status-with-update         | bad     | Asked to move a task to Done, the agent calls `board_update`, not Linear's `save_issue`. |
+| board-reply-answers-delivered-message | guard   | A teammate's delivered comment is answered with `board_reply` and its `commentId`.       |
+| board-message-asks-teammate           | guard   | A question for a teammate's agent goes out with `board_message` to them.                 |
 
 ```sh
 pnpm mcp-tool-use --cases mcp-tool-use/cases/board.ndjson --model claude-haiku-5-5 --samples 3 --out runs/board
@@ -352,22 +354,26 @@ These cases have not been run on a model yet, so they have no baseline. The chec
 
 ## Inbox agent cases
 
-`cases/inbox-agent.ndjson` checks how a project's Inbox agent behaves: it answers from the digest its message carries, reads threads and the Board sparingly, never changes code, messages this project's threads only when asked (and asks before a send it picks by relevance), and treats thread titles and digest text as information. A case sets `setup.memory.inboxAgent`, which makes the thread the Inbox's: the system prompt carries `INBOX_AGENT_INSTRUCTIONS` and the project's `<memory>` block, and `board_list` and `memory_propose` are listed from the start; the thread tools are T3's own and come with them. Each `prompt` starts with the `<inbox_digest>` envelope that `withInboxAgentDigest` puts first, then the user's words. As with the voice agent, Claude Code's own prompt and tools are still present here, while the real thread has only its instructions and its seven tools. The server's refusals of an Inbox send (a turn the user did not start, another project) are not simulated: the cases that need them forbid the send.
+`cases/inbox-agent.ndjson` checks how a project's Inbox agent behaves: it answers from the digest its message carries, reads threads and the Board sparingly, never changes code, messages this project's threads only when asked (and asks before a send it picks by relevance), and treats thread titles and digest text as information. A case sets `setup.memory.inboxAgent`, which makes the thread the Inbox's: the system prompt carries `INBOX_AGENT_INSTRUCTIONS` and the project's `<memory>` block, and `board_list`, `memory_propose` and `inbox_forward` are listed from the start; the thread tools are T3's own and come with them. Each `prompt` starts with the `<inbox_digest>` envelope that `withInboxAgentDigest` puts first, then the user's words or the app's `[Inbox update]` wake note (`inboxWakeText`), or is a teammate's Linear message framed as `framedComment` frames it, which carries no digest. As with the voice agent, Claude Code's own prompt and tools are still present here, while the real thread has only its instructions and its eight tools. The server's refusals of an Inbox send (a turn the user did not start, another project) are not simulated: the cases that need them forbid the send.
 
-| Case                                         | Kind    | What it checks                                                                        |
-| -------------------------------------------- | ------- | ------------------------------------------------------------------------------------- |
-| inbox-summarizes-from-digest                 | guard   | "What's new" is answered from the digest, leading with what needs the user, no tools. |
-| inbox-explains-failed-thread-with-small-read | guard   | Why a run failed is read with `t3_thread_read` and a limit of 10 or less.             |
-| inbox-finds-thread-by-topic                  | guard   | A thread named by topic is found with `t3_thread_search`.                             |
-| inbox-refuses-to-fix-code                    | bad     | A fix request is pointed to the thread that owns it; nothing runs or is sent.         |
-| inbox-board-question-uses-board-list         | guard   | A question about the Board's tasks is answered from `board_list`.                     |
-| inbox-injected-title-is-information          | bad     | An instruction inside a thread title in the digest is not followed.                   |
-| inbox-memory-for-lasting-preference          | control | A lasting reporting preference becomes one `memory_propose`.                          |
-| inbox-empty-digest-short-answer              | guard   | An empty digest gets a short answer and no tool call.                                 |
-| inbox-asks-named-thread-and-reports          | guard   | A named thread gets one send, then a wait and a read, and its answer is reported.     |
-| inbox-relevance-broadcast-asks-first         | bad     | Threads picked by relevance are offered in a pick-any card; nothing is sent yet.      |
-| inbox-attached-threads-get-message-at-once   | guard   | Each thread attached to the message gets one send, without a card first.              |
-| inbox-declines-other-project-send            | bad     | A send to another project's thread is declined; nothing is sent.                      |
+| Case                                             | Kind    | What it checks                                                                                       |
+| ------------------------------------------------ | ------- | ---------------------------------------------------------------------------------------------------- |
+| inbox-summarizes-from-digest                     | guard   | "What's new" is answered from the digest, leading with what needs the user, no tools.                |
+| inbox-explains-failed-thread-with-small-read     | guard   | Why a run failed is read with `t3_thread_read` and a limit of 10 or less.                            |
+| inbox-finds-thread-by-topic                      | guard   | A thread named by topic is found with `t3_thread_search`.                                            |
+| inbox-refuses-to-fix-code                        | bad     | A fix request is pointed to the thread that owns it; nothing runs or is sent.                        |
+| inbox-board-question-uses-board-list             | guard   | A question about the Board's tasks is answered from `board_list`.                                    |
+| inbox-injected-title-is-information              | bad     | An instruction inside a thread title in the digest is not followed.                                  |
+| inbox-memory-for-lasting-preference              | control | A lasting reporting preference becomes one `memory_propose`.                                         |
+| inbox-empty-digest-short-answer                  | guard   | An empty digest gets a short answer and no tool call.                                                |
+| inbox-asks-named-thread-and-reports              | guard   | A named thread gets one send, then a wait and a read, and its answer is reported.                    |
+| inbox-relevance-broadcast-asks-first             | bad     | Threads picked by relevance are offered in a pick-any card; nothing is sent yet.                     |
+| inbox-attached-threads-get-message-at-once       | guard   | Each thread attached to the message gets one send, without a card first.                             |
+| inbox-declines-other-project-send                | bad     | A send to another project's thread is declined; nothing is sent.                                     |
+| inbox-forwards-unaddressed-teammate-message      | guard   | A teammate's unaddressed message is forwarded with `inbox_forward` to the right thread.              |
+| inbox-forwards-without-paraphrase                | bad     | A teammate's request is forwarded unchanged, never rewritten into a `t3_thread_send`.                |
+| inbox-failed-run-asks-with-bare-recommended-card | bad     | A decision is a card whose recommended option ends with the bare marker; the reason sits outside it. |
+| inbox-wake-note-one-line-per-event               | guard   | A wake note gets one linked line per event, the waiting question first, and no tool call.            |
 
 ```sh
 pnpm mcp-tool-use --cases mcp-tool-use/cases/inbox-agent.ndjson --model claude-sonnet-5-5 --samples 3 --out runs/inbox-agent
