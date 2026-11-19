@@ -8,7 +8,6 @@ import {
   isQuestionWithdrawn,
   latestQuestionCards,
   remarkQuestionRefs,
-  readAnswerLine,
   selectedMultiOptions,
   toggleMultiOption,
   writeAnswerLine,
@@ -27,19 +26,6 @@ describe("writeAnswerLine", () => {
     ["a blank answer", "Q1: No", "Q1", "  ", ""],
   ])("handles %s", (_label, prompt, id, answer, expected) => {
     expect(writeAnswerLine(prompt, id, answer)).toBe(expected);
-  });
-});
-
-describe("readAnswerLine", () => {
-  it.each([
-    ["Q1: Yes", "Q1", "Yes"],
-    ["Notes\n  Q1 :  Use the cache  \nQ2: B", "Q1", "Use the cache"],
-    ["Q1:", "Q1", null],
-    ["Q10: x", "Q1", null],
-    ["q1: x", "Q1", null],
-    ["See Q1: x", "Q1", null],
-  ])("reads %j for %s", (text, id, expected) => {
-    expect(readAnswerLine(text, id)).toBe(expected);
   });
 });
 

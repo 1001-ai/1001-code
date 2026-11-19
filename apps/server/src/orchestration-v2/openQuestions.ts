@@ -1,8 +1,4 @@
-import {
-  QUESTION_WITHDRAWN_ANSWER,
-  questionCardsInMarkdown,
-  questionWithdrawalsInMarkdown,
-} from "@t3tools/shared/questionCards";
+import { QUESTION_WITHDRAWN_ANSWER, openQuestionCards } from "@t3tools/shared/questionCards";
 import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -23,43 +19,22 @@ interface QuestionCandidate {
   readonly updatedAt: DateTime.Utc;
 }
 
-function newestFirst<T extends QuestionCandidate>(messages: ReadonlyArray<T>): ReadonlyArray<T> {
+function oldestFirst<T extends QuestionCandidate>(messages: ReadonlyArray<T>): ReadonlyArray<T> {
   return messages.toSorted(
     (left, right) =>
-      DateTime.toEpochMillis(right.createdAt) - DateTime.toEpochMillis(left.createdAt) ||
-      (left.id < right.id ? 1 : left.id > right.id ? -1 : 0),
+      DateTime.toEpochMillis(left.createdAt) - DateTime.toEpochMillis(right.createdAt) ||
+      (left.id < right.id ? -1 : left.id > right.id ? 1 : 0),
   );
 }
 
 /**
- * When the newest assistant message that finished after the user's own latest message asked cards
- * it has not since withdrawn (a reply written mid-stream still asks; wakes don't answer), or null.
- * A `Qn: no longer needed` line withdraws a card of the newest earlier message that asks cards.
+ * When the newest message that still holds an open card finished (cards exist only once their
+ * message finishes), or null when every card is answered or withdrawn. The rule is the shared
+ * `openQuestionCards`, which the Questions page runs too.
  */
-function questionsAskedAt(
-  newestFirstCandidates: Iterable<QuestionCandidate>,
-  latestUserAuthoredMessageAt: DateTime.Utc | null,
-): DateTime.Utc | null {
+function questionsAskedAt(oldestFirstCandidates: ReadonlyArray<QuestionCandidate>) {
   let newest: DateTime.Utc | null = null;
-  // Ids that newer messages withdrew, waiting for the next older message that asks cards.
-  let withdrawn = new Set<string>();
-  for (const message of newestFirstCandidates) {
-    if (message.role !== "assistant" || message.streaming) continue;
-    const withdrawals = questionWithdrawalsInMarkdown(message.text);
-    const cards = questionCardsInMarkdown(message.text);
-    if (cards.length === 0) {
-      for (const id of withdrawals) withdrawn.add(id);
-      continue;
-    }
-    const open = cards.some((card) => !withdrawn.has(card.id));
-    withdrawn = new Set(withdrawals);
-    if (!open) continue;
-    if (
-      latestUserAuthoredMessageAt !== null &&
-      !DateTime.isGreaterThan(message.updatedAt, latestUserAuthoredMessageAt)
-    ) {
-      continue;
-    }
+  for (const { message } of openQuestionCards(oldestFirstCandidates)) {
     if (newest === null || DateTime.isGreaterThan(message.updatedAt, newest)) {
       newest = message.updatedAt;
     }
@@ -68,14 +43,8 @@ function questionsAskedAt(
 }
 
 /** `questionsAskedAt` over a projection's messages, within the window the SQL reads. */
-export function openQuestionsAt(input: {
-  readonly messages: ReadonlyArray<QuestionCandidate>;
-  readonly latestUserAuthoredMessageAt: DateTime.Utc | null;
-}): DateTime.Utc | null {
-  return questionsAskedAt(
-    newestFirst(input.messages).slice(0, QUESTION_WINDOW),
-    input.latestUserAuthoredMessageAt,
-  );
+export function openQuestionsAt(messages: ReadonlyArray<QuestionCandidate>): DateTime.Utc | null {
+  return questionsAskedAt(oldestFirst(messages).slice(-QUESTION_WINDOW));
 }
 
 const decodeCandidates = Schema.decodeUnknownOption(
@@ -83,6 +52,7 @@ const decodeCandidates = Schema.decodeUnknownOption(
     Schema.Array(
       Schema.Struct({
         id: Schema.String,
+        role: Schema.String,
         text: Schema.String,
         createdAt: Schema.DateTimeUtcFromString,
         updatedAt: Schema.DateTimeUtcFromString,
@@ -92,30 +62,25 @@ const decodeCandidates = Schema.decodeUnknownOption(
 );
 
 /** `questionsAskedAt` over the column `openQuestionCandidatesColumn` selects. */
-export function openQuestionsAtFromCandidates(
-  json: string | null,
-  latestUserAuthoredMessageAt: DateTime.Utc | null,
-): DateTime.Utc | null {
+export function openQuestionsAtFromCandidates(json: string | null): DateTime.Utc | null {
   if (json === null) return null;
   const candidates = Option.getOrElse(decodeCandidates(json), () => []);
   return questionsAskedAt(
-    newestFirst(
-      candidates.map((candidate) => ({ ...candidate, role: "assistant", streaming: false })),
-    ),
-    latestUserAuthoredMessageAt,
+    oldestFirst(candidates.map((candidate) => ({ ...candidate, streaming: false }))),
   );
 }
 
 /**
- * The finished assistant messages in the window that may ask or withdraw cards, as a JSON array;
- * the shared predicate in `openQuestionsAtFromCandidates` decides. `instr` keeps only messages
- * whose text can contain a card header or a withdraw line, so the predicate sees every message
- * that could change its answer.
+ * The finished messages in the window that may ask, withdraw or answer cards, as a JSON array;
+ * the shared rule in `openQuestionsAtFromCandidates` decides. `instr` and `GLOB` keep only
+ * assistant messages whose text can hold a card header or a withdraw line, and user messages
+ * whose text can hold a `Qn:` answer line, so the rule sees every message that could change it.
  */
 export function openQuestionCandidatesColumn(sql: SqlClient.SqlClient, threadId: string) {
   return sql`(
     SELECT json_group_array(json_object(
       'id', candidate.message_id,
+      'role', candidate.role,
       'text', json_extract(candidate.payload_json, '$.text'),
       'createdAt', candidate.created_at,
       'updatedAt', candidate.updated_at
@@ -128,11 +93,16 @@ export function openQuestionCandidatesColumn(sql: SqlClient.SqlClient, threadId:
       ORDER BY recent.created_at DESC, recent.message_id DESC
       LIMIT ${sql.literal(String(QUESTION_WINDOW))}
     ) candidate
-    WHERE candidate.role = 'assistant'
-      AND candidate.streaming = 0
+    WHERE candidate.streaming = 0
       AND (
-        instr(candidate.payload_json, '**Q') > 0
-        OR instr(candidate.payload_json, ${sql.literal(`'${QUESTION_WITHDRAWN_ANSWER}'`)}) > 0
+        (
+          candidate.role = 'assistant'
+          AND (
+            instr(candidate.payload_json, '**Q') > 0
+            OR instr(candidate.payload_json, ${sql.literal(`'${QUESTION_WITHDRAWN_ANSWER}'`)}) > 0
+          )
+        )
+        OR (candidate.role = 'user' AND candidate.payload_json GLOB '*Q[1-9]*')
       )
   )`;
 }

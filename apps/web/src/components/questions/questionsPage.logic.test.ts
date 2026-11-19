@@ -5,11 +5,10 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   ALL_PROJECTS,
-  askedQuestionCards,
   effectiveProjectFilter,
   matchesFilter,
-  openQuestionCards,
   questionAnswersMessage,
+  threadQuestionCards,
   waitingProjectOptions,
   waitingSummary,
   withoutSentAnswerLines,
@@ -42,8 +41,8 @@ function user(id: string, text: string, sentAt: string) {
   };
 }
 
-const openCards = (items: Parameters<typeof askedQuestionCards>[0], repliedAt: string | null) =>
-  openQuestionCards(items, askedQuestionCards(items, repliedAt));
+const openCards = (items: Parameters<typeof threadQuestionCards>[0]) =>
+  threadQuestionCards(items).open;
 
 const ASK_TWO =
   "Two things.\n\n> **Q1 · Ship it?**\n> - Yes\n> - No\n\n> **Q2 · Name?**\n> _Reply with a name_";
@@ -167,39 +166,24 @@ describe("project filter", () => {
   });
 });
 
-describe("openQuestionCards", () => {
-  const ids = (cards: ReturnType<typeof openQuestionCards>) =>
+describe("threadQuestionCards", () => {
+  const ids = (cards: ReturnType<typeof openCards>) =>
     cards.map((card) => [card.askedInItemId, card.question.id]);
 
-  it("lists the cards asked after the user's latest message", () => {
+  it("keeps each card open until its own answer line arrives", () => {
+    const askThree = `${ASK_TWO}\n\n> **Q3 · Tests?**\n> - Yes\n> - No`;
     const items = [
-      assistant("a1", "> **Q9 · Old?**\n> - Yes\n> - No", "2026-01-01T00:00:00.000Z"),
-      user("u1", "Carry on", "2026-01-01T00:01:00.000Z"),
-      assistant("a2", ASK_TWO, "2026-01-01T00:02:00.000Z"),
+      assistant("a0", "> **Q9 · Old?**\n> - Yes\n> - No", "2026-01-01T00:00:00.000Z"),
+      user("u0", "Q9: Yes", "2026-01-01T00:01:00.000Z"),
+      assistant("a1", askThree, "2026-01-01T00:02:00.000Z"),
+      user("u1", "Q1: Yes", "2026-01-01T00:03:00.000Z"),
     ];
-    expect(ids(openCards(items, "2026-01-01T00:01:00.000Z"))).toEqual([
-      ["a2", "Q1"],
-      ["a2", "Q2"],
-    ]);
-  });
-
-  it("keeps a reply written while the asking message streamed", () => {
-    const items = [
-      assistant("a1", ASK_TWO, "2026-01-01T00:02:00.000Z"),
-      user("u1", "Also check the tests", "2026-01-01T00:01:00.000Z"),
-    ];
-    expect(ids(openCards(items, "2026-01-01T00:01:00.000Z"))).toEqual([
-      ["a1", "Q1"],
+    expect(ids(openCards(items))).toEqual([
       ["a1", "Q2"],
+      ["a1", "Q3"],
     ]);
-  });
-
-  it("drops cards a later answer line answers", () => {
-    const items = [
-      assistant("a1", ASK_TWO, "2026-01-01T00:02:00.000Z"),
-      user("u1", "Q1: Yes", "2026-01-01T00:01:00.000Z"),
-    ];
-    expect(ids(openCards(items, "2026-01-01T00:01:00.000Z"))).toEqual([["a1", "Q2"]]);
+    const all = [...items, user("u2", "Q2: Ada\nQ3: skipped", "2026-01-01T00:04:00.000Z")];
+    expect(threadQuestionCards(all)).toEqual({ asked: true, open: [] });
   });
 
   it("drops cards the agent withdrew", () => {
@@ -208,9 +192,9 @@ describe("openQuestionCards", () => {
       user("u1", "Also check the tests", "2026-01-01T00:01:00.000Z"),
       assistant("a2", "Q2: no longer needed", "2026-01-01T00:03:00.000Z"),
     ];
-    expect(ids(openCards(items, "2026-01-01T00:01:00.000Z"))).toEqual([["a1", "Q1"]]);
+    expect(ids(openCards(items))).toEqual([["a1", "Q1"]]);
     const both = [...items, assistant("a3", "Q1: no longer needed", "2026-01-01T00:04:00.000Z")];
-    expect(openCards(both, "2026-01-01T00:01:00.000Z")).toEqual([]);
+    expect(openCards(both)).toEqual([]);
   });
 
   it("keeps only the newest card for a re-asked id, and skips streaming messages", () => {
@@ -219,20 +203,12 @@ describe("openQuestionCards", () => {
       assistant("a2", "> **Q1 · Ship it now?**\n> - Yes\n> - No", "2026-01-01T00:03:00.000Z"),
       assistant("a3", "> **Q3 · Later?**\n> - Yes\n> - No", "2026-01-01T00:04:00.000Z", true),
     ];
-    const cards = openCards(items, null);
+    const cards = openCards(items);
     expect(ids(cards)).toEqual([
       ["a1", "Q2"],
       ["a2", "Q1"],
     ]);
     expect(cards[1]?.question.prompt).toBe("Ship it now?");
-  });
-
-  it("lists nothing once the user has written after the cards", () => {
-    const items = [
-      assistant("a1", ASK_TWO, "2026-01-01T00:02:00.000Z"),
-      user("u1", "Never mind", "2026-01-01T00:03:00.000Z"),
-    ];
-    expect(openCards(items, "2026-01-01T00:03:00.000Z")).toEqual([]);
   });
 });
 

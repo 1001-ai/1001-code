@@ -16,6 +16,7 @@ import * as ProjectionStore from "./ProjectionStore.ts";
 
 const at = (second: number) => DateTime.makeUnsafe(Date.UTC(2026, 10, 14, 12, 0, second));
 const card = (id: string) => `Two choices.\n\n> **${id} · Ship it?**\n>\n> - Yes\n> - No`;
+const threeCards = ["Q1", "Q2", "Q3"].map(card).join("\n\n");
 const withdraw = (id: string) =>
   `You chose CSV, so one question is moot.\n\n${id}: no longer needed`;
 
@@ -101,6 +102,26 @@ const cases: ReadonlyArray<readonly [string, ReadonlyArray<Message>, number | nu
     "a withdrawal of a card from before the latest questions",
     [user(1), assistant(2, card("Q1")), assistant(3, card("Q2")), assistant(4, withdraw("Q1"))],
     3,
+  ],
+  [
+    "two of three questions the user has not answered yet",
+    [user(1), assistant(2, threeCards), user(3, "Q1: Yes")],
+    2,
+  ],
+  [
+    "three questions answered over two messages",
+    [user(1), assistant(2, threeCards), user(3, "Q1: Yes"), user(4, "Q2: Yes\nQ3: skipped")],
+    null,
+  ],
+  [
+    "a question the user skipped beside one still open",
+    [user(1), assistant(2, `${card("Q1")}\n\n${card("Q2")}`), user(3, "Q2: skipped")],
+    2,
+  ],
+  [
+    "a withdrawal of a re-asked question",
+    [user(1), assistant(2, card("Q1")), assistant(3, card("Q1")), assistant(4, withdraw("Q1"))],
+    null,
   ],
   [
     "a withdrawal still streaming",

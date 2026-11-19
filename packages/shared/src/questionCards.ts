@@ -174,3 +174,69 @@ export function questionWithdrawalsInMarkdown(text: string): ReadonlyArray<strin
   }
   return ids;
 }
+
+const ANSWER_LINE = /^[ \t]*([A-Za-z][A-Za-z0-9_-]*)[ \t]*:[ \t]*(.*?)[ \t]*$/;
+
+/** The answer one line gives `id` (empty for a bare `<id>:`), or null when it is not that id's line. */
+export function answerOnLine(line: string, id: string): string | null {
+  const match = ANSWER_LINE.exec(line);
+  return match?.[1] === id ? (match[2] ?? "") : null;
+}
+
+/** The answer a `<id>: answer` line in `text` gives, or null when no line answers it. */
+export function readAnswerLine(text: string, id: string): string | null {
+  for (const line of text.split("\n")) {
+    const answer = answerOnLine(line, id);
+    if (answer !== null && answer.length > 0) return answer;
+  }
+  return null;
+}
+
+export interface QuestionThreadMessage {
+  readonly role: string;
+  readonly text: string;
+  readonly streaming?: boolean | undefined;
+}
+
+export interface OpenQuestion<M> {
+  readonly question: QuestionBlock;
+  /** The assistant message that asked it. */
+  readonly message: M;
+}
+
+/**
+ * The cards still open in a thread's messages, given oldest first, in the order they were asked.
+ * Each id's newest card counts. A card stays open until a later user message carries its own
+ * `<id>: answer` line (a skip is one), or the agent withdraws it while its message still holds
+ * the latest cards. Streaming messages ask nothing yet.
+ */
+export function openQuestionCards<M extends QuestionThreadMessage>(
+  messages: Iterable<M>,
+  cardsOf: (message: M) => ReadonlyArray<QuestionBlock> = (message) =>
+    questionCardsInMarkdown(message.text),
+): ReadonlyArray<OpenQuestion<M>> {
+  const open = new Map<string, OpenQuestion<M>>();
+  // A withdrawal applies to the newest earlier message that asks cards.
+  let latestAsking: M | null = null;
+  for (const message of messages) {
+    if (message.role === "user") {
+      for (const id of open.keys()) {
+        if (readAnswerLine(message.text, id) !== null) open.delete(id);
+      }
+      continue;
+    }
+    if (message.role !== "assistant" || message.streaming === true) continue;
+    for (const id of questionWithdrawalsInMarkdown(message.text)) {
+      if (open.get(id)?.message === latestAsking) open.delete(id);
+    }
+    const cards = cardsOf(message);
+    if (cards.length === 0) continue;
+    latestAsking = message;
+    for (const question of cards) {
+      // A re-asked id moves to where it was asked last.
+      open.delete(question.id);
+      open.set(question.id, { question, message });
+    }
+  }
+  return [...open.values()];
+}

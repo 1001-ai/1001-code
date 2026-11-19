@@ -2,7 +2,9 @@ import type { ComposerContextId } from "@t3tools/contracts";
 import { formatComposerContextHref } from "@t3tools/shared/composerContextReferences";
 import {
   QUESTION_MULTI_SEPARATOR,
+  answerOnLine,
   questionCardsInMarkdown,
+  readAnswerLine,
   questionWithdrawalsInMarkdown,
   type QuestionBlock,
 } from "@t3tools/shared/questionCards";
@@ -13,22 +15,6 @@ const BOOLEAN_OPTIONS = ["Yes", "No"] as const;
 export function questionOptions(question: QuestionBlock): ReadonlyArray<string> {
   if (question.kind === "boolean") return BOOLEAN_OPTIONS;
   return question.options ?? [];
-}
-
-const ANSWER_LINE = /^[ \t]*([A-Za-z][A-Za-z0-9_-]*)[ \t]*:[ \t]*(.*?)[ \t]*$/;
-
-function answerOnLine(line: string, id: string): string | null {
-  const match = ANSWER_LINE.exec(line);
-  return match?.[1] === id ? (match[2] ?? "") : null;
-}
-
-/** The answer a `<id>: answer` line in `text` gives, or null when no line answers it. */
-export function readAnswerLine(text: string, id: string): string | null {
-  for (const line of text.split("\n")) {
-    const answer = answerOnLine(line, id);
-    if (answer !== null && answer.length > 0) return answer;
-  }
-  return null;
 }
 
 /** Writes `<id>: answer` into the draft, replacing that question's line; null removes it. */

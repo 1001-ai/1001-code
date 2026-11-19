@@ -11,11 +11,11 @@ import {
 } from "../../state/memory";
 import { environmentThreadDetails, environmentThreadShells } from "../../state/threads";
 import {
-  askedQuestionCards,
   isWaitingOnUser,
-  openQuestionCards,
   sameOpenQuestionCards,
+  threadQuestionCards,
   type OpenQuestionCard,
+  type ThreadQuestionCards,
 } from "./questionsPage.logic";
 
 export interface QuestionsThreadEntry {
@@ -23,7 +23,7 @@ export interface QuestionsThreadEntry {
   readonly shell: EnvironmentThreadShell;
   /** The thread's projection is here, so an empty card list means none are open. */
   readonly loaded: boolean;
-  /** Cards behind `openQuestionsAt` are in the loaded history, answered or not. */
+  /** The loaded history asks cards, answered or not. */
   readonly cardsAsked: boolean;
   readonly cards: ReadonlyArray<OpenQuestionCard>;
   readonly requests: PendingThreadRequests;
@@ -85,24 +85,16 @@ export const hasWaitingQuestionsAtom = Atom.make(
   (get) => get(waitingThreadRefsAtom).length > 0,
 ).pipe(Atom.withLabel("questions-has-waiting"));
 
-interface ThreadCards {
-  readonly asked: boolean;
-  readonly open: ReadonlyArray<OpenQuestionCard>;
-}
-
-const NO_THREAD_CARDS: ThreadCards = { asked: false, open: NO_CARDS };
+const NO_THREAD_CARDS: ThreadQuestionCards = { asked: false, open: NO_CARDS };
 
 const openCardsAtomFamily = Atom.family((key: string) => {
   const ref = parseThreadKey(key);
   let previous = NO_THREAD_CARDS;
   return Atom.make((get) => {
-    const repliedAt =
-      get(environmentThreadShells.quietThreadShellAtom(ref))?.latestUserAuthoredMessageAt ?? null;
-    const items = get(environmentThreadDetails.timelineVisibleTurnItemsAtom(ref));
-    const asked = askedQuestionCards(items, repliedAt);
-    const open = openQuestionCards(items, asked);
-    const next = { asked: asked.length > 0, open };
-    if (next.asked !== previous.asked || !sameOpenQuestionCards(previous.open, open)) {
+    const next = threadQuestionCards(
+      get(environmentThreadDetails.timelineVisibleTurnItemsAtom(ref)),
+    );
+    if (next.asked !== previous.asked || !sameOpenQuestionCards(previous.open, next.open)) {
       previous = next;
     }
     return previous;
