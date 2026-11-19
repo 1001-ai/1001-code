@@ -16,6 +16,7 @@ import { TimelineMomentCards } from "../chat/TimelineMomentCards";
 import { PANE_STRIP_ATTRIBUTE } from "./paneStrip.logic";
 import { PaneStripIndicator } from "./PaneStripIndicator";
 import { PaneStripContext, usePaneOnScreen, usePaneStripSetting } from "./paneStripMode";
+import * as Width from "./PaneStripWidth";
 
 // The cards were written for a chat's margin: these stand in for the open chat's rows and minimap.
 const NO_ROWS: [] = [];
@@ -53,6 +54,8 @@ function PaneStrip(props: {
   );
   const threadKey = threadRef === null ? null : scopedThreadKey(threadRef);
   const timelineShown = !narrow && threadRef !== null && projectId !== null;
+  const threadWidth = Width.usePaneStripWidth("thread");
+  Width.usePaneStripWidthKeys(scroller);
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- rests the DOM scroller on the thread column when a thread opens or the timeline column appears beside it
   useLayoutEffect(() => {
@@ -99,11 +102,13 @@ function PaneStrip(props: {
         <div
           ref={threadColumnRef}
           data-pane-strip-label="Thread"
+          {...(panesOpen ? threadWidth.attributes : null)}
           className={cn(
             "flex min-h-0 min-w-0 shrink-0 grow-0 snap-start",
             // Beside panes the thread keeps the width its details card needs to stay open, so
             // on most windows the next pane peeks in at the right edge rather than sharing evenly.
-            panesOpen ? "basis-[min(100%,max(50%,64rem))]" : "basis-full",
+            panesOpen ? threadWidth.className : "basis-full",
+            panesOpen && cn("relative", Width.PANE_STRIP_THREAD_CONTROLS_SHIFT_CLASS),
             // The thread's controls are pinned to the window's corner; here they stay with the thread.
             "flex-row [&_[data-workspace-titlebar-controls]]:absolute",
           )}
@@ -111,6 +116,7 @@ function PaneStrip(props: {
           <PaneStripContext value={narrow ? null : { panesHost }}>
             {props.children}
           </PaneStripContext>
+          {panesOpen ? <Width.PaneStripThreadWidthControl preset={threadWidth.preset} /> : null}
         </div>
         <div ref={setPanesHost} className="contents" />
       </div>
