@@ -35,10 +35,10 @@ export function V2EventTimelineRow({ row }: { row: Extract<TimelineRow, { kind: 
       />
     );
   }
-  if (isMemoryProposalItem(item)) {
+  if (item.type === "dynamic_tool" && isMemoryProposalItem(item)) {
     return <MemoryProposalCard environmentId={ctx.activeThreadEnvironmentId} item={item} />;
   }
-  if (isBoardTaskItem(item)) {
+  if (item.type === "dynamic_tool" && isBoardTaskItem(item)) {
     return <BoardTaskCard environmentId={ctx.activeThreadEnvironmentId} item={item} />;
   }
   if (item.type === "link_request") {

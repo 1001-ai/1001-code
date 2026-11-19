@@ -8,8 +8,6 @@ import {
 } from "@t3tools/contracts";
 import { compactDynamicToolOutput } from "@t3tools/shared/toolOutput";
 
-type DynamicToolItem = Extract<OrchestrationV2TurnItem, { type: "dynamic_tool" }>;
-
 export interface MemoryProposalInput {
   /** The new line; for a removal, the line it removes, as the server stores it. */
   readonly text: string;
@@ -87,7 +85,7 @@ export function memoryScopeLabel(scope: MemoryScope): string {
 }
 
 /** A `memory_propose` call that recorded a proposal; a failed one stays an ordinary tool row. */
-export function isMemoryProposalItem(item: OrchestrationV2TurnItem): item is DynamicToolItem {
+export function isMemoryProposalItem(item: OrchestrationV2TurnItem): boolean {
   return (
     item.type === "dynamic_tool" &&
     item.status === "completed" &&

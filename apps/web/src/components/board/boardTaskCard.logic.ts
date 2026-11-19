@@ -3,8 +3,6 @@ import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 
-type DynamicToolItem = Extract<OrchestrationV2TurnItem, { type: "dynamic_tool" }>;
-
 const decodeBoardTask = Schema.decodeUnknownOption(BoardTaskChange);
 
 /** What the agent's Linear call did to a task, which the server reads from Linear's result. */
@@ -18,7 +16,7 @@ export function boardTaskChangeOf(item: OrchestrationV2TurnItem): BoardTaskChang
 }
 
 /** A Linear call that filed, picked up or moved a task; anything else stays a tool row. */
-export function isBoardTaskItem(item: OrchestrationV2TurnItem): item is DynamicToolItem {
+export function isBoardTaskItem(item: OrchestrationV2TurnItem): boolean {
   return boardTaskChangeOf(item) !== null;
 }
 
