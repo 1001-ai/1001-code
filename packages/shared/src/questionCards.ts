@@ -8,6 +8,52 @@ export const QUESTION_MULTI_SEPARATOR = ", ";
 export const QUESTION_SKIPPED_ANSWER = "skipped";
 
 /**
+ * The answer a card's Dismiss gives: the card closes without the agent being told. The client
+ * records a message of only `<id>: dismissed` lines without starting a turn.
+ */
+export const QUESTION_DISMISSED_ANSWER = "dismissed";
+
+const DISMISSAL_LINE = /^Q[1-9][0-9]*: dismissed$/;
+
+/**
+ * Whether `text` is only `Qn: dismissed` lines, one per line, with nothing else. The server's SQL
+ * form (`questionDismissalMessageSql`) must accept exactly the same texts.
+ */
+export function isQuestionDismissalText(text: string): boolean {
+  return text.length > 0 && text.split("\n").every((line) => DISMISSAL_LINE.test(line));
+}
+
+/**
+ * A dismissal recorded without a run: it closes cards but is not the user writing to the agent,
+ * so it moves no "latest user message" time.
+ */
+export function isQuestionDismissalMessage(message: {
+  readonly role: string;
+  readonly runId: string | null;
+  readonly text: string;
+  readonly attachments?: ReadonlyArray<unknown> | undefined;
+}): boolean {
+  return (
+    message.role === "user" &&
+    message.runId === null &&
+    (message.attachments?.length ?? 0) === 0 &&
+    isQuestionDismissalText(message.text)
+  );
+}
+
+/** The ids a dismissal text closes, in order; empty when the text is not one. */
+export function questionDismissalIds(text: string): ReadonlyArray<string> {
+  return isQuestionDismissalText(text)
+    ? text.split("\n").map((line) => line.slice(0, line.indexOf(":")))
+    : [];
+}
+
+/** The text of a message that dismisses `ids`. */
+export function questionDismissalText(ids: ReadonlyArray<string>): string {
+  return ids.map((id) => `${id}: ${QUESTION_DISMISSED_ANSWER}`).join("\n");
+}
+
+/**
  * What an agent writes after a card's id, as a whole `Q2: no longer needed` line, to withdraw one
  * of its latest unanswered cards that a newer user message made pointless.
  */
@@ -208,7 +254,7 @@ export interface OpenQuestion<M> {
 /**
  * The cards still open in a thread's messages, given oldest first, in the order they were asked.
  * Each id's newest card counts. A card stays open until a later user message carries its own
- * `<id>: answer` line (a skip is one), or the agent withdraws it while its message still holds
+ * `<id>: answer` line (a skip or a dismissal is one), or the agent withdraws it while its message still holds
  * the latest cards. Streaming messages ask nothing yet.
  */
 export function openQuestionCards<M extends QuestionThreadMessage>(

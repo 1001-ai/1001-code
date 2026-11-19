@@ -3290,6 +3290,8 @@ export const OrchestrationV2Command = Schema.Union([
       Schema.Struct({ type: Schema.Literal("restart_active"), targetRunId: RunId }),
       Schema.Struct({ type: Schema.Literal("queue_after_active") }),
       Schema.Struct({ type: Schema.Literal("start_immediately") }),
+      // Fork: recorded without a run, for question card dismissals; see fork/README.md.
+      Schema.Struct({ type: Schema.Literal("record_only") }),
     ]),
   }),
   Schema.Struct({

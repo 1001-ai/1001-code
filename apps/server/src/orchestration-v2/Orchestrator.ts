@@ -200,6 +200,7 @@ import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAda
 import * as ServerSettings from "../serverSettings.ts";
 import { voiceAgentThread } from "../voiceAgent/voiceAgentThread.ts";
 import { lockedAgentMessage, lockedAgentRefusal } from "../lockedAgents/lockedAgentGuard.ts";
+import { recordOnlyMessageEvents, recordOnlyMessageRefusal } from "./recordOnlyMessage.ts";
 
 const isMessageQuestionAnswer = Schema.is(
   Schema.Union([TrimmedNonEmptyString, Schema.NonEmptyArray(TrimmedNonEmptyString)]),
@@ -6358,6 +6359,24 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       });
     }
     command = lockedAgentMessage(command, projection.thread);
+    // Fork: a question card dismissal is recorded without a run; see fork/README.md.
+    if (command.dispatchMode.type === "record_only") {
+      const cause = recordOnlyMessageRefusal(command);
+      if (cause !== null) {
+        return yield* new OrchestratorDispatchError({
+          commandId: command.commandId,
+          commandType: command.type,
+          cause,
+        });
+      }
+      const turnItemId = idAllocator.derive.userTurnItem({ messageId: command.messageId });
+      const ordinal = yield* nextTurnItemOrdinal(projection);
+      const now = yield* DateTime.now;
+      for (const event of recordOnlyMessageEvents({ command, turnItemId, ordinal, now })) {
+        yield* emit(events, command)(event);
+      }
+      return;
+    }
     if (command.steerFollowUpOfRunId !== undefined) {
       const source = projection.runs.find((run) => run.id === command.steerFollowUpOfRunId);
       if (

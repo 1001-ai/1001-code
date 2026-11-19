@@ -106,3 +106,27 @@ export function openQuestionCandidatesColumn(sql: SqlClient.SqlClient, threadId:
       )
   )`;
 }
+
+export { isQuestionDismissalMessage } from "@t3tools/shared/questionCards";
+
+/**
+ * SQL for `isQuestionDismissalMessage` on the messages table aliased `alias`. Joining the lines
+ * (`: dismissed\nQ` becomes `,`) leaves `Q<ids>: dismissed`, where `<ids>` must be comma-separated
+ * numbers without leading zeros; a text that already holds a comma is not one. This accepts exactly
+ * the texts `isQuestionDismissalText` does; `openQuestions.test.ts` runs both over the same cases.
+ */
+export function questionDismissalMessageSql(sql: SqlClient.SqlClient, alias: string) {
+  const text = sql.literal(`json_extract(${alias}.payload_json, '$.text')`);
+  const joined = sql`replace(${text}, ': dismissed' || char(10) || 'Q', ',')`;
+  const ids = sql`substr(${joined}, 2, length(${joined}) - 12)`;
+  return sql`(
+    ${sql.literal(`${alias}.role`)} = 'user'
+    AND ${sql.literal(`${alias}.run_id`)} IS NULL
+    AND coalesce(json_array_length(${sql.literal(`${alias}.payload_json`)}, '$.attachments'), 0) = 0
+    AND instr(${text}, ',') = 0
+    AND ${joined} GLOB 'Q[1-9]*: dismissed'
+    AND ${ids} NOT GLOB '*[^0-9,]*'
+    AND instr(${ids} || ',', ',,') = 0
+    AND instr(${ids}, ',0') = 0
+  )`;
+}

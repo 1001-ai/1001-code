@@ -1,8 +1,8 @@
 import { parseScopedThreadKey, scopedThreadKey } from "@t3tools/client-runtime/environment";
-import type { ScopedThreadRef } from "@t3tools/contracts";
+import { AuthOrchestrationOperateScope, CommandId, type ScopedThreadRef } from "@t3tools/contracts";
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { Atom } from "effect/reactivity";
-import { CheckIcon, CircleSlashIcon, PencilLineIcon } from "lucide-react";
+import { CheckIcon, CircleSlashIcon, PencilLineIcon, XIcon } from "lucide-react";
 import {
   use,
   useId,
@@ -14,13 +14,17 @@ import {
 } from "react";
 
 import { useComposerDraftStore } from "~/composerDraftStore";
-import { cn } from "~/lib/utils";
+import { cn, newMessageId, randomUUID } from "~/lib/utils";
+import { useEnvironmentScope } from "~/state/session";
+import { useAtomCommand } from "~/state/use-atom-command";
 import {
   parseQuestionQuote,
+  QUESTION_DISMISSED_ANSWER,
   QUESTION_SKIPPED_ANSWER,
   readAnswerLine,
   type QuestionBlock,
 } from "@t3tools/shared/questionCards";
+import { questionDismissalRecord } from "../../state/questionDismissals";
 import { environmentThreadDetails } from "../../state/threads";
 import {
   findQuestionAnswer,
@@ -32,7 +36,13 @@ import {
   type QuestionAnswer,
 } from "./questionBlock.logic";
 import { QuestionAnswerSendContext, QuestionAskedInItemContext } from "./questionBlockScope";
+import {
+  dismissQuestionCard,
+  undoQuestionDismissal,
+  useQuestionDismissalStore,
+} from "./questionDismissals.logic";
 import { Button } from "../ui/button";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 const questionAnswerAtomFamily = Atom.family((key: string) => {
   const [thread = "", askedInItemId = "", questionId = ""] = key.split("\u0000");
@@ -210,9 +220,41 @@ export function QuestionCard({
     sent !== null && draftAnswer === null && sent.after === (answer?.messageId ?? null)
       ? sent.answer
       : null;
+  // Dismiss closes the card without a turn: the message is recorded after an Undo window.
+  const canDismiss = useEnvironmentScope(threadRef.environmentId, AuthOrchestrationOperateScope);
+  const recordDismissal = useAtomCommand(questionDismissalRecord);
+  const threadKey = scopedThreadKey(threadRef);
+  const dismissal = useQuestionDismissalStore((store) => store.cards[cardKey] ?? null);
+  const localDismissal = answer === null && sendingAnswer === null ? dismissal : null;
+  const dismiss = () => {
+    if (draftAnswer !== null) writeDraftAnswer(null);
+    dismissQuestionCard({
+      threadKey,
+      cardKey,
+      questionId: question.id,
+      record: async (text) => {
+        const result = await recordDismissal({
+          environmentId: threadRef.environmentId,
+          input: {
+            type: "message.dispatch",
+            commandId: CommandId.make(randomUUID()),
+            threadId: threadRef.threadId,
+            messageId: newMessageId(),
+            text,
+            attachments: [],
+            dispatchMode: { type: "record_only" },
+            createdBy: "user",
+            creationSource: "web",
+          },
+        });
+        return result._tag === "Success";
+      },
+    });
+  };
   // An answer the user gives, or one on its way, still wins over the agent's withdrawal.
-  const showWithdrawn = answer === null && withdrawn && sendingAnswer === null;
-  const showControls = (answer === null && !showWithdrawn) || changing;
+  const showWithdrawn =
+    answer === null && withdrawn && sendingAnswer === null && localDismissal === null;
+  const showControls = (answer === null && !showWithdrawn && localDismissal === null) || changing;
 
   return (
     <section
@@ -242,7 +284,42 @@ export function QuestionCard({
             Skip
           </Button>
         ) : null}
+        {/* Only an unanswered card: dismissing while changing an answer would replace it. */}
+        {showControls && answer === null && sendingAnswer === null && canDismiss ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  size="icon-micro"
+                  variant="ghost-muted"
+                  aria-label={`Dismiss ${question.id}`}
+                  onClick={dismiss}
+                />
+              }
+            >
+              <XIcon aria-hidden />
+            </TooltipTrigger>
+            <TooltipPopup side="top">Close without telling the agent</TooltipPopup>
+          </Tooltip>
+        ) : null}
       </div>
+      {localDismissal !== null ? (
+        <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-muted-foreground text-sm">
+          <XIcon aria-hidden className="size-3.5 shrink-0" />
+          <span>Dismissed</span>
+          {localDismissal === "pending" ? (
+            <>
+              <span aria-hidden>·</span>
+              <QuietAction
+                aria-label={`Undo dismissing ${question.id}`}
+                onClick={() => undoQuestionDismissal(threadKey, cardKey)}
+              >
+                Undo
+              </QuietAction>
+            </>
+          ) : null}
+        </div>
+      ) : null}
       {showWithdrawn ? (
         <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-muted-foreground text-sm">
           <CircleSlashIcon aria-hidden className="size-3.5 shrink-0" />
@@ -253,10 +330,16 @@ export function QuestionCard({
       ) : null}
       {answer !== null ? (
         <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-muted-foreground text-sm">
-          <CheckIcon aria-hidden className="size-3.5 shrink-0 text-success-foreground" />
+          {answer.answer === QUESTION_DISMISSED_ANSWER ? (
+            <XIcon aria-hidden className="size-3.5 shrink-0" />
+          ) : (
+            <CheckIcon aria-hidden className="size-3.5 shrink-0 text-success-foreground" />
+          )}
           <span className="min-w-0 [overflow-wrap:anywhere]">
             {answer.answer === QUESTION_SKIPPED_ANSWER ? (
               "Skipped"
+            ) : answer.answer === QUESTION_DISMISSED_ANSWER ? (
+              "Dismissed"
             ) : (
               <>
                 Answered: <span className="text-foreground">{answer.answer}</span>

@@ -23,10 +23,14 @@ To decline a question card, click **Skip** on it, here or in the thread. It answ
 and the agent stops the work that depends on that question instead of choosing for you, then says
 what it left undone.
 
+To close a card without telling the agent, for example one the Inbox copied from a thread where
+you already answered, click the **×** beside Skip. It reads "Dismissed" everywhere and no turn
+starts; **Undo** is offered for a few seconds.
+
 When something you wrote later makes one of the agent's open question cards pointless, the agent
 can withdraw it with a `Q4: no longer needed` line. The card then reads "No longer needed" and
 leaves this page; you can still answer it if you want to.
 
-A question card stays on the list until you answer or skip it, even after you reply to the
+A question card stays on the list until you answer, skip or dismiss it, even after you reply to the
 thread about something else, so you can answer cards one at a time. Archived threads and threads your tag filter hides are not listed.
 The mobile app does not have this page.

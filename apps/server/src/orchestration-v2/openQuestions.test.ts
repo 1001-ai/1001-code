@@ -5,6 +5,7 @@ import {
   type ModelSelection,
   ProjectId,
   ProviderInstanceId,
+  RunId,
   ScheduledTaskId,
   ThreadId,
 } from "@t3tools/contracts";
@@ -29,6 +30,7 @@ type Message = {
   readonly finished?: number;
   readonly streaming?: boolean;
   readonly scheduledTaskId?: ScheduledTaskId;
+  readonly runId?: RunId;
 };
 const user = (second: number, text = "Go"): Message => ({
   role: "user",
@@ -129,6 +131,21 @@ const cases: ReadonlyArray<
     2,
   ],
   [
+    "a question the user dismissed beside one still open",
+    [user(1), assistant(2, `${card("Q1")}\n\n${card("Q2")}`), user(3, "Q2: dismissed")],
+    2,
+  ],
+  [
+    "a dismissed question and an answered one",
+    [
+      user(1),
+      assistant(2, `${card("Q1")}\n\n${card("Q2")}`),
+      user(3, "Q1: dismissed"),
+      user(4, "Q2: Yes"),
+    ],
+    null,
+  ],
+  [
     "a withdrawal of a re-asked question",
     [user(1), assistant(2, card("Q1")), assistant(3, card("Q1")), assistant(4, withdraw("Q1"))],
     null,
@@ -161,79 +178,132 @@ const modelSelection = {
   model: "gpt-5.4",
 } satisfies ModelSelection;
 
+const seedThread = (key: string, messages: ReadonlyArray<Message>) =>
+  Effect.gen(function* () {
+    const store = yield* ProjectionStore.ProjectionStoreV2;
+    const threadId = ThreadId.make(`thread:open-questions:${key}`);
+    yield* store.apply({
+      id: EventId.make(`event:open-questions:${key}:thread`),
+      type: "thread.created",
+      threadId,
+      occurredAt: at(0),
+      payload: {
+        createdBy: "user",
+        creationSource: "web",
+        id: threadId,
+        projectId: ProjectId.make("project:open-questions"),
+        title: "Questions",
+        providerInstanceId: modelSelection.instanceId,
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+        activeProviderThreadId: null,
+        lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
+        forkedFrom: null,
+        createdAt: at(0),
+        updatedAt: at(0),
+        archivedAt: null,
+        settledOverride: null,
+        settledAt: null,
+        lastVisitedAt: null,
+        deletedAt: null,
+      },
+    });
+    for (const [index, message] of messages.entries()) {
+      yield* store.apply({
+        id: EventId.make(`event:open-questions:${key}:message:${index}`),
+        type: "message.updated",
+        threadId,
+        occurredAt: at(message.finished ?? message.second),
+        payload: {
+          createdBy: message.createdBy,
+          creationSource: message.createdBy === "user" ? "web" : "server",
+          id: MessageId.make(`message:open-questions:${key}:${index}`),
+          threadId,
+          runId: message.runId ?? null,
+          nodeId: null,
+          role: message.role,
+          text: message.text,
+          ...(message.scheduledTaskId === undefined
+            ? {}
+            : { scheduledTaskId: message.scheduledTaskId }),
+          attachments: [],
+          streaming: message.streaming ?? false,
+          createdAt: at(message.second),
+          updatedAt: at(message.finished ?? message.second),
+        },
+      });
+    }
+    const stored = (yield* store.getShellSnapshot()).threads.find(
+      (thread) => thread.id === threadId,
+    );
+    const inMemory = ProjectionStore.threadShellFromProjection(
+      yield* store.getThreadProjection(threadId),
+    );
+    return { stored, inMemory };
+  });
+
 describe("thread shell openQuestionsAt", () => {
   it.layer(layerTest)((it) => {
     it.effect.each(cases)("stored and in-memory shells agree on %s", (testCase) =>
       Effect.gen(function* () {
         const [name, messages, expected, startedBy] = testCase;
-        const store = yield* ProjectionStore.ProjectionStoreV2;
-        const key = name.replaceAll(/\W+/g, "-");
-        const threadId = ThreadId.make(`thread:open-questions:${key}`);
-        yield* store.apply({
-          id: EventId.make(`event:open-questions:${key}:thread`),
-          type: "thread.created",
-          threadId,
-          occurredAt: at(0),
-          payload: {
-            createdBy: "user",
-            creationSource: "web",
-            id: threadId,
-            projectId: ProjectId.make("project:open-questions"),
-            title: "Questions",
-            providerInstanceId: modelSelection.instanceId,
-            modelSelection,
-            runtimeMode: "full-access",
-            interactionMode: "default",
-            branch: null,
-            worktreePath: null,
-            activeProviderThreadId: null,
-            lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
-            forkedFrom: null,
-            createdAt: at(0),
-            updatedAt: at(0),
-            archivedAt: null,
-            settledOverride: null,
-            settledAt: null,
-            lastVisitedAt: null,
-            deletedAt: null,
-          },
-        });
-        for (const [index, message] of messages.entries()) {
-          yield* store.apply({
-            id: EventId.make(`event:open-questions:${key}:message:${index}`),
-            type: "message.updated",
-            threadId,
-            occurredAt: at(message.finished ?? message.second),
-            payload: {
-              createdBy: message.createdBy,
-              creationSource: message.createdBy === "user" ? "web" : "server",
-              id: MessageId.make(`message:open-questions:${key}:${index}`),
-              threadId,
-              runId: null,
-              nodeId: null,
-              role: message.role,
-              text: message.text,
-              ...(message.scheduledTaskId === undefined
-                ? {}
-                : { scheduledTaskId: message.scheduledTaskId }),
-              attachments: [],
-              streaming: message.streaming ?? false,
-              createdAt: at(message.second),
-              updatedAt: at(message.finished ?? message.second),
-            },
-          });
-        }
-        const stored = (yield* store.getShellSnapshot()).threads.find(
-          (thread) => thread.id === threadId,
-        );
-        const inMemory = ProjectionStore.threadShellFromProjection(
-          yield* store.getThreadProjection(threadId),
-        );
+        const { stored, inMemory } = yield* seedThread(name.replaceAll(/\W+/g, "-"), messages);
         const want = expected === null ? null : at(expected);
         assert.deepEqual(stored?.openQuestionsAt, want);
         assert.deepEqual(inMemory.openQuestionsAt, want);
         assert.strictEqual(stored?.startedByScheduledTaskId, startedBy);
         assert.strictEqual(inMemory.startedByScheduledTaskId, startedBy);
+      }),
+    );
+  });
+});
+
+// Each text follows a plain user message at second 1. A dismissal (no run, only `Qn: dismissed`
+// lines) leaves the latest user message times at 1; anything else moves them to 2. The stored
+// shell and settlement rows run the SQL form, the in-memory shell the shared TS rule.
+const dismissalCases: ReadonlyArray<readonly [string, Partial<Message>, boolean]> = [
+  ["Q1: dismissed", {}, true],
+  ["Q45: dismissed\nQ46: dismissed", {}, true],
+  ["Q10: dismissed\nQ2: dismissed\nQ300: dismissed", {}, true],
+  ["Q1: dismissed", { runId: RunId.make("run:open-questions:sent") }, false],
+  ["Q1: skipped", {}, false],
+  ["Q1: Dismissed", {}, false],
+  ["q1: dismissed", {}, false],
+  [" Q1: dismissed", {}, false],
+  ["Q1: dismissed\n", {}, false],
+  ["Q1: dismissed\n\nQ2: dismissed", {}, false],
+  ["Q1: dismissed\r\nQ2: dismissed", {}, false],
+  ["Q1: dismissed\nPlease stop", {}, false],
+  ["Q1: dismissed: dismissed", {}, false],
+  ["Q01: dismissed", {}, false],
+  ["Q1: dismissed\nQ01: dismissed", {}, false],
+  ["Q1: dismissed\nQ: dismissed", {}, false],
+  ["Q: dismissed", {}, false],
+  ["Q1,2: dismissed", {}, false],
+];
+
+describe("question dismissals and the latest user message", () => {
+  it.layer(layerTest)((it) => {
+    it.effect.each(dismissalCases)("%j (%o) is a dismissal: %s", (testCase) =>
+      Effect.gen(function* () {
+        const [text, fields, dismissal] = testCase;
+        const key = `dismissal-${dismissalCases.indexOf(testCase)}`;
+        const { stored, inMemory } = yield* seedThread(key, [
+          user(1),
+          { ...user(2, text), ...fields },
+        ]);
+        const [settlement] =
+          yield* (yield* ProjectionStore.ProjectionStoreV2).getSettlementCandidates(
+            ThreadId.make(`thread:open-questions:${key}`),
+          );
+        const want = at(dismissal ? 1 : 2);
+        for (const shell of [stored, inMemory, settlement]) {
+          assert.deepEqual(shell?.latestUserMessageAt, want);
+          assert.deepEqual(shell?.latestUserAuthoredMessageAt, want);
+        }
       }),
     );
   });

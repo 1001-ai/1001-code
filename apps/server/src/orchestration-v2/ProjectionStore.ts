@@ -102,6 +102,8 @@ import {
   openQuestionCandidatesColumn,
   openQuestionsAt,
   openQuestionsAtFromCandidates,
+  isQuestionDismissalMessage,
+  questionDismissalMessageSql,
 } from "./openQuestions.ts";
 import {
   type StartedByScheduledTask,
@@ -1679,7 +1681,12 @@ export function threadShellFromProjection(
   );
 
   const userMessages = projection.messages
-    .filter((message) => message.role === "user" && idleCompactionOf(message) === undefined)
+    .filter(
+      (message) =>
+        message.role === "user" &&
+        idleCompactionOf(message) === undefined &&
+        !isQuestionDismissalMessage(message),
+    )
     .toSorted(
       (left, right) =>
         DateTime.toEpochMillis(right.updatedAt) - DateTime.toEpochMillis(left.updatedAt),
@@ -7617,6 +7624,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 WHERE message.thread_id = t.thread_id
                   AND message.role = 'user'
                   AND NOT ${isIdleCompactionMessage("message")}
+                  AND NOT ${questionDismissalMessageSql(sql, "message")}
                 ORDER BY message.updated_at DESC, message.message_id DESC
                 LIMIT 1
               ) AS latest_user_message_at,
@@ -7627,6 +7635,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                   AND message.role = 'user'
                   AND json_extract(message.payload_json, '$.createdBy') = 'user'
                   AND NOT ${isIdleCompactionMessage("message")}
+                  AND NOT ${questionDismissalMessageSql(sql, "message")}
                 ORDER BY message.updated_at DESC, message.message_id DESC
                 LIMIT 1
               ) AS latest_user_authored_message_at,
@@ -7870,6 +7879,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 FROM orchestration_v2_projection_messages message
                 WHERE message.thread_id = t.thread_id AND message.role = 'user'
                   AND NOT ${isIdleCompactionMessage("message")}
+                  AND NOT ${questionDismissalMessageSql(sql, "message")}
                 ORDER BY message.updated_at DESC, message.message_id DESC
                 LIMIT 1
               ) AS latest_user_message_at,
@@ -7879,6 +7889,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 WHERE message.thread_id = t.thread_id AND message.role = 'user'
                   AND json_extract(message.payload_json, '$.createdBy') = 'user'
                   AND NOT ${isIdleCompactionMessage("message")}
+                  AND NOT ${questionDismissalMessageSql(sql, "message")}
                 ORDER BY message.updated_at DESC, message.message_id DESC
                 LIMIT 1
               ) AS latest_user_authored_message_at
@@ -7925,6 +7936,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                     WHERE message.thread_id = t.thread_id AND message.role = 'user'
                       AND json_extract(message.payload_json, '$.createdBy') = 'user'
                       AND NOT ${isIdleCompactionMessage("message")}
+                      AND NOT ${questionDismissalMessageSql(sql, "message")}
                       AND message.updated_at > COALESCE(
                         json_extract(link.payload_json, '$.startedAt'), link.updated_at
                       )

@@ -16,6 +16,7 @@ import { applyClaudePromptEffortPrefix, resolvePromptInjectedEffort } from "@t3t
 import { getProviderModelCapabilities } from "../providerModels";
 import { sanitizeThreadErrorMessage } from "@t3tools/client-runtime/errors";
 import type { EnvironmentThread, ThreadStructure } from "@t3tools/client-runtime/state/shell";
+import { isQuestionDismissalMessage } from "@t3tools/shared/questionCards";
 import {
   ANTIGRAVITY_DEFAULT_MODEL,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
@@ -1430,7 +1431,9 @@ export function presentThreadShellFromProjection(
       pendingRuntimeRequest,
       latestVisibleMessage: null,
       latestUserMessageAt:
-        projection.messages.findLast((message) => message.role === "user")?.updatedAt ?? null,
+        projection.messages.findLast(
+          (message) => message.role === "user" && !isQuestionDismissalMessage(message),
+        )?.updatedAt ?? null,
       hasActionableProposedPlan: projection.plans.some(
         (plan) => plan.kind === "proposed_plan" && plan.status === "active",
       ),

@@ -43,6 +43,7 @@ import {
 import { Button, InlineButton } from "../ui/button";
 import { FreshSessionRow, ModelSwitchRow } from "./V2LifecycleRow";
 import { InboxDigestCard } from "../inboxAgent/InboxDigestCard";
+import { questionDismissalRow } from "./QuestionDismissalRow";
 import { RoutedMessageFoldedHeader } from "../teammateMessages/RoutedMessageFoldedHeader";
 import { useAssetUrlRefresh, useAssetUrls, useAssetUrlState } from "../../assets/assetUrls";
 import { AttachmentImage } from "../media/AttachmentImage";
@@ -271,7 +272,7 @@ export function UserMessageRow({ row }: { row: Extract<TimelineRow, { kind: "mes
         <ModelSwitchRow environmentId={ctx.activeThreadEnvironmentId} modelSwitch={modelSwitch} />
       ) : null}
       <InboxDigestCard context={row.message.context} />
-      <UserMessageContent row={row} />
+      {questionDismissalRow(row.message) ?? <UserMessageContent row={row} />}
     </>
   );
 }
