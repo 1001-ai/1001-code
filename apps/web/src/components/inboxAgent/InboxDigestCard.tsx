@@ -22,6 +22,7 @@ const KIND_LABELS: Record<InboxAgentDigestEntry["kind"], string> = {
   "task-completed": "Task done",
   "message-received": "Teammate message",
   "message-not-delivered": "Message not delivered",
+  "stable-moved": "New build",
 };
 
 /**

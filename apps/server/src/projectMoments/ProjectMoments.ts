@@ -19,6 +19,8 @@ import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
+import { inboxThreadOf } from "../inboxAgent/inboxAgentThreads.ts";
+import { inboxStableMoves } from "../inboxAgent/inboxAgentWake.ts";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import * as PeerLinks from "../peer/PeerLinks.ts";
 import * as OrchestrationEventStore from "../persistence/OrchestrationEventStore.ts";
@@ -31,6 +33,7 @@ import {
   runMoment,
   runtimeRequestMoment,
   runtimeRequestMomentId,
+  stableMoveMoment,
   toolItemMoment,
   windowMoments,
 } from "./projectMoments.logic.ts";
@@ -150,6 +153,16 @@ const make = Effect.gen(function* () {
       pullRequestIds.set(row.threadId, new Set(moments.map((moment) => moment.id)));
       page.push(...moments);
     }
+    // Not from the projections: the Inbox wake's state records them.
+    const stableMoments = () => {
+      const inboxThreadId = inboxThreadOf(projectId);
+      if (inboxThreadId === undefined) return [];
+      const inboxTitle = title(inboxThreadId);
+      return inboxStableMoves()
+        .filter((move) => move.projectId === projectId)
+        .map((move) => stableMoveMoment(move, inboxThreadId, inboxTitle));
+    };
+    page.push(...stableMoments());
     const snapshot = windowMoments(page, sinceMillis);
     for (const moment of snapshot.moments) sent.changed(moment);
 
@@ -239,6 +252,15 @@ const make = Effect.gen(function* () {
       projectThreads.set(threadId, row.title);
       return row.title;
     });
+
+    // A move is recorded before its wake note, so the note, or the Inbox's answer to it, brings
+    // the card and later its message id; `upsert` sends only a changed card.
+    const stableItems = (
+      event: OrchestrationV2DomainEvent,
+    ): ReadonlyArray<ProjectMomentsStreamItem> =>
+      event.type === "message.updated" && event.threadId === inboxThreadOf(projectId)
+        ? stableMoments().flatMap(upsert)
+        : [];
 
     // Per event, so no span: the stream carries every event of every thread.
     const onEvent = Effect.fnUntraced(function* (event: OrchestrationV2DomainEvent) {
@@ -364,7 +386,9 @@ const make = Effect.gen(function* () {
 
     const live = orchestrator.streamStoredEventsFrom({ afterSequence }).pipe(
       Stream.filter((stored) => LIVE_TYPES.has(stored.event.type)),
-      Stream.mapEffect((stored) => onEvent(stored.event)),
+      Stream.mapEffect((stored) =>
+        onEvent(stored.event).pipe(Effect.map((items) => [...stableItems(stored.event), ...items])),
+      ),
       Stream.flattenIterable,
       Stream.orDie,
     );

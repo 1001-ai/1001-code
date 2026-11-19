@@ -28,11 +28,15 @@ import { type LinearInboxLogEntry, linearInboxLog } from "../board/linearInboxLo
 import { skipReasonText } from "../board/linearInboxRouting.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import {
+  type InboxStableMove,
   type InboxTaskCompletion,
+  inboxStableMoveNumbers,
+  inboxStableMoves,
   inboxTaskCompletions,
   inboxTaskDetail,
   isInboxReportedThread,
   lastInboxWakeMs,
+  shortCommit,
 } from "./inboxAgentWake.ts";
 import { isInboxThread } from "./inboxAgentThreads.ts";
 
@@ -70,9 +74,8 @@ const iso = (millis: number) => DateTime.formatIso(DateTime.makeUnsafe(millis));
 
 /**
  * What changed in one project's listed threads in (`sinceMs`, `untilMs`], with teammates'
- * messages from the Linear inbox's log and the Board tasks its agents completed. Side chats,
- * subagents, other projects and the Inbox itself are left out. Newest first; the oldest are cut
- * past the cap.
+ * messages, the Board tasks its agents completed and its `stable` tag's moves. Side chats,
+ * subagents, other projects and the Inbox itself are left out. Newest first, cut past the cap.
  */
 export function inboxAgentDigest(input: {
   readonly shells: ReadonlyArray<DigestShell>;
@@ -82,6 +85,7 @@ export function inboxAgentDigest(input: {
   readonly untilMs: number;
   readonly messages?: ReadonlyArray<LinearInboxLogEntry>;
   readonly tasks?: ReadonlyArray<InboxTaskCompletion>;
+  readonly stableMoves?: ReadonlyArray<InboxStableMove>;
 }): InboxAgentDigest {
   const entries: Array<InboxAgentDigestEntry & { readonly ms: number }> = [];
   const inWindow = (time: DateTime.Utc | null | undefined): number | null => {
@@ -174,6 +178,19 @@ export function inboxAgentDigest(input: {
       at: iso(task.atMs),
       ms: task.atMs,
       detail: clip(inboxTaskDetail(task), INBOX_AGENT_DIGEST_DETAIL_MAX_LENGTH),
+    });
+  }
+  for (const move of input.stableMoves ?? []) {
+    if (move.projectId !== input.projectId) continue;
+    if (!(move.atMs > input.sinceMs && move.atMs <= input.untilMs)) continue;
+    const numbers = inboxStableMoveNumbers(move);
+    entries.push({
+      kind: "stable-moved",
+      threadId: input.inboxThreadId,
+      title: `stable moved to ${shortCommit(move.commit)}`,
+      at: iso(move.atMs),
+      ms: move.atMs,
+      ...(numbers === "" ? {} : { detail: clip(numbers, INBOX_AGENT_DIGEST_DETAIL_MAX_LENGTH) }),
     });
   }
   const titles = new Map(input.shells.map((shell) => [shell.id, shell.title]));
@@ -286,6 +303,7 @@ export const buildInboxAgentDigest = Effect.fn("InboxAgent.buildDigest")(functio
     untilMs: input.untilMs,
     messages: linearInboxLog(),
     tasks: inboxTaskCompletions(),
+    stableMoves: inboxStableMoves(),
   });
   const runIds = new Map(snapshot.threads.map((shell) => [shell.id, shell.latestRunId ?? null]));
   const summaries = new Map<ThreadId, string>();

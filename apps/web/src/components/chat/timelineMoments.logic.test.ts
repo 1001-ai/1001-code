@@ -214,6 +214,8 @@ describe("mergeMomentCards", () => {
         kind: "pr-testing",
         pullRequest: { number: 4, url: "u", title: null },
       }),
+      moment("stable", at(17, 13), { kind: "stable-moved", snippet: "#104, #107, #108" }),
+      moment("stable-1", at(17, 14), { kind: "stable-moved", snippet: "#109" }),
     ],
     board: boardCards,
     sinceMillis: Date.parse(at(10, 0)),
@@ -221,17 +223,19 @@ describe("mergeMomentCards", () => {
 
   it("orders this project's and teammates' cards together, indenting only personal ones", () => {
     const cards = mergeMomentCards({ ...input, showTeammates: true });
-    expect(cards.map((card) => [card.label, card.personal])).toEqual([
-      ["Thread started", true],
-      ["Agent is done", false],
-      ["PR #4 is in testing", true],
-      ["Agent is done", true],
+    expect(cards.map((card) => [card.label, card.person])).toEqual([
+      ["Thread started", "You"],
+      ["Agent is done", "Sam"],
+      ["PR #4 is in testing", "You"],
+      ["Agent is done", "You"],
+      ["Stable moved · 3 PRs", "Project"],
+      ["Stable moved · 1 PR", "Project"],
     ]);
   });
 
   it("hides teammates when the toggle is off, but not the viewer's own board cards", () => {
     const cards = mergeMomentCards({ ...input, showTeammates: false });
-    expect(cards.map((card) => card.id)).toEqual(["a", "b", "board:m2"]);
+    expect(cards.map((card) => card.id)).toEqual(["a", "b", "board:m2", "stable", "stable-1"]);
   });
 });
 
