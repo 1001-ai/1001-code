@@ -43,6 +43,7 @@ import {
 import { Button, InlineButton } from "../ui/button";
 import { FreshSessionRow, ModelSwitchRow } from "./V2LifecycleRow";
 import { InboxDigestCard } from "../inboxAgent/InboxDigestCard";
+import { RoutedMessageFoldedHeader } from "../teammateMessages/RoutedMessageFoldedHeader";
 import { useAssetUrlRefresh, useAssetUrls, useAssetUrlState } from "../../assets/assetUrls";
 import { AttachmentImage } from "../media/AttachmentImage";
 import { MediaVideoPlayer } from "../media/MediaVideoPlayer";
@@ -902,13 +903,23 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
           </MessageAuthorHeading>
         )}
         {folded ? (
-          <FoldedMessageHeader
-            icon={MessagesSquareIcon}
+          <RoutedMessageFoldedHeader
             label={senderLabel}
-            summary={foldSummary}
             expanded={expanded}
             onToggle={() => setExpanded((value) => !value)}
-          />
+            text={userMessage.text}
+            sender={senderRef}
+            environmentId={ctx.activeThreadEnvironmentId}
+            threadKey={ctx.routeThreadKey}
+          >
+            <FoldedMessageHeader
+              icon={MessagesSquareIcon}
+              label={senderLabel}
+              summary={foldSummary}
+              expanded={expanded}
+              onToggle={() => setExpanded((value) => !value)}
+            />
+          </RoutedMessageFoldedHeader>
         ) : null}
         {/* Find reads the DOM, so a folded message stays mounted but hidden while find is open. */}
         {!folded || expanded || ctx.findActive ? (

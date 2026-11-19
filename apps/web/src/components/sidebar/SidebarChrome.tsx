@@ -42,6 +42,7 @@ import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPr
 import { isSidebarUtilityPage, useNavigateToMainApp } from "./mainAppLocation";
 import { useTeamProjectsDrawerToggle } from "../teamProjects/teamProjectsDrawerState";
 import { QuestionsButtonIcon, useQuestionsButtonLabel } from "../questions/questionsEntryPoints";
+import { TeammateMessagesButton } from "../teammateMessages/TeammateMessagesButton";
 import { SidebarThreadUndoNotice } from "./SidebarThreadUndoNotice";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
@@ -296,6 +297,7 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
               void navigate({ to: "/questions" });
             }}
           />
+          <TeammateMessagesButton />
           <SidebarUtilityItem
             icon={<ChartNoAxesColumnIcon />}
             label="Usage"

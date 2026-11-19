@@ -163,6 +163,10 @@ chooses to write.
 The Inbox's **What changed** lists the teammates' messages of its project: where each one went,
 or why it did not arrive, such as no thread being linked to the issue.
 
+The bell in the sidebar footer counts teammates' messages until you open or dismiss them; click
+one to jump to it in the thread it went to. In the chat, click the sender's name to see the
+thread it came from, or the comment on Linear.
+
 ### Set up Linear sign-in
 
 Sign-in needs a Linear OAuth application, created once for the team by a Linear workspace
