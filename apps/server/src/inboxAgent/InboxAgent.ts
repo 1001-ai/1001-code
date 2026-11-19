@@ -211,29 +211,32 @@ const make = Effect.gen(function* () {
    * makes it. Claude cannot switch modes in a session, so the change ends the Inbox's session: a
    * running Inbox is left for the next ensure. A failure only logs; the Inbox is still returned.
    */
-  const upgradeRuntimeMode = (shell: InboxShell) =>
-    shell.runtimeMode === "full-access" || shell.activeRunId !== null
-      ? Effect.void
-      : threads
-          .dispatch({
-            type: "thread.runtime-mode.set",
-            // The thread's last change is in the id: a refusal is recorded against its id, and
-            // would otherwise refuse every later try.
-            commandId: CommandId.make(
-              `inbox-agent:runtime-mode:${shell.id}:${DateTime.toEpochMillis(shell.updatedAt)}`,
-            ),
+  let raises = 0;
+  const upgradeRuntimeMode = Effect.fn("InboxAgent.upgradeRuntimeMode")(function* (
+    shell: InboxShell,
+  ) {
+    if (shell.runtimeMode === "full-access" || shell.activeRunId !== null) return;
+    raises += 1;
+    yield* threads
+      .dispatch({
+        type: "thread.runtime-mode.set",
+        // Each try gets its own id: a refusal is recorded against its id and would refuse every
+        // later try that reused it.
+        commandId: CommandId.make(
+          `inbox-agent:runtime-mode:${shell.id}:${(yield* Clock.currentTimeMillis).toString(36)}-${raises}`,
+        ),
+        threadId: shell.id,
+        runtimeMode: "full-access",
+      })
+      .pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("The Inbox's runtime mode was not raised.", {
             threadId: shell.id,
-            runtimeMode: "full-access",
-          })
-          .pipe(
-            Effect.catchCause((cause) =>
-              Effect.logWarning("The Inbox's runtime mode was not raised.", {
-                threadId: shell.id,
-                cause,
-              }),
-            ),
-            Effect.asVoid,
-          );
+            cause,
+          }),
+        ),
+      );
+  });
 
   const ensureUnlocked = Effect.fn("InboxAgent.ensure")(function* (projectId: ProjectId) {
     if (yield* managedFolders.isScratchProject(projectId)) return { status: "skipped" } as const;

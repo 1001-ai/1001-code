@@ -314,7 +314,7 @@ it.effect("raises an Inbox an older build made to full-access, and leaves a full
       expect(runtimeModeSets).toEqual([
         {
           type: "thread.runtime-mode.set",
-          commandId: "inbox-agent:runtime-mode:inbox-old:5000",
+          commandId: "inbox-agent:runtime-mode:inbox-old:0-1",
           threadId: "inbox-old",
           runtimeMode: "full-access",
         },
@@ -328,8 +328,8 @@ it.effect("raises an Inbox an older build made to full-access, and leaves a full
       server("inbox-old", { updatedAt: DateTime.makeUnsafe(6_000) });
       yield* service.ensure(PROJECT);
       expect(runtimeModeSets.map((command) => command.commandId)).toEqual([
-        "inbox-agent:runtime-mode:inbox-old:5000",
-        "inbox-agent:runtime-mode:inbox-old:6000",
+        "inbox-agent:runtime-mode:inbox-old:0-1",
+        "inbox-agent:runtime-mode:inbox-old:0-2",
       ]);
     }),
   ),
@@ -350,6 +350,9 @@ it.effect("returns the Inbox when raising its runtime mode fails", () =>
       expect(runtimeModeSets).toHaveLength(1);
       expect(created).toEqual([]);
       expect(service.isInboxThread(threadId)).toBe(true);
+      // The thread did not change, yet the next try is not the refused command again.
+      yield* service.ensure(PROJECT);
+      expect(new Set(runtimeModeSets.map((command) => command.commandId)).size).toBe(2);
     }),
   ),
 );
