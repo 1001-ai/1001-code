@@ -139,14 +139,17 @@ const make = Effect.gen(function* () {
     yield* electronWindow.sendAll(SelfUpdateChannels.SELF_UPDATE_STATE_CHANNEL, state);
   });
 
-  const fail = Effect.fn("DesktopSelfUpdate.fail")(function* (
-    error: DesktopSelfUpdateCommandError,
-  ) {
-    yield* logError(error.message, {
+  const logFailure = (error: DesktopSelfUpdateCommandError) =>
+    logError(error.message, {
       step: error.step,
       reason: error.reason,
       ...(error.cause === undefined ? {} : { cause: error.cause }),
     });
+
+  const fail = Effect.fn("DesktopSelfUpdate.fail")(function* (
+    error: DesktopSelfUpdateCommandError,
+  ) {
+    yield* logFailure(error);
     yield* setState({ status: "error", message: error.message });
   });
 
@@ -279,12 +282,15 @@ const make = Effect.gen(function* () {
         Effect.flatMap((child) => child.unref),
         Effect.scoped,
         Effect.as(true),
-        Effect.catch((cause) =>
-          fail(new DesktopSelfUpdateCommandError({ step: "finish", reason: "run", cause })).pipe(
+        Effect.catch((cause) => {
+          const error = new DesktopSelfUpdateCommandError({ step: "finish", reason: "run", cause });
+          // The staged build is still on disk, so the state stays `ready` and a restart can retry.
+          return logFailure(error).pipe(
+            Effect.andThen(setState({ status: "ready", restartError: error.message })),
             Effect.andThen(Ref.set(restarting, false)),
             Effect.as(false),
-          ),
-        ),
+          );
+        }),
       );
     if (!launched) return false;
     yield* logInfo("handed the update to the update command; quitting");

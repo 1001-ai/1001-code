@@ -4,7 +4,7 @@ export const RESTART_TO_UPDATE_LABEL = "Restart to update";
 
 export type SelfUpdateToast =
   | { readonly kind: "building"; readonly title: string; readonly description: string }
-  | { readonly kind: "ready"; readonly title: string }
+  | { readonly kind: "ready"; readonly title: string; readonly restartError?: string }
   | { readonly kind: "error"; readonly title: string; readonly description: string };
 
 export function selfUpdateToast(
@@ -19,7 +19,11 @@ export function selfUpdateToast(
         description: "Building the new version…",
       };
     case "ready":
-      return { kind: "ready", title: "Update ready" };
+      return {
+        kind: "ready",
+        title: "Update ready",
+        ...(state.restartError === undefined ? {} : { restartError: state.restartError }),
+      };
     case "error":
       return { kind: "error", title: "Update failed", description: state.message };
     default:

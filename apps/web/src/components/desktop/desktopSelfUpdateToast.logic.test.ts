@@ -12,6 +12,10 @@ describe("selfUpdateToast", () => {
     ],
     [{ status: "ready" } as const, { kind: "ready", title: "Update ready" }],
     [
+      { status: "ready", restartError: "The restart did not start." } as const,
+      { kind: "ready", title: "Update ready", restartError: "The restart did not start." },
+    ],
+    [
       { status: "error", message: "The build failed." } as const,
       { kind: "error", title: "Update failed", description: "The build failed." },
     ],

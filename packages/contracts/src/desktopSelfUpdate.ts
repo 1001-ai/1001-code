@@ -7,7 +7,8 @@ import * as Schema from "effect/Schema";
 export const DesktopSelfUpdateStateSchema = Schema.Union([
   Schema.Struct({ status: Schema.Literal("idle") }),
   Schema.Struct({ status: Schema.Literal("building") }),
-  Schema.Struct({ status: Schema.Literal("ready") }),
+  /** `restartError` says why the last Restart to update did not start; the build stays ready. */
+  Schema.Struct({ status: Schema.Literal("ready"), restartError: Schema.optional(Schema.String) }),
   Schema.Struct({ status: Schema.Literal("error"), message: Schema.String }),
 ]);
 export type DesktopSelfUpdateState = typeof DesktopSelfUpdateStateSchema.Type;

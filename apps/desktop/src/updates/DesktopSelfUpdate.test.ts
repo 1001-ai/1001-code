@@ -443,12 +443,15 @@ describe("DesktopSelfUpdate", () => {
     }).pipe(Effect.scoped, Effect.provide(harness.layer));
   });
 
-  it.effect("keeps the app open with an error when the finish step cannot start", () => {
+  it.effect("keeps the update ready to retry when the finish step cannot start", () => {
+    let failing = true;
     const harness = makeHarness({
       setting: SETTING,
       reply: (flag) =>
         flag === "--finish"
-          ? Effect.fail(spawnFailure)
+          ? failing
+            ? Effect.fail(spawnFailure)
+            : exited("")
           : exited(flag === "--check" ? '{"update": true}' : '{"staged": true}'),
     });
     return Effect.gen(function* () {
@@ -456,13 +459,21 @@ describe("DesktopSelfUpdate", () => {
       yield* TestClock.adjust("30 seconds");
       assert.isFalse(yield* service.restartToUpdate);
       assert.notInclude(harness.events, "quit");
-      assert.deepEqual(yield* service.getState, {
-        status: "error",
-        message: "Could not start the update: the update command did not run.",
-      });
+      const failed = {
+        status: "ready",
+        restartError: "Could not start the update: the update command did not run.",
+      } as const;
+      assert.deepEqual(yield* service.getState, failed);
+      assert.deepEqual(harness.sent.at(-1), failed);
 
+      // The staged build is still there, so no check or build runs again.
       yield* TestClock.adjust("1 hour");
-      assert.deepEqual(yield* service.getState, { status: "ready" });
+      assert.deepEqual(harness.flags(), ["--check", "--stage", "--finish"]);
+
+      failing = false;
+      assert.isTrue(yield* service.restartToUpdate);
+      assert.deepEqual(harness.flags(), ["--check", "--stage", "--finish", "--finish"]);
+      assert.include(harness.events, "quit");
     }).pipe(Effect.scoped, Effect.provide(harness.layer));
   });
 });

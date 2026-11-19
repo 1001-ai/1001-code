@@ -72,7 +72,7 @@ function SelfUpdateToastCoordinator({ bridge }: { readonly bridge: DesktopBridge
   const [confirmOpen, setConfirmOpen] = useState(false);
   const shownToastId = useRef<string | null>(null);
 
-  // A false result leaves the toast up; the main process broadcasts the error that replaces it.
+  // A false result leaves the toast up; the main process broadcasts the state that says why.
   const restart = () => {
     setConfirmOpen(false);
     void bridge.restartToUpdate();
@@ -113,8 +113,9 @@ function SelfUpdateToastCoordinator({ bridge }: { readonly bridge: DesktopBridge
               data: { ...data, leadingIcon: <DownloadIcon className="size-4 text-info" /> },
             })
           : stackedThreadToast({
-              type: "success",
+              type: toast.restartError === undefined ? "success" : "error",
               title: toast.title,
+              ...(toast.restartError === undefined ? {} : { description: toast.restartError }),
               timeout: 0,
               actionProps: { children: RESTART_TO_UPDATE_LABEL, onClick: requestRestart },
               data,

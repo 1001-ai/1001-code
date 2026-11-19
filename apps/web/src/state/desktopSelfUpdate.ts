@@ -58,7 +58,10 @@ const updates = Stream.callback<DesktopSelfUpdateState | null>((queue) =>
   Stream.changesWith(
     (left, right) =>
       left?.status === right?.status &&
-      (left?.status !== "error" || right?.status !== "error" || left.message === right.message),
+      (left?.status !== "error" || right?.status !== "error" || left.message === right.message) &&
+      (left?.status !== "ready" ||
+        right?.status !== "ready" ||
+        left.restartError === right.restartError),
   ),
 );
 
