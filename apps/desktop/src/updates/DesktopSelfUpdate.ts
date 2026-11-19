@@ -6,6 +6,7 @@ import {
 } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Context from "effect/Context";
+import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -50,6 +51,7 @@ const decodeStageOutput = Schema.decodeUnknownEffect(
 );
 
 type UpdateCommand = typeof UpdateCommand.Type;
+type CheckAnswer = Deferred.Deferred<DesktopSelfUpdateCheckResult>;
 
 const STEP_MESSAGES = {
   check: "Could not check for an update",
@@ -91,6 +93,8 @@ export class DesktopSelfUpdate extends Context.Service<
     readonly enabled: Effect.Effect<boolean>;
     /** Checks now unless a build is ready or running; a found update builds in the background. */
     readonly checkNow: Effect.Effect<DesktopSelfUpdateCheckResult>;
+    /** `checkNow`, but a check already running is waited for and its answer returned. */
+    readonly checkAndWait: Effect.Effect<DesktopSelfUpdateCheckResult>;
     /** Only when `ready`: launches the command's finish step, then quits. False when it did not. */
     readonly restartToUpdate: Effect.Effect<boolean>;
   }
@@ -129,7 +133,22 @@ const make = Effect.gen(function* () {
   const activeRef = yield* Ref.make(
     Option.none<{ readonly command: UpdateCommand; readonly scope: Scope.Scope }>(),
   );
-  const cycleRunning = yield* Ref.make(false);
+  // The check answer of the cycle (a check and its build) now running; none when idle.
+  const cycle = yield* Ref.make(Option.none<CheckAnswer>());
+  const releaseCycle = Ref.set(cycle, Option.none());
+  // The answer to fill in when this call took the cycle, else the one a running cycle fills in.
+  const claimCycle = Effect.gen(function* () {
+    const answer = yield* Deferred.make<DesktopSelfUpdateCheckResult>();
+    return yield* Ref.modify(
+      cycle,
+      (
+        current,
+      ): readonly [{ claimed: boolean; answer: CheckAnswer }, Option.Option<CheckAnswer>] =>
+        Option.isSome(current)
+          ? [{ claimed: false, answer: current.value }, current]
+          : [{ claimed: true, answer }, Option.some(answer)],
+    );
+  });
   const restarting = yield* Ref.make(false);
 
   const setState = Effect.fn("DesktopSelfUpdate.setState")(function* (
@@ -217,25 +236,28 @@ const make = Effect.gen(function* () {
     Effect.catchTags({ DesktopSelfUpdateCommandError: fail }),
   );
 
-  // Runs holding `cycleRunning`; the build releases it when it ends, or this does when none starts.
+  // Runs holding the cycle; the build releases it when it ends, or this does when none starts.
   const checkAndStage = Effect.fn("DesktopSelfUpdate.checkAndStage")(function* (
     command: UpdateCommand,
     scope: Scope.Scope,
+    answer: CheckAnswer,
   ) {
+    const settle = (result: DesktopSelfUpdateCheckResult) =>
+      Deferred.succeed(answer, result).pipe(Effect.as(result));
     const checked = yield* Effect.result(check(command));
     if (Result.isFailure(checked)) {
       yield* fail(checked.failure);
-      yield* Ref.set(cycleRunning, false);
-      return { status: "error", message: checked.failure.message } as const;
+      yield* releaseCycle;
+      return yield* settle({ status: "error", message: checked.failure.message });
     }
     if (!checked.success) {
       yield* setState(IDLE);
-      yield* Ref.set(cycleRunning, false);
-      return { status: "up-to-date" } as const;
+      yield* releaseCycle;
+      return yield* settle({ status: "up-to-date" });
     }
     yield* setState(BUILDING);
-    yield* stage(command).pipe(Effect.ensuring(Ref.set(cycleRunning, false)), Effect.forkIn(scope));
-    return { status: "started" } as const;
+    yield* stage(command).pipe(Effect.ensuring(releaseCycle), Effect.forkIn(scope));
+    return yield* settle({ status: "started" });
   });
 
   const tick = Effect.fn("DesktopSelfUpdate.tick")(function* (
@@ -244,25 +266,28 @@ const make = Effect.gen(function* () {
   ) {
     // A staged build waits for the user's restart; checking again would only rebuild it.
     if ((yield* Ref.get(stateRef)).status === "ready") return;
-    if (yield* Ref.getAndSet(cycleRunning, true)) return;
-    yield* checkAndStage(command, scope).pipe(Effect.forkIn(scope));
+    const { claimed, answer } = yield* claimCycle;
+    if (!claimed) return;
+    yield* checkAndStage(command, scope, answer).pipe(Effect.forkIn(scope));
   });
 
-  const checkNow = Effect.gen(function* () {
+  const requestCheck = Effect.fn("DesktopSelfUpdate.checkNow")(function* (wait: boolean) {
     const active = yield* Ref.get(activeRef);
     if (Option.isNone(active)) return { status: "off" } as const;
     const { command, scope } = active.value;
     yield* shellEnvironment.awaitDiscovery;
     if ((yield* Ref.get(stateRef)).status === "ready") return { status: "ready" } as const;
-    if (yield* Ref.getAndSet(cycleRunning, true)) {
+    const { claimed, answer } = yield* claimCycle;
+    if (!claimed) {
       const { status } = yield* Ref.get(stateRef);
-      return status === "ready" || status === "building"
-        ? ({ status } as const)
-        : ({ status: "checking" } as const);
+      if (status === "ready" || status === "building") return { status } as const;
+      return wait ? yield* Deferred.await(answer) : ({ status: "checking" } as const);
     }
-    const fiber = yield* checkAndStage(command, scope).pipe(Effect.forkIn(scope));
+    const fiber = yield* checkAndStage(command, scope, answer).pipe(Effect.forkIn(scope));
     return yield* Fiber.join(fiber);
-  }).pipe(Effect.withSpan("DesktopSelfUpdate.checkNow"));
+  });
+  const checkNow = requestCheck(false);
+  const checkAndWait = requestCheck(true);
 
   const restartToUpdate = Effect.gen(function* () {
     const active = yield* Ref.get(activeRef);
@@ -313,7 +338,7 @@ const make = Effect.gen(function* () {
         channel: SelfUpdateChannels.SELF_UPDATE_CHECK_CHANNEL,
         payload: Schema.Void,
         result: DesktopSelfUpdateCheckResultSchema,
-        handler: () => checkNow,
+        handler: () => checkAndWait,
       }),
     );
     yield* ipc.handle(
@@ -364,6 +389,7 @@ const make = Effect.gen(function* () {
     start,
     enabled: Ref.get(activeRef).pipe(Effect.map(Option.isSome)),
     checkNow,
+    checkAndWait,
     restartToUpdate,
   });
 });

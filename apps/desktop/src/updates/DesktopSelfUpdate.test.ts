@@ -4,6 +4,7 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
@@ -404,7 +405,7 @@ describe("DesktopSelfUpdate", () => {
     }),
   );
 
-  it.effect("says a scheduled check is already running instead of starting another", () =>
+  it.effect("reports or waits for a check already running instead of starting another", () =>
     Effect.gen(function* () {
       const checkAnswer = yield* Deferred.make<string>();
       const harness = makeHarness({ setting: SETTING, reply: () => pending(checkAnswer) });
@@ -412,6 +413,11 @@ describe("DesktopSelfUpdate", () => {
         const service = yield* harness.start;
         yield* TestClock.adjust("30 seconds");
         assert.deepEqual(yield* service.checkNow, { status: "checking" });
+        const waiting = yield* service.checkAndWait.pipe(
+          Effect.forkChild({ startImmediately: true }),
+        );
+        yield* Deferred.succeed(checkAnswer, '{"update": false}');
+        assert.deepEqual(yield* Fiber.join(waiting), { status: "up-to-date" });
         assert.deepEqual(harness.flags(), ["--check"]);
       }).pipe(Effect.scoped, Effect.provide(harness.layer));
     }),
