@@ -32,3 +32,13 @@ export function replaceInboxThreads(entries: ReadonlyMap<ProjectId, ThreadId>): 
 export function inboxThreads(): ReadonlyMap<ProjectId, ThreadId> {
   return new Map(byProject);
 }
+
+/**
+ * The thread whose model and modes a `t3_thread_launch` inherits: none for an Inbox, so the new
+ * thread starts from the project's defaults, as the composer's New thread does.
+ */
+export function launchInheritsFrom<Caller extends { readonly id: ThreadId }>(
+  caller: Caller | undefined,
+): Caller | undefined {
+  return caller === undefined || isInboxThread(caller.id) ? undefined : caller;
+}

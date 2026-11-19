@@ -13,6 +13,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { OrchestratorRuntimeModeAboveCeilingError } from "../../../orchestration-v2/Orchestrator.ts";
 import * as ThreadLaunch from "../../../orchestration-v2/ThreadLaunchService.ts";
+import { launchInheritsFrom } from "../../../inboxAgent/inboxAgentThreads.ts";
 import * as ThreadMessageIntake from "../../../orchestration-v2/ThreadMessageIntake.ts";
 import * as Claims from "../../../orchestration-v2/AttachmentClaims.ts";
 import * as Project from "../../../project/ProjectService.ts";
@@ -114,6 +115,8 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
         const scope = yield* McpInvocationContext.McpInvocationContext;
         const context = yield* readCaller();
         const { caller } = context;
+        // Fork: an Inbox's launch starts from the project's defaults; see fork/README.md.
+        const inheritsFrom = launchInheritsFrom(caller);
         // A retry with the same key replays the first launch: the ids derive
         // from the caller and the key, and the launch service replays a
         // command it already accepted.
@@ -207,7 +210,7 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
         // project's effective defaults, as the composer does. Its mode stays
         // within the ceiling it was approved with.
         const projectDefaults =
-          caller === undefined && project !== undefined
+          inheritsFrom === undefined && project !== undefined
             ? yield* ServerSettings.ServerSettingsService.pipe(
                 Effect.flatMap((settings) => settings.getSettings),
                 Effect.mapError(unavailable),
@@ -219,7 +222,7 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
         const modelSelection =
           input.modelSelection ??
           launchedModel ??
-          caller?.modelSelection ??
+          inheritsFrom?.modelSelection ??
           (projectDefaults
             ? resolveNewThreadModelSelection({
                 defaultSelection: projectDefaults.defaultModelSelection,

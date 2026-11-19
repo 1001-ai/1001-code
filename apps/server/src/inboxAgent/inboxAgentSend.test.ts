@@ -14,10 +14,16 @@ import * as Effect from "effect/Effect";
 import { liveThreadShell } from "../mcp/McpToolAccess.testkit.ts";
 import type * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import {
+  INBOX_LAUNCH_DELEGATED,
+  INBOX_LAUNCH_NEEDS_WORKTREE,
+  INBOX_LAUNCH_NOT_USER_STARTED,
+  INBOX_LAUNCH_OTHER_PROJECT,
+  INBOX_LAUNCH_UNREADABLE,
   INBOX_SEND_NOT_USER_STARTED,
   INBOX_SEND_OTHER_PROJECT,
   INBOX_SEND_SELF,
   INBOX_SEND_UNREADABLE,
+  inboxLaunchRefusal,
   inboxSendRefusal,
 } from "./inboxAgentSend.ts";
 import { INBOX_WAKE_CREATED_BY, INBOX_WAKE_CREATION_SOURCE } from "./inboxAgentWake.ts";
@@ -63,18 +69,24 @@ const threadsWith = (options: {
   } as unknown as ThreadManagementService.ThreadManagementService["Service"];
 };
 
+const REFUSALS = { t3_thread_send: inboxSendRefusal, t3_thread_launch: inboxLaunchRefusal };
+
 const refusal = (
   threads: ThreadManagementService.ThreadManagementService["Service"],
+  tool: keyof typeof REFUSALS,
   args: unknown,
 ) =>
-  inboxSendRefusal(threads, {
+  REFUSALS[tool](threads, {
     inboxThreadId: INBOX,
     environmentId: HERE,
-    payload: { name: "t3_thread_send", arguments: args },
+    payload: { name: tool, arguments: args },
   });
+
+const WORKTREE = { type: "worktree", baseRef: "origin/main", startFromOrigin: true };
 
 const CASES: ReadonlyArray<{
   readonly name: string;
+  readonly tool?: keyof typeof REFUSALS;
   readonly setup?: Parameters<typeof threadsWith>[0];
   readonly args: object;
   readonly refused: string | null;
@@ -148,10 +160,88 @@ const CASES: ReadonlyArray<{
     refused: INBOX_SEND_UNREADABLE,
   },
   { name: "refuses a call with no target", args: {}, refused: INBOX_SEND_UNREADABLE },
+  {
+    name: "launches into a new worktree of its project",
+    tool: "t3_thread_launch",
+    args: { title: "Fix", workspaceStrategy: WORKTREE },
+    refused: null,
+  },
+  {
+    name: "launches naming its own project and environment",
+    tool: "t3_thread_launch",
+    args: { projectId: "project-acme", environmentId: HERE, workspaceStrategy: WORKTREE },
+    refused: null,
+  },
+  {
+    name: "refuses a launch in a run another agent's message started",
+    tool: "t3_thread_launch",
+    setup: { message: { createdBy: "agent", creationSource: "mcp", senderThreadId: SAME_PROJECT } },
+    args: { workspaceStrategy: WORKTREE },
+    refused: INBOX_LAUNCH_NOT_USER_STARTED,
+  },
+  {
+    name: "refuses a launch with no run under way",
+    tool: "t3_thread_launch",
+    setup: { activeRunId: null },
+    args: { workspaceStrategy: WORKTREE },
+    refused: INBOX_LAUNCH_NOT_USER_STARTED,
+  },
+  {
+    name: "refuses a launch in another project",
+    tool: "t3_thread_launch",
+    args: { projectId: "project-other", workspaceStrategy: WORKTREE },
+    refused: INBOX_LAUNCH_OTHER_PROJECT,
+  },
+  {
+    name: "refuses a launch in another environment",
+    tool: "t3_thread_launch",
+    args: { environmentId: "environment-elsewhere", workspaceStrategy: WORKTREE },
+    refused: INBOX_LAUNCH_OTHER_PROJECT,
+  },
+  {
+    name: "refuses a scratch launch",
+    tool: "t3_thread_launch",
+    args: { scratch: true },
+    refused: INBOX_LAUNCH_OTHER_PROJECT,
+  },
+  {
+    name: "refuses a delegated launch",
+    tool: "t3_thread_launch",
+    args: {
+      delegatedFrom: { environmentId: "environment-elsewhere" },
+      workspaceStrategy: WORKTREE,
+    },
+    refused: INBOX_LAUNCH_DELEGATED,
+  },
+  {
+    name: "refuses a launch with no workspace",
+    tool: "t3_thread_launch",
+    args: { title: "Fix" },
+    refused: INBOX_LAUNCH_NEEDS_WORKTREE,
+  },
+  {
+    name: "refuses a launch in the project checkout",
+    tool: "t3_thread_launch",
+    args: { workspaceStrategy: { type: "root" } },
+    refused: INBOX_LAUNCH_NEEDS_WORKTREE,
+  },
+  {
+    name: "refuses a launch when the run cannot be read",
+    tool: "t3_thread_launch",
+    setup: { unreadable: true },
+    args: { workspaceStrategy: WORKTREE },
+    refused: INBOX_LAUNCH_UNREADABLE,
+  },
+  {
+    name: "refuses a launch it cannot read",
+    tool: "t3_thread_launch",
+    args: { workspaceStrategy: { type: "worktree" } },
+    refused: INBOX_LAUNCH_UNREADABLE,
+  },
 ];
 
-it.effect.each(CASES)("$name", ({ setup, args, refused }) =>
+it.effect.each(CASES)("$name", ({ tool, setup, args, refused }) =>
   Effect.gen(function* () {
-    expect(yield* refusal(threadsWith(setup ?? {}), args)).toBe(refused);
+    expect(yield* refusal(threadsWith(setup ?? {}), tool ?? "t3_thread_send", args)).toBe(refused);
   }),
 );

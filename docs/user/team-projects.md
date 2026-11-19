@@ -357,7 +357,12 @@ one project, right-click them and choose **Message from Inbox…**: the project'
 them already in your message. If you ask it to choose the threads itself, it first shows the ones
 it found as a question, and sends only to those you tick.
 
-It messages threads only in a turn you started with your own message, never threads of another
+When you ask for a new thread, the Inbox starts one in this project, in its own worktree, with a
+brief that says what the new agent needs to know, and replies with its link. Before its first new
+thread it asks which model to use and offers to remember the answer; if it thinks a new thread
+would help without being asked, it asks you first.
+
+It messages and starts threads only in a turn you started with your own message, never in another
 project. It cannot run commands or change files, and it has no branch, commit or terminal
 controls. It runs when you write to it, when the app sends it an update, and when a teammate's
 agent sends a message that is for no thread (see [Teammates' messages](#teammates-messages)): it

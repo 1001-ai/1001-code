@@ -1,7 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   type ApplicationStoredEvent,
-  INBOX_AGENT_DEFAULT_MODEL,
   INBOX_AGENT_THREAD_TITLE,
   type OrchestrationV2ServerCommand,
   type OrchestrationV2ThreadShell,
@@ -207,7 +206,11 @@ it.effect("makes a project's Inbox once: an ordinary Claude thread named Inbox, 
         type: "thread.create",
         projectId: PROJECT,
         title: INBOX_AGENT_THREAD_TITLE,
-        modelSelection: { instanceId: "claudeAgent", model: INBOX_AGENT_DEFAULT_MODEL },
+        modelSelection: {
+          instanceId: "claudeAgent",
+          model: "claude-opus-5-5",
+          options: [{ id: "effort", value: "medium" }],
+        },
         runtimeMode: "full-access",
         worktreePath: null,
         createdBy: "system",

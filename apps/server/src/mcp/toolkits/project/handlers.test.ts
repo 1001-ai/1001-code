@@ -44,6 +44,8 @@ import * as GitVcsDriver from "../../../vcs/GitVcsDriver.ts";
 import * as VcsProcess from "../../../vcs/VcsProcess.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
+import { liveThreadShell } from "../../McpToolAccess.testkit.ts";
+import { recordInboxThread, replaceInboxThreads } from "../../../inboxAgent/inboxAgentThreads.ts";
 import * as ProjectHandlers from "./handlers.ts";
 import { ProjectToolkit } from "./tools.ts";
 
@@ -60,6 +62,8 @@ const clientLaunchHarness = (input: {
   readonly hostedAppUrl?: string;
   /** The orchestrator refuses the new thread's mode, as under a managed ceiling. */
   readonly refusedByCeiling?: true;
+  /** A thread that calls the tool, in place of a client outside any thread. */
+  readonly caller?: OrchestrationV2ThreadShell;
 }) => {
   const projectId = ProjectId.make("project:client-target");
   const modelSelection = {
@@ -91,7 +95,14 @@ const clientLaunchHarness = (input: {
     Layer.succeed(McpInvocationContext.McpInvocationContext, {
       environmentId: EnvironmentId.make("environment"),
       requestNamespace: "client:session-1",
-      thread: undefined,
+      thread:
+        input.caller === undefined
+          ? undefined
+          : {
+              threadId: input.caller.id,
+              providerSessionId: "provider-session-1",
+              providerInstanceId: input.caller.providerInstanceId,
+            },
       client: {
         sessionId: "session-1",
         label: "Claude Code",
@@ -104,6 +115,7 @@ const clientLaunchHarness = (input: {
     Layer.mock(ThreadManagement.ThreadManagementService)({
       // A thread exists once a launch started it.
       getThreadShell: (threadId) => {
+        if (threadId === input.caller?.id) return Effect.succeed(input.caller);
         const launch = input.launched.find((candidate) => candidate.threadId === threadId);
         return Effect.succeed(
           launch === undefined
@@ -281,6 +293,60 @@ it.effect(
         message: "Example Corp limits threads to Supervised.",
       });
     }),
+);
+
+it.effect(
+  "an Inbox's launch starts from the project's defaults, not the Inbox's model and mode",
+  () =>
+    Effect.gen(function* () {
+      const launchFrom = Effect.fn("test.launchFrom")(function* (
+        kind: "inbox" | "thread",
+        params: { readonly modelSelection?: ModelSelection },
+      ) {
+        const launched: Array<ThreadLaunch.ThreadLaunchInput> = [];
+        const projectId = ProjectId.make("project:client-target");
+        const callerId = ThreadId.make(`thread:${kind}`);
+        const caller = {
+          ...liveThreadShell(callerId, { runtimeMode: "full-access" }),
+          projectId,
+          modelSelection: {
+            instanceId: ProviderInstanceId.make("claudeAgent"),
+            model: "claude-inbox",
+          },
+        };
+        if (kind === "inbox") recordInboxThread(projectId, callerId);
+        const { modelSelection, dependencies } = clientLaunchHarness({
+          runtimeModeCeiling: "full-access",
+          defaultRuntimeMode: "approval-required",
+          launched,
+          caller,
+        });
+        const toolkit = yield* ProjectToolkit.pipe(
+          Effect.provide(
+            McpToolAccess.HandlersLayer.layer(ProjectHandlers.layer).pipe(
+              Layer.provide(dependencies),
+            ),
+          ),
+        );
+        yield* toolkit
+          .handle("t3_thread_launch", { title: "Fix", message: "Fix the bug", ...params })
+          .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(dependencies));
+        return { launch: launched[0], projectDefault: modelSelection, caller };
+      });
+
+      const inbox = yield* launchFrom("inbox", {});
+      expect(inbox.launch?.modelSelection).toEqual(inbox.projectDefault);
+      expect(inbox.launch?.runtimeMode).toBe("approval-required");
+
+      const picked = { instanceId: ProviderInstanceId.make("codex"), model: "gpt-picked" };
+      const inboxPicked = yield* launchFrom("inbox", { modelSelection: picked });
+      expect(inboxPicked.launch?.modelSelection).toEqual(picked);
+
+      // Any other thread still hands down its own model and mode.
+      const thread = yield* launchFrom("thread", {});
+      expect(thread.launch?.modelSelection).toEqual(thread.caller.modelSelection);
+      expect(thread.launch?.runtimeMode).toBe("full-access");
+    }).pipe(Effect.ensuring(Effect.sync(() => replaceInboxThreads(new Map())))),
 );
 
 it.effect("a launch steps an inherited mode down to the provider's, and refuses one it lacks", () =>
