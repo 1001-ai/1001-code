@@ -2,7 +2,13 @@ import type { EnvironmentId, MemoryProposal, ProjectId } from "@t3tools/contract
 import { useNavigate } from "@tanstack/react-router";
 
 import { cn } from "~/lib/utils";
-import { MemoryDecisionButtons, MemoryReplaces, useMemoryDecision } from "./MemoryProposalCard";
+import {
+  MemoryDecisionButtons,
+  MemoryEditHeader,
+  MemoryEditLines,
+  MemoryReplaces,
+  useMemoryDecision,
+} from "./MemoryProposalCard";
 
 /** One unanswered proposal with its answers, as the Memory panel and the Questions page list it. */
 export function MemoryProposalRow(props: {
@@ -15,6 +21,10 @@ export function MemoryProposalRow(props: {
   const { environmentId, proposal, embedded = false } = props;
   const decision = useMemoryDecision(environmentId, props.projectId);
   const navigate = useNavigate();
+  const edit =
+    proposal.kind === undefined || proposal.replaces === undefined
+      ? null
+      : { kind: proposal.kind, replaces: proposal.replaces };
   return (
     <div
       className={cn(
@@ -22,18 +32,29 @@ export function MemoryProposalRow(props: {
         embedded ? "px-4 py-3" : "rounded-lg border border-border/70 bg-card px-3 py-2.5",
       )}
     >
-      <p className="text-sm [overflow-wrap:anywhere]">
-        {embedded ? (
-          <span className="me-2 font-mono text-2xs text-muted-foreground">memory</span>
-        ) : null}
-        {proposal.text}
-      </p>
-      {proposal.category === undefined ? null : (
-        <p className="text-xs text-muted-foreground">For the voice agent</p>
+      {edit === null ? (
+        <>
+          <p className="text-sm [overflow-wrap:anywhere]">
+            {embedded ? (
+              <span className="me-2 font-mono text-2xs text-muted-foreground">memory</span>
+            ) : null}
+            {proposal.text}
+          </p>
+          {proposal.category === undefined ? null : (
+            <p className="text-xs text-muted-foreground">For the voice agent</p>
+          )}
+          <MemoryReplaces replaces={proposal.replaces ?? null} />
+        </>
+      ) : (
+        <>
+          <MemoryEditHeader kind={edit.kind} scope={proposal.scope ?? null} />
+          <MemoryEditLines kind={edit.kind} replaces={edit.replaces} text={proposal.text} />
+        </>
       )}
-      <MemoryReplaces replaces={proposal.replaces ?? null} />
       {proposal.reason !== "" ? (
-        <p className="text-xs text-muted-foreground">{proposal.reason}</p>
+        <p className="text-xs text-muted-foreground">
+          {edit === null ? proposal.reason : `Why: ${proposal.reason}`}
+        </p>
       ) : null}
       {embedded ? null : (
         <p className="text-xs text-muted-foreground">
@@ -62,6 +83,7 @@ export function MemoryProposalRow(props: {
           busy={decision.busy}
           canDecide={decision.canDecide}
           personalOnly={proposal.category !== undefined}
+          kind={proposal.kind ?? null}
           onChoose={(choice) => void decision.submit(proposal, choice, proposal.text)}
         />
       </div>

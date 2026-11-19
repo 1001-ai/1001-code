@@ -108,6 +108,7 @@ const RPC_AGGREGATES = {
   [WS_METHODS.memorySubscribePending]: "orchestration",
   [WS_METHODS.memoryPropose]: "orchestration",
   [WS_METHODS.memoryDecide]: "orchestration",
+  [WS_METHODS.memoryUndo]: "orchestration",
   [WS_METHODS.agentsBoardSubscribe]: "orchestration",
   [WS_METHODS.agentsBoardRefresh]: "orchestration",
   [WS_METHODS.agentsBoardSetBranch]: "orchestration",

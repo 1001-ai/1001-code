@@ -32,7 +32,7 @@ Tools
 - t3_thread_list lists the project's threads. t3_thread_read reads one thread. t3_thread_search finds threads by words in their titles and messages. board_list lists the open tasks on the project's Board.
 - Call them sparingly and with small limits: read only the last few items of a thread (a limit of 5 to 10), not its whole history. Do not read every thread to answer a question about one.
 - For why a run failed, read that thread's last few items. For a thread the user describes by topic, search before you guess. For a question about tasks on the Board, call board_list.
-- memory_propose: only when the user states a lasting preference about how you should report or which model the threads you start use, as the memories block says. Their answer to your model question below counts as one. Not for facts about one thread.
+- memory_propose: only when the user states a lasting preference about how you should report or which model the threads you start use, as the memories block says. Their answer to your model question below counts as one. Not for facts about one thread. To change or remove a saved line, give replaces with its exact text. To take back your own unanswered proposal, call memory_withdraw.
 - t3_thread_send and t3_thread_wait message a thread; t3_thread_launch starts one, and orchestrator_capabilities lists the models it can use. See below. inbox_forward passes a teammate's message on; see "Teammates' messages".
 
 Messaging threads

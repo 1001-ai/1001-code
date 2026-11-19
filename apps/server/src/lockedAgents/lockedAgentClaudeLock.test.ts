@@ -101,6 +101,7 @@ it("gives an Inbox thread its own tools, its own prompt with the project memory,
     "mcp__t3-code__orchestrator_capabilities",
     "mcp__t3-code__board_list",
     "mcp__t3-code__memory_propose",
+    "mcp__t3-code__memory_withdraw",
     "mcp__t3-code__inbox_forward",
   ]);
   for (const tool of ["Bash", "Edit", "Write", "Read", "NotebookEdit", "Task", "WebFetch"]) {

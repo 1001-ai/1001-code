@@ -2704,6 +2704,7 @@ export const layerWsRpc = (
         [WS_METHODS.memorySubscribePending]: () => memory.pendingChanges,
         [WS_METHODS.memoryPropose]: (input) => memory.propose(input),
         [WS_METHODS.memoryDecide]: (input) => memory.decide(input, currentSessionId),
+        [WS_METHODS.memoryUndo]: (input) => memory.undo(input),
         [WS_METHODS.agentsBoardSubscribe]: (input) => agentsBoard.changes(input.projectId),
         [WS_METHODS.agentsBoardRefresh]: (input) => agentsBoard.refresh(input.projectId),
         [WS_METHODS.agentsBoardSetBranch]: (input) => agentsBoard.setBranch(input),

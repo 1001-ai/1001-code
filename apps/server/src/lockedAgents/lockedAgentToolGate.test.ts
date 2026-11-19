@@ -55,6 +55,7 @@ const NAMED_TOOLS = [
   "t3_thread_search",
   "board_list",
   "memory_propose",
+  "memory_withdraw",
   "t3_thread_send",
   "t3_thread_wait",
   "t3_thread_launch",
@@ -232,6 +233,7 @@ it.effect(
         const voice = yield* session(VOICE);
         expect(yield* voice.listed).toEqual([
           "memory_propose",
+          "memory_withdraw",
           "voice_board",
           "voice_send_message",
           "voice_show_media",
@@ -249,6 +251,7 @@ it.effect(
           "board_list",
           "inbox_forward",
           "memory_propose",
+          "memory_withdraw",
           "orchestrator_capabilities",
           "t3_thread_launch",
           "t3_thread_list",

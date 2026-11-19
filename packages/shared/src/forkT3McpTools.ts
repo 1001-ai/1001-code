@@ -6,6 +6,7 @@ import {
   BOARD_UPDATE_TOOL_NAME,
   INBOX_FORWARD_TOOL_NAME,
   MEMORY_PROPOSE_TOOL_NAME,
+  MEMORY_WITHDRAW_TOOL_NAME,
 } from "@t3tools/contracts";
 
 /** The fork's tools on T3's MCP server, so agents that only title a call still name it as T3's. */
@@ -17,4 +18,5 @@ export const FORK_T3_MCP_TOOL_NAMES = [
   BOARD_REPLY_TOOL_NAME,
   INBOX_FORWARD_TOOL_NAME,
   MEMORY_PROPOSE_TOOL_NAME,
+  MEMORY_WITHDRAW_TOOL_NAME,
 ];

@@ -4,6 +4,7 @@ import {
   type RepositoryIdentity,
   TeamCatalogError,
   type MemoryLine,
+  type MemoryProposal,
   type TeamCatalogLinear,
   type TeamCatalogProposal,
   type TeamCatalogSnapshot,
@@ -106,6 +107,8 @@ const makeMemory = (input: {
     readonly release: Deferred.Deferred<void>;
   };
   readonly mergeFails?: string;
+  /** Files that change: reads come from here, and each proposal's files land here as merged. */
+  readonly files?: Record<string, string>;
 }) => {
   const proposals: Array<TeamCatalog.TeamCatalogFilesProposal> = [];
   const merged: Array<string> = [];
@@ -143,7 +146,9 @@ const makeMemory = (input: {
             ((file) =>
               Effect.sync(() => {
                 reads.push(file);
-                return input.catalog.source === null ? null : (FILES[file] ?? null);
+                return input.catalog.source === null
+                  ? null
+                  : ((input.files ?? FILES)[file] ?? null);
               })),
           blame: (file) =>
             Effect.sync(() => {
@@ -166,6 +171,9 @@ const makeMemory = (input: {
               ? Effect.fail(new TeamCatalogError({ detail: input.pushFails }))
               : Effect.sync(() => {
                   proposals.push(proposal);
+                  for (const edit of proposal.files) {
+                    if (input.files !== undefined) input.files[edit.file] = edit.text;
+                  }
                   return {
                     branch: `${proposal.branchStem}-abc1234`,
                     commit: "abc1234",
@@ -667,12 +675,6 @@ it.effect("accepting a voice agent memory puts it in place of the one it replace
     ).toBe(
       'No voice agent memory has the text given as replaces. Give the exact text of one of the active ones: "Keep updates to one sentence per agent.". Leave replaces out for a new subject.',
     );
-    expect(
-      (yield* Effect.flip(
-        memory.proposeFromAgent({ ...agentProposal("Use tabs."), replaces: "Use spaces." }),
-      )).detail,
-    ).toContain("Only a voice agent memory replaces another one.");
-
     const proposal = yield* memory.proposeFromAgent(
       voice("Give two sentences per agent.", " Keep updates to one sentence per agent. "),
     );
@@ -754,5 +756,239 @@ it.effect("accepting a voice agent memory puts it in place of the one it replace
         },
       ],
     ]);
+  }).pipe(Effect.scoped),
+);
+
+const editProposal = (fields: { readonly text?: string; readonly replaces?: string }) => ({
+  projectId: PROJECT_ID,
+  threadId: THREAD_ID,
+  threadTitle: "Fix the build",
+  reason: "The user said it twice.",
+  ...fields,
+});
+
+it.effect("proposes a change or removal of a saved line only where exactly one file has it", () =>
+  Effect.gen(function* () {
+    const memory = yield* makeMemory({
+      catalog: catalog(),
+      files: {
+        ...FILES,
+        "memory/people/alice.md": "- Keep replies short.\n- Prefer small pull requests.\n",
+      },
+    }).build;
+    const refused = (fields: { readonly text?: string; readonly replaces?: string }) =>
+      Effect.flip(memory.proposeFromAgent(editProposal(fields))).pipe(
+        Effect.map((error) => error.detail),
+      );
+    expect(yield* refused({ replaces: "Keep replies long." })).toBe(
+      "No saved memory line has the text given as replaces. Give the exact text of an existing memory line, without its list bullet, or leave replaces out to add a new memory.",
+    );
+    expect(yield* refused({ replaces: "Prefer small pull requests." })).toBe(
+      "That line is saved in more than one memory file (team, personal). Give a line that is saved only once, or ask the user to edit it in the Memory panel.",
+    );
+    expect(yield* refused({})).toContain("Give text for a new memory, or replaces");
+    expect(
+      yield* refused({
+        text: "Run the web tests before pushing.",
+        replaces: "- Run the web tests before pushing.",
+      }),
+    ).toBe("The text is the same as the line it replaces. Leave text out to remove the line.");
+
+    const change = yield* memory.proposeFromAgent(
+      editProposal({
+        text: "Run all tests before pushing.",
+        replaces: " - Run the web tests before pushing. ",
+      }),
+    );
+    expect(change).toMatchObject({
+      kind: "change",
+      text: "Run all tests before pushing.",
+      replaces: "Run the web tests before pushing.",
+      scope: "project",
+      file: "memory/projects/web.md",
+      decision: null,
+    });
+    const removal = yield* memory.proposeFromAgent(
+      editProposal({ replaces: "Keep replies short." }),
+    );
+    expect(removal).toMatchObject({
+      kind: "remove",
+      text: "Keep replies short.",
+      replaces: "Keep replies short.",
+      scope: "personal",
+      file: "memory/people/alice.md",
+    });
+    expect(
+      (yield* memory.proposeFromAgent(editProposal({ replaces: "Keep replies short." }))).id,
+    ).toBe(removal.id);
+    // Adding the same line is another proposal.
+    const added = yield* memory.proposeFromAgent(agentProposal("Keep replies short."));
+    expect(added.id).not.toBe(removal.id);
+    expect(added.kind).toBeUndefined();
+  }).pipe(Effect.scoped),
+);
+
+it.effect("accepting a change or removal edits every copy of the line in its own file", () =>
+  Effect.gen(function* () {
+    const files: Record<string, string> = {
+      ...FILES,
+      "memory/projects/web.md":
+        "# Web\n\n- Run the web tests before pushing.\n- Use tabs.\n* Run the web tests before pushing.\n",
+    };
+    const fixture = makeMemory({ catalog: catalog(), files });
+    const memory = yield* fixture.build;
+    const decide = (proposalId: string, choice: "me" | "team" | "accept") =>
+      memory.decide(
+        { projectId: PROJECT_ID, proposalId, choice, text: "Run all tests before pushing." },
+        "session-1",
+      );
+    const change = yield* memory.proposeFromAgent(
+      editProposal({
+        text: "Run all tests before pushing.",
+        replaces: "Run the web tests before pushing.",
+      }),
+    );
+    expect((yield* Effect.flip(decide(change.id, "team"))).detail).toBe(
+      "This proposal edits a saved memory in its own file: accept it or reject it.",
+    );
+    const add = yield* memory.proposeFromAgent(agentProposal("Prefer pnpm."));
+    expect((yield* Effect.flip(decide(add.id, "accept"))).detail).toBe(
+      "Choose who this memory is for: accept it for yourself or the team, or reject it.",
+    );
+
+    expect((yield* decide(change.id, "accept")).decision).toMatchObject({
+      choice: "accept",
+      text: "Run all tests before pushing.",
+      file: "memory/projects/web.md",
+      merged: true,
+    });
+    expect(files["memory/projects/web.md"]).toBe(
+      "# Web\n\n- Run all tests before pushing.\n- Use tabs.\n",
+    );
+    expect(fixture.proposals[0]).toMatchObject({
+      title: "Change a memory: Run all tests before pushing.",
+      body: expect.stringContaining(
+        "> Run the web tests before pushing.\n\nto:\n\n> Run all tests before pushing.",
+      ),
+      branchStem: "memory/change-web",
+    });
+
+    const removal = yield* memory.proposeFromAgent(editProposal({ replaces: "Use tabs." }));
+    expect((yield* decide(removal.id, "accept")).decision).toMatchObject({
+      choice: "accept",
+      text: null,
+      file: "memory/projects/web.md",
+    });
+    expect(files["memory/projects/web.md"]).toBe("# Web\n\n- Run all tests before pushing.\n");
+    expect(fixture.proposals[1]?.title).toBe("Remove a memory: Use tabs.");
+
+    // The line was edited by hand after the agent proposed changing it.
+    const stale = yield* memory.proposeFromAgent(
+      editProposal({ text: "Run every test.", replaces: "Run all tests before pushing." }),
+    );
+    files["memory/projects/web.md"] = "# Web\n\n- Run the tests in CI.\n";
+    expect((yield* Effect.flip(decide(stale.id, "accept"))).detail).toBe(
+      "This memory changed since it was proposed; reject this proposal.",
+    );
+    expect(fixture.proposals).toHaveLength(2);
+  }).pipe(Effect.scoped),
+);
+
+it.effect("an agent withdraws only its own thread's pending proposal, with its reason", () =>
+  Effect.gen(function* () {
+    const fixture = makeMemory({ catalog: catalog() });
+    const memory = yield* fixture.build;
+    const proposal = yield* memory.proposeFromAgent(agentProposal("Use tabs."));
+    const withdraw = (threadId: ThreadId, proposalId = proposal.id) =>
+      memory.withdraw({ threadId, proposalId, reason: " The user meant spaces. " });
+    expect((yield* Effect.flip(withdraw(ThreadId.make("thread-2")))).detail).toBe(
+      "Only the thread that proposed this memory can withdraw it.",
+    );
+    expect((yield* Effect.flip(withdraw(THREAD_ID, "missing"))).detail).toBe(
+      "No memory proposal has this proposalId.",
+    );
+    expect((yield* withdraw(THREAD_ID)).decision).toMatchObject({
+      choice: "withdrawn",
+      reason: "The user meant spaces.",
+      text: null,
+      file: null,
+      merged: false,
+    });
+    expect(fixture.store.saved[0]?.decidedBySession).toBeNull();
+    expect(Option.getOrThrow(yield* Stream.runHead(memory.pendingChanges))).toEqual([]);
+    expect((yield* Effect.flip(withdraw(THREAD_ID))).detail).toBe(
+      "This proposal was already answered, so it can no longer be withdrawn.",
+    );
+
+    const accepted = yield* memory.proposeFromAgent(agentProposal("Prefer pnpm."));
+    yield* memory.decide(
+      { projectId: PROJECT_ID, proposalId: accepted.id, choice: "me", text: "Prefer pnpm." },
+      "session-1",
+    );
+    expect((yield* Effect.flip(withdraw(THREAD_ID, accepted.id))).detail).toBe(
+      "This proposal was already answered, so it can no longer be withdrawn.",
+    );
+  }).pipe(Effect.scoped),
+);
+
+it.effect("undo reverts an accepted addition, change or removal in the file it edited", () =>
+  Effect.gen(function* () {
+    const files: Record<string, string> = { ...FILES };
+    const fixture = makeMemory({ catalog: catalog(), files });
+    const memory = yield* fixture.build;
+    const accept = (proposal: MemoryProposal, choice: "me" | "team" | "accept" | "reject") =>
+      memory.decide(
+        { projectId: PROJECT_ID, proposalId: proposal.id, choice, text: proposal.text },
+        "session-1",
+      );
+    const undo = (proposal: MemoryProposal) =>
+      memory.undo({ projectId: PROJECT_ID, proposalId: proposal.id });
+
+    const added = yield* memory.proposeFromAgent(agentProposal("Tests need Node 24."));
+    yield* accept(added, "team");
+    expect(files["memory/projects/web.md"]).toBe(
+      "- Run the web tests before pushing.\n- Tests need Node 24.\n",
+    );
+    expect((yield* undo(added)).decision).toMatchObject({
+      choice: "team",
+      merged: true,
+      undo: { pullRequestUrl: "https://github.com/acme/home/pull/1", merged: true, problem: null },
+    });
+    expect(files["memory/projects/web.md"]).toBe("- Run the web tests before pushing.\n");
+    expect(fixture.proposals.at(-1)).toMatchObject({
+      title: "Forget a memory: Tests need Node 24.",
+      branchStem: "memory/undo-web",
+    });
+    expect(fixture.store.saved[0]?.decidedBySession).toBe("session-1");
+    expect((yield* Effect.flip(undo(added))).detail).toBe("This memory was already undone.");
+
+    const changed = yield* memory.proposeFromAgent(
+      editProposal({ text: "Keep replies to one line.", replaces: "Keep replies short." }),
+    );
+    yield* accept(changed, "accept");
+    expect(files["memory/people/alice.md"]).toBe("- Keep replies to one line.\n");
+    yield* undo(changed);
+    expect(files["memory/people/alice.md"]).toBe("- Keep replies short.\n");
+
+    const removed = yield* memory.proposeFromAgent(
+      editProposal({ replaces: "Prefer small pull requests." }),
+    );
+    yield* accept(removed, "accept");
+    expect(files["memory/team.md"]).toBe("");
+    yield* undo(removed);
+    expect(files["memory/team.md"]).toBe("- Prefer small pull requests.\n");
+    expect(fixture.proposals.at(-1)?.title).toBe("Restore a memory: Prefer small pull requests.");
+
+    const gone = yield* memory.proposeFromAgent(agentProposal("Use tabs."));
+    yield* accept(gone, "me");
+    files["memory/projects/web/people/alice.md"] = "";
+    expect((yield* Effect.flip(undo(gone))).detail).toBe(
+      "This memory is no longer in memory/projects/web/people/alice.md, so there is nothing to undo.",
+    );
+    const rejected = yield* memory.proposeFromAgent(agentProposal("Always use drafts."));
+    yield* accept(rejected, "reject");
+    expect((yield* Effect.flip(undo(rejected))).detail).toBe(
+      "Only an accepted memory can be undone.",
+    );
   }).pipe(Effect.scoped),
 );

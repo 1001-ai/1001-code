@@ -1,6 +1,6 @@
 import { BOARD_LIST_TOOL_NAME } from "./board.ts";
 import { INBOX_FORWARD_TOOL_NAME } from "./inboxAgent.ts";
-import { MEMORY_PROPOSE_TOOL_NAME } from "./memory.ts";
+import { MEMORY_PROPOSE_TOOL_NAME, MEMORY_WITHDRAW_TOOL_NAME } from "./memory.ts";
 import {
   VOICE_AGENT_BOARD_TOOL_NAME,
   VOICE_AGENT_SEND_MESSAGE_TOOL_NAME,
@@ -22,6 +22,7 @@ export const LOCKED_AGENT_TOOL_NAMES: Readonly<Record<LockedAgentKind, ReadonlyA
     VOICE_AGENT_SEND_MESSAGE_TOOL_NAME,
     VOICE_AGENT_SHOW_MEDIA_TOOL_NAME,
     MEMORY_PROPOSE_TOOL_NAME,
+    MEMORY_WITHDRAW_TOOL_NAME,
   ],
   inbox: [
     "t3_thread_list",
@@ -33,6 +34,7 @@ export const LOCKED_AGENT_TOOL_NAMES: Readonly<Record<LockedAgentKind, ReadonlyA
     "orchestrator_capabilities",
     BOARD_LIST_TOOL_NAME,
     MEMORY_PROPOSE_TOOL_NAME,
+    MEMORY_WITHDRAW_TOOL_NAME,
     INBOX_FORWARD_TOOL_NAME,
   ],
 };

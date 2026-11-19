@@ -11,6 +11,8 @@ import {
   type MemoryFileTarget,
   type MemoryProposal,
   type MemoryProposalDecision,
+  type MemoryProposalKind,
+  type MemoryUndoInput,
   type MemoryProposeInput,
   type MemoryScope,
   type MemoryView,
@@ -49,6 +51,12 @@ import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolv
 import * as TeamCatalog from "../teamCatalog/TeamCatalog.ts";
 import { attributeLines } from "../teamCatalog/teamCatalogBlame.ts";
 import { hostedRepositoryOf } from "../teamCatalog/teamCatalogProposal.ts";
+import {
+  appendMemoryLine,
+  hasMemoryLine,
+  memoryLineText,
+  replaceMemoryLine,
+} from "./memoryLines.ts";
 import * as MemoryProposalStore from "./MemoryProposalStore.ts";
 import {
   activeVoiceAgentMemory,
@@ -95,25 +103,36 @@ export class Memory extends Context.Service<
     /**
      * Records an agent's proposal, or returns the pending one the thread already made with it. With
      * a category it is for that category's file, where `replaces` names the memory it supersedes.
+     * Otherwise `replaces` names a saved line in one of the project's memory files: with `text` the
+     * proposal changes it, without it removes it.
      */
     readonly proposeFromAgent: (input: {
       readonly projectId: ProjectId;
       readonly threadId: ThreadId;
       readonly threadTitle: string;
-      readonly text: string;
+      readonly text?: string | undefined;
       readonly reason: string;
       readonly category?: MemoryCategory | undefined;
       readonly replaces?: string | undefined;
     }) => Effect.Effect<MemoryProposal, TeamCatalogError>;
+    /** The agent takes back a pending proposal its own thread made. */
+    readonly withdraw: (input: {
+      readonly threadId: ThreadId;
+      readonly proposalId: string;
+      readonly reason: string;
+    }) => Effect.Effect<MemoryProposal, TeamCatalogError>;
     /**
      * A person's answer, from the client session that clicked. Accepting adds the line to the file,
-     * or in a category's file puts it in place of the one it replaces, and merges the pull request
-     * at once; a failed push leaves the proposal unanswered.
+     * edits the line a change or removal names in its own file, or in a category's file puts it in
+     * place of the one it replaces, and merges the pull request at once; a failed push leaves the
+     * proposal unanswered.
      */
     readonly decide: (
       input: MemoryDecideInput,
       sessionId: string,
     ) => Effect.Effect<MemoryProposal, TeamCatalogError>;
+    /** Reverts what accepting a general proposal did, in the file it edited, and merges at once. */
+    readonly undo: (input: MemoryUndoInput) => Effect.Effect<MemoryProposal, TeamCatalogError>;
   }
 >()("t3/memory/Memory") {}
 
@@ -170,11 +189,7 @@ const proposalTitle = (scope: MemoryScope, label: string | null): string => {
   }
 };
 
-/** Adds the proposal as one list item at the end of the file. */
-const appendMemoryLine = (fileText: string, line: string): string => {
-  const item = line.startsWith("- ") ? line : `- ${line}`;
-  return fileText.trim() === "" ? `${item}\n` : `${fileText.trimEnd()}\n${item}\n`;
-};
+const fileName = (file: string) => file.slice(file.lastIndexOf("/") + 1).replace(/\.md$/, "");
 
 const onWire = ({
   projectId: _projectId,
@@ -462,7 +477,11 @@ const make = Effect.gen(function* () {
         detail: "No team catalog is set, so there is nowhere to save memory.",
       });
     }
+    const text = input.text?.trim() ?? "";
     if (input.category !== undefined) {
+      if (text === "") {
+        return yield* new TeamCatalogError({ detail: "Give the voice agent memory as text." });
+      }
       // The category's file is the person's own, so the project need not be in the catalog.
       // The live login, as accepting uses: a cached one would check `replaces` against another person's file.
       const own = yield* voiceAgentFile(catalog.source, yield* teamCatalog.liveViewer);
@@ -474,12 +493,15 @@ const make = Effect.gen(function* () {
           detail: `No voice agent memory has the text given as replaces. ${active === "" ? "None is active, so leave replaces out." : `Give the exact text of one of the active ones: ${active}. Leave replaces out for a new subject.`}`,
         });
       }
-      return yield* addProposal(input);
+      return yield* addProposal({ ...input, text });
     }
     if (input.replaces !== undefined) {
+      return yield* proposeEdit({ ...input, text, replaces: input.replaces });
+    }
+    if (text === "") {
       return yield* new TeamCatalogError({
         detail:
-          "Only a voice agent memory replaces another one. Leave replaces out; other memories are added.",
+          "Give text for a new memory, or replaces with the exact text of a saved memory line to change it (with text) or remove it (without text).",
       });
     }
     if ((yield* catalogProject(catalog, input.projectId)) === null) {
@@ -487,7 +509,49 @@ const make = Effect.gen(function* () {
         detail: `${NOT_IN_CATALOG} There is nowhere to save memory for it.`,
       });
     }
-    return yield* addProposal(input);
+    return yield* addProposal({ ...input, text });
+  });
+
+  /** A change or removal of a saved line, which must be in exactly one of the project's files. */
+  const proposeEdit = Effect.fn("Memory.proposeEdit")(function* (input: {
+    readonly projectId: ProjectId;
+    readonly threadId: ThreadId;
+    readonly threadTitle: string;
+    readonly text: string;
+    readonly reason: string;
+    readonly replaces: string;
+  }) {
+    const replaces = memoryLineText(input.replaces);
+    const { view } = yield* readWithProject(input.projectId);
+    const found = view.documents.filter(
+      (document) => document.file !== null && hasMemoryLine(document.text, replaces),
+    );
+    const where = found[0];
+    if (replaces === "" || where === undefined || where.file === null) {
+      return yield* new TeamCatalogError({
+        detail:
+          "No saved memory line has the text given as replaces. Give the exact text of an existing memory line, without its list bullet, or leave replaces out to add a new memory.",
+      });
+    }
+    if (found.length > 1) {
+      return yield* new TeamCatalogError({
+        detail: `That line is saved in more than one memory file (${found.map((document) => document.scope).join(", ")}). Give a line that is saved only once, or ask the user to edit it in the Memory panel.`,
+      });
+    }
+    if (memoryLineText(input.text) === replaces) {
+      return yield* new TeamCatalogError({
+        detail: "The text is the same as the line it replaces. Leave text out to remove the line.",
+      });
+    }
+    const kind: MemoryProposalKind = input.text === "" ? "remove" : "change";
+    return yield* addProposal({
+      ...input,
+      text: kind === "remove" ? replaces : input.text,
+      replaces,
+      kind,
+      scope: where.scope,
+      file: where.file,
+    });
   });
 
   const addProposal = Effect.fn("Memory.addProposal")(function* (input: {
@@ -498,6 +562,9 @@ const make = Effect.gen(function* () {
     readonly reason: string;
     readonly category?: MemoryCategory | undefined;
     readonly replaces?: string | undefined;
+    readonly kind?: MemoryProposalKind | undefined;
+    readonly scope?: MemoryScope | undefined;
+    readonly file?: string | undefined;
   }) {
     const text = input.text.trim();
     const existing = (yield* SubscriptionRef.get(proposalsRef)).find(
@@ -505,6 +572,8 @@ const make = Effect.gen(function* () {
         proposal.threadId === input.threadId &&
         proposal.text === text &&
         proposal.category === input.category &&
+        proposal.kind === input.kind &&
+        (input.kind === undefined || proposal.replaces === input.replaces) &&
         proposal.decision === null,
     );
     if (existing !== undefined) return onWire(existing);
@@ -520,6 +589,9 @@ const make = Effect.gen(function* () {
       decidedBySession: null,
       ...(input.category === undefined ? {} : { category: input.category }),
       ...(input.replaces === undefined ? {} : { replaces: input.replaces.trim() }),
+      ...(input.kind === undefined ? {} : { kind: input.kind }),
+      ...(input.scope === undefined ? {} : { scope: input.scope }),
+      ...(input.file === undefined ? {} : { file: input.file }),
     };
     const next = yield* SubscriptionRef.updateAndGet(proposalsRef, (proposals) =>
       pruned([...proposals, proposal], input.projectId),
@@ -528,15 +600,20 @@ const make = Effect.gen(function* () {
     return onWire(proposal);
   }, writeLock.withPermits(1));
 
+  /** Without a session the one that decided it stays: an undo is recorded on its decision. */
   const record = Effect.fn("Memory.record")(function* (
     proposalId: string,
     decision: MemoryProposalDecision,
-    sessionId: string,
+    sessionId?: string | null,
   ) {
     const next = yield* SubscriptionRef.updateAndGet(proposalsRef, (proposals) =>
       proposals.map((proposal) =>
         proposal.id === proposalId
-          ? { ...proposal, decision, decidedBySession: sessionId }
+          ? {
+              ...proposal,
+              decision,
+              ...(sessionId === undefined ? {} : { decidedBySession: sessionId }),
+            }
           : proposal,
       ),
     );
@@ -619,6 +696,72 @@ const make = Effect.gen(function* () {
     };
   });
 
+  /** A change or removal edits the line where it was found when it was proposed. */
+  const editedLine = Effect.fn("Memory.editedLine")(function* (
+    proposal: MemoryProposal,
+    line: string,
+  ) {
+    const catalog = yield* teamCatalog.snapshot;
+    const { file, replaces } = proposal;
+    if (catalog.revision === null || file === undefined || replaces === undefined) {
+      return yield* new TeamCatalogError({ detail: NO_CATALOG });
+    }
+    const removal = proposal.kind === "remove";
+    const text = replaceMemoryLine(
+      (yield* teamCatalog.readFile(file)) ?? "",
+      replaces,
+      removal ? null : line,
+    );
+    if (text === null) {
+      return yield* new TeamCatalogError({
+        detail: "This memory changed since it was proposed; reject this proposal.",
+      });
+    }
+    return {
+      baseRevision: catalog.revision,
+      file,
+      text,
+      title: removal ? `Remove a memory: ${replaces}` : `Change a memory: ${line}`,
+      body: removal
+        ? [`Removes from \`${file}\`:`, `> ${replaces}`]
+        : [`Changes in \`${file}\`:`, `> ${replaces}`, "to:", `> ${line}`],
+      branchStem: `memory/${proposal.kind}-${fileName(file)}`,
+    };
+  });
+
+  /** Opens the pull request and merges it at once; a refused merge leaves it open and says why. */
+  const proposeAndMerge = Effect.fn("Memory.proposeAndMerge")(function* (
+    change: {
+      readonly baseRevision: string;
+      readonly file: string;
+      readonly text: string;
+      readonly title: string;
+      readonly body: ReadonlyArray<string>;
+      readonly branchStem: string;
+    },
+    origin: ReadonlyArray<string>,
+  ) {
+    const pullRequest = yield* teamCatalog.proposeFiles({
+      baseRevision: change.baseRevision,
+      files: [{ file: change.file, text: change.text }],
+      title: change.title.slice(0, 200),
+      body: [...change.body, ...origin].join("\n\n"),
+      branchStem: change.branchStem.slice(0, 80),
+    });
+    const url = pullRequest.pullRequestUrl;
+    const merge: { readonly merged: boolean; readonly problem: string | null } =
+      url === null
+        ? {
+            merged: false,
+            problem: pullRequest.pullRequestProblem ?? "No pull request was opened.",
+          }
+        : yield* teamCatalog.mergeProposal(url).pipe(
+            Effect.as({ merged: true, problem: null }),
+            Effect.catch((error) => Effect.succeed({ merged: false, problem: error.detail })),
+          );
+    return { pullRequestUrl: url, ...merge };
+  });
+
   const decide: Memory["Service"]["decide"] = Effect.fn("Memory.decide")(function* (
     input,
     sessionId,
@@ -631,6 +774,14 @@ const make = Effect.gen(function* () {
     }
     if (proposal.decision !== null) {
       return yield* new TeamCatalogError({ detail: "This proposal was already answered." });
+    }
+    const edit = proposal.kind !== undefined;
+    if (input.choice !== "reject" && edit !== (input.choice === "accept")) {
+      return yield* new TeamCatalogError({
+        detail: edit
+          ? "This proposal edits a saved memory in its own file: accept it or reject it."
+          : "Choose who this memory is for: accept it for yourself or the team, or reject it.",
+      });
     }
     const decidedAt = DateTime.formatIso(yield* DateTime.now);
     if (input.choice === "reject") {
@@ -657,39 +808,129 @@ const make = Effect.gen(function* () {
       ...(proposal.reason === "" ? [] : [`Its reason: ${proposal.reason}`]),
       "Accepted in 1001 Code, which merges it at once.",
     ];
-    const change =
-      proposal.category === undefined
+    const change = edit
+      ? yield* editedLine(proposal, line)
+      : proposal.category === undefined
         ? yield* appendedLine(input, line)
         : yield* supersededVoiceAgentMemory(input, proposal, line, decidedAt.slice(0, 10));
-    const pullRequest = yield* teamCatalog.proposeFiles({
-      baseRevision: change.baseRevision,
-      files: [{ file: change.file, text: change.text }],
-      title: change.title.slice(0, 200),
-      body: [...change.body, ...origin].join("\n\n"),
-      branchStem: change.branchStem.slice(0, 80),
-    });
-    const merge =
-      pullRequest.pullRequestUrl === null
-        ? {
-            merged: false,
-            problem: pullRequest.pullRequestProblem ?? "No pull request was opened.",
-          }
-        : yield* teamCatalog.mergeProposal(pullRequest.pullRequestUrl).pipe(
-            Effect.as({ merged: true, problem: null }),
-            Effect.catch((error) => Effect.succeed({ merged: false, problem: error.detail })),
-          );
+    const pullRequest = yield* proposeAndMerge(change, origin);
     return yield* record(
       proposal.id,
       {
         choice: input.choice,
-        text: line,
+        text: proposal.kind === "remove" ? null : line,
         file: change.file,
         decidedAt,
-        pullRequestUrl: pullRequest.pullRequestUrl,
-        ...merge,
+        ...pullRequest,
       },
       sessionId,
     );
+  }, decideLock.withPermits(1));
+
+  // Under the decide lock, so a withdrawal never lands on a proposal a person is accepting.
+  const withdraw: Memory["Service"]["withdraw"] = Effect.fn("Memory.withdraw")(function* (input) {
+    const proposal = (yield* SubscriptionRef.get(proposalsRef)).find(
+      (candidate) => candidate.id === input.proposalId,
+    );
+    if (proposal === undefined) {
+      return yield* new TeamCatalogError({ detail: "No memory proposal has this proposalId." });
+    }
+    if (proposal.threadId !== input.threadId) {
+      return yield* new TeamCatalogError({
+        detail: "Only the thread that proposed this memory can withdraw it.",
+      });
+    }
+    if (proposal.decision !== null) {
+      return yield* new TeamCatalogError({
+        detail: "This proposal was already answered, so it can no longer be withdrawn.",
+      });
+    }
+    return yield* record(
+      proposal.id,
+      {
+        choice: "withdrawn",
+        text: null,
+        file: null,
+        decidedAt: DateTime.formatIso(yield* DateTime.now),
+        pullRequestUrl: null,
+        merged: false,
+        problem: null,
+        reason: input.reason.trim(),
+      },
+      null,
+    );
+  }, decideLock.withPermits(1));
+
+  const undo: Memory["Service"]["undo"] = Effect.fn("Memory.undo")(function* (input) {
+    const proposal = (yield* SubscriptionRef.get(proposalsRef)).find(
+      (candidate) => candidate.id === input.proposalId && candidate.projectId === input.projectId,
+    );
+    if (proposal === undefined) {
+      return yield* new TeamCatalogError({ detail: "This proposal was not found." });
+    }
+    const decision = proposal.decision;
+    if (
+      decision === null ||
+      decision.file === null ||
+      decision.choice === "reject" ||
+      decision.choice === "withdrawn" ||
+      proposal.category !== undefined
+    ) {
+      return yield* new TeamCatalogError({ detail: "Only an accepted memory can be undone." });
+    }
+    if (decision.undo !== undefined) {
+      return yield* new TeamCatalogError({ detail: "This memory was already undone." });
+    }
+    if (!decision.merged) {
+      return yield* new TeamCatalogError({
+        detail: "This memory was never merged, so there is nothing to undo.",
+      });
+    }
+    yield* teamCatalog.refresh({ force: true });
+    const catalog = yield* teamCatalog.snapshot;
+    if (catalog.revision === null) return yield* new TeamCatalogError({ detail: NO_CATALOG });
+    const file = decision.file;
+    const current = (yield* teamCatalog.readFile(file)) ?? "";
+    const old = proposal.replaces ?? "";
+    const saved = decision.text ?? "";
+    const revert =
+      proposal.kind === "remove"
+        ? {
+            text: hasMemoryLine(current, old) ? null : appendMemoryLine(current, old),
+            gone: `The removed memory is already back in ${file}.`,
+            title: `Restore a memory: ${old}`,
+            body: [`Adds back to \`${file}\`:`, `> ${old}`],
+          }
+        : proposal.kind === "change"
+          ? {
+              text: replaceMemoryLine(current, saved, old),
+              gone: `The changed memory is no longer in ${file}, so it cannot be changed back.`,
+              title: `Change a memory back: ${old}`,
+              body: [`Changes in \`${file}\`:`, `> ${saved}`, "back to:", `> ${old}`],
+            }
+          : {
+              text: replaceMemoryLine(current, saved, null),
+              gone: `This memory is no longer in ${file}, so there is nothing to undo.`,
+              title: `Forget a memory: ${saved}`,
+              body: [`Removes from \`${file}\`:`, `> ${saved}`],
+            };
+    if (revert.text === null) return yield* new TeamCatalogError({ detail: revert.gone });
+    const undoneAt = DateTime.formatIso(yield* DateTime.now);
+    const pullRequest = yield* proposeAndMerge(
+      {
+        baseRevision: catalog.revision,
+        file,
+        text: revert.text,
+        title: revert.title,
+        body: revert.body,
+        branchStem: `memory/undo-${fileName(file)}`,
+      },
+      [
+        `Undoes ${decision.pullRequestUrl ?? "a memory"} proposed by an agent in the thread "${proposal.threadTitle}".`,
+        "Undone in 1001 Code, which merges it at once.",
+      ],
+    );
+    return yield* record(proposal.id, { ...decision, undo: { undoneAt, ...pullRequest } });
   }, decideLock.withPermits(1));
 
   return Memory.of({
@@ -701,7 +942,9 @@ const make = Effect.gen(function* () {
     voiceAgentEarlier,
     propose,
     proposeFromAgent,
+    withdraw,
     decide,
+    undo,
   });
 });
 

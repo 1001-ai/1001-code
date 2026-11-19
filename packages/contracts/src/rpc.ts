@@ -384,6 +384,7 @@ import {
 } from "./board.ts";
 import {
   MemoryDecideInput,
+  MemoryUndoInput,
   MemoryPendingSubscribeInput,
   MemoryProjectInput,
   MemoryProposal,
@@ -619,6 +620,7 @@ export const WS_METHODS = {
   memorySubscribePending: "memory.subscribePending",
   memoryPropose: "memory.propose",
   memoryDecide: "memory.decide",
+  memoryUndo: "memory.undo",
   agentsBoardSubscribe: "agentsBoard.subscribe",
   agentsBoardRefresh: "agentsBoard.refresh",
   agentsBoardSetBranch: "agentsBoard.setBranch",
@@ -1196,6 +1198,12 @@ const WsMemoryProposeRpc = Rpc.make(WS_METHODS.memoryPropose, {
 
 const WsMemoryDecideRpc = Rpc.make(WS_METHODS.memoryDecide, {
   payload: MemoryDecideInput,
+  success: MemoryProposal,
+  error: Schema.Union([TeamCatalogError, EnvironmentAuthorizationError]),
+});
+
+const WsMemoryUndoRpc = Rpc.make(WS_METHODS.memoryUndo, {
+  payload: MemoryUndoInput,
   success: MemoryProposal,
   error: Schema.Union([TeamCatalogError, EnvironmentAuthorizationError]),
 });
@@ -2407,6 +2415,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsMemorySubscribePendingRpc,
   WsMemoryProposeRpc,
   WsMemoryDecideRpc,
+  WsMemoryUndoRpc,
   WsAgentsBoardSubscribeRpc,
   WsAgentsBoardRefreshRpc,
   WsAgentsBoardSetBranchRpc,

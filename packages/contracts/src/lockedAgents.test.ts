@@ -33,6 +33,8 @@ describe("lockedAgents", () => {
     ["t3_thread_read", "inbox", true],
     ["board_list", "inbox", true],
     ["memory_propose", "inbox", true],
+    ["memory_withdraw", "inbox", true],
+    ["memory_withdraw", "voice", true],
     ["t3_thread_send", "inbox", true],
     ["t3_thread_launch", "inbox", true],
     ["orchestrator_capabilities", "inbox", true],
@@ -63,6 +65,7 @@ describe("lockedAgents", () => {
       "orchestrator_capabilities",
       "board_list",
       "memory_propose",
+      "memory_withdraw",
       "inbox_forward",
     ]);
   });

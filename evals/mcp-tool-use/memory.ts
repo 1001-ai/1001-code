@@ -4,7 +4,12 @@
  * a project's Inbox (its instructions, the project memory, its read tools and its forward listed
  * from the start).
  */
-import { BOARD_LIST_TOOL_NAME, buildMemoryBlock } from "@t3tools/contracts";
+import {
+  BOARD_LIST_TOOL_NAME,
+  buildMemoryBlock,
+  type LockedAgentKind,
+  lockedAgentToolAllowed,
+} from "@t3tools/contracts";
 import {
   INBOX_AGENT_INSTRUCTIONS,
   VOICE_AGENT_INSTRUCTIONS,
@@ -60,12 +65,15 @@ export const memoryText = (setup: MemorySetup): string =>
           buildVoiceAgentMemoryBlock(setup.voiceAgent.map((text) => ({ text }))).text,
         ].join("\n\n");
 
-const listed = (tools: Record<string, Tool.Any>) =>
-  Object.values(tools).map((tool) => ({
-    name: `mcp__t3-code__${tool.name}`,
-    description: Tool.getDescription(tool) ?? "",
-    input_schema: advertisedJsonSchema(tool),
-  }));
+/** With a locked agent's kind, only the tools its lock lets through. */
+const listed = (tools: Record<string, Tool.Any>, kind?: LockedAgentKind) =>
+  Object.values(tools)
+    .filter((tool) => kind === undefined || lockedAgentToolAllowed(tool.name, kind))
+    .map((tool) => ({
+      name: `mcp__t3-code__${tool.name}`,
+      description: Tool.getDescription(tool) ?? "",
+      input_schema: advertisedJsonSchema(tool),
+    }));
 
 /**
  * T3's memory tool, as Claude Code lists it from T3's MCP server. An ordinary thread loads it
@@ -81,7 +89,7 @@ export const memoryTools = (setup: MemorySetup) =>
           ...listed(BoardToolkit.tools).filter(
             (tool) => tool.name === `mcp__t3-code__${BOARD_LIST_TOOL_NAME}`,
           ),
-          ...listed(MemoryToolkit.tools),
+          ...listed(MemoryToolkit.tools, "inbox"),
           ...listed(InboxAgentToolkit.tools),
         ],
         deferred: [],
@@ -89,7 +97,7 @@ export const memoryTools = (setup: MemorySetup) =>
     : setup.voiceAgent === undefined
       ? { loaded: [], deferred: listed(MemoryToolkit.tools) }
       : {
-          loaded: [...listed(VoiceAgentToolkit.tools), ...listed(MemoryToolkit.tools)],
+          loaded: [...listed(VoiceAgentToolkit.tools), ...listed(MemoryToolkit.tools, "voice")],
           deferred: [],
         };
 

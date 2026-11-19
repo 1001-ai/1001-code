@@ -42,6 +42,11 @@ export const memoryDecide = createEnvironmentRpcCommand(connectionAtomRuntime, {
   tag: WS_METHODS.memoryDecide,
 });
 
+export const memoryUndo = createEnvironmentRpcCommand(connectionAtomRuntime, {
+  label: "environment-data:memory:undo",
+  tag: WS_METHODS.memoryUndo,
+});
+
 const EMPTY_ATOM = Atom.make(AsyncResult.initial<MemoryView, never>()).pipe(
   Atom.withLabel("web-memory:empty"),
 );

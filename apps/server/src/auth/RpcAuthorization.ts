@@ -129,6 +129,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.memorySubscribePending]: AuthOrchestrationReadScope,
   [WS_METHODS.memoryPropose]: AuthSourceControlWriteScope,
   [WS_METHODS.memoryDecide]: AuthSourceControlWriteScope,
+  [WS_METHODS.memoryUndo]: AuthSourceControlWriteScope,
   [WS_METHODS.agentsBoardSubscribe]: AuthOrchestrationReadScope,
   [WS_METHODS.agentsBoardRefresh]: AuthOrchestrationReadScope,
   [WS_METHODS.agentsBoardSetBranch]: AuthSettingsWriteScope,
