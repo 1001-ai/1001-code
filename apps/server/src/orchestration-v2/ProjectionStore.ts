@@ -1771,10 +1771,7 @@ export function threadShellFromProjection(
     latestVisibleMessage: null,
     latestUserMessageAt: latestUserMessage?.updatedAt ?? null,
     latestUserAuthoredMessageAt,
-    openQuestionsAt: openQuestionsAt({
-      messages: projection.messages,
-      latestUserAuthoredMessageAt,
-    }),
+    openQuestionsAt: openQuestionsAt(projection.messages),
     hasActionableProposedPlan: projection.plans.some(
       (plan) => plan.kind === "proposed_plan" && plan.status === "active",
     ),
@@ -8232,10 +8229,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               ? null
               : DateTime.makeUnsafe(row.latest_user_message_at),
           latestUserAuthoredMessageAt,
-          openQuestionsAt: openQuestionsAtFromCandidates(
-            row.open_question_candidates_json,
-            latestUserAuthoredMessageAt,
-          ),
+          openQuestionsAt: openQuestionsAtFromCandidates(row.open_question_candidates_json),
           hasActionableProposedPlan: row.has_actionable_proposed_plan === 1,
           pendingBackgroundTasks,
           providerInstanceHistory: providerInstanceHistoryForShell({

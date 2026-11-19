@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  openQuestionCards,
   parseQuestionQuote,
   questionCardsInMarkdown,
   questionWithdrawalsInMarkdown,
+  readAnswerLine,
 } from "./questionCards.ts";
 
 describe("parseQuestionQuote", () => {
@@ -189,5 +191,64 @@ describe("questionWithdrawalsInMarkdown", () => {
     ["a tab-indented code block", "\tQ1: no longer needed"],
   ])("ignores %s", (_name, text) => {
     expect(questionWithdrawalsInMarkdown(text)).toEqual([]);
+  });
+});
+
+describe("readAnswerLine", () => {
+  it.each([
+    ["Q1: Yes", "Q1", "Yes"],
+    ["Notes\n  Q1 :  Use the cache  \nQ2: B", "Q1", "Use the cache"],
+    ["Q1:", "Q1", null],
+    ["Q10: x", "Q1", null],
+    ["q1: x", "Q1", null],
+    ["See Q1: x", "Q1", null],
+  ])("reads %j for %s", (text, id, expected) => {
+    expect(readAnswerLine(text, id)).toBe(expected);
+  });
+});
+
+describe("openQuestionCards", () => {
+  const card = (id: string) => `> **${id} · Ship ${id}?**\n>\n> - Yes\n> - No`;
+  const assistant = (name: string, text: string, streaming = false) => ({
+    name,
+    role: "assistant",
+    text,
+    streaming,
+  });
+  const user = (name: string, text: string) => ({ name, role: "user", text });
+  const open = (messages: ReadonlyArray<ReturnType<typeof assistant | typeof user>>) =>
+    openQuestionCards(messages).map(({ question, message }) => `${message.name}:${question.id}`);
+  const askThree = assistant("a1", ["Q1", "Q2", "Q3"].map(card).join("\n\n"));
+
+  it("keeps each card open until a later user message carries its own answer line", () => {
+    expect(open([askThree, user("u1", "Looks good"), user("u2", "Q1: Yes")])).toEqual([
+      "a1:Q2",
+      "a1:Q3",
+    ]);
+    expect(
+      open([user("u0", "Q1: Yes"), askThree, user("u1", "Q2: No\nQ1: Yes\nQ3: skipped")]),
+    ).toEqual([]);
+  });
+
+  it("counts only each id's newest card", () => {
+    const reask = assistant("a2", card("Q2"));
+    expect(open([askThree, user("u1", "Q2: Yes"), reask])).toEqual(["a1:Q1", "a1:Q3", "a2:Q2"]);
+    expect(open([askThree, reask, user("u1", "Q2: Yes")])).toEqual(["a1:Q1", "a1:Q3"]);
+  });
+
+  it("drops a card withdrawn while its message holds the latest cards", () => {
+    const withdraw = (name: string, id: string) => assistant(name, `${id}: no longer needed`);
+    expect(open([askThree, withdraw("a2", "Q1")])).toEqual(["a1:Q2", "a1:Q3"]);
+    expect(open([askThree, assistant("a2", card("Q4")), withdraw("a3", "Q1")])).toEqual([
+      "a1:Q1",
+      "a1:Q2",
+      "a1:Q3",
+      "a2:Q4",
+    ]);
+  });
+
+  it("ignores streaming messages", () => {
+    expect(open([assistant("a1", card("Q1"), true)])).toEqual([]);
+    expect(open([askThree, assistant("a2", "Q1: no longer needed", true)])).toHaveLength(3);
   });
 });

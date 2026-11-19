@@ -1,13 +1,12 @@
 import type { MessageId } from "@t3tools/contracts";
-import { questionCardsInMarkdown, type QuestionBlock } from "@t3tools/shared/questionCards";
-import * as DateTime from "effect/DateTime";
-
 import {
-  findQuestionAnswer,
-  isQuestionWithdrawn,
+  openQuestionCards,
+  questionCardsInMarkdown,
   readAnswerLine,
-  writeAnswerLine,
-} from "../chat/questionBlock.logic";
+  type QuestionBlock,
+} from "@t3tools/shared/questionCards";
+
+import { writeAnswerLine } from "../chat/questionBlock.logic";
 
 export interface WaitingShellInput {
   readonly archivedAt: string | null;
@@ -30,7 +29,6 @@ interface TimelineItemLike {
     readonly text?: unknown;
     readonly messageId?: MessageId;
     readonly streaming?: unknown;
-    readonly updatedAt?: DateTime.Utc;
   };
 }
 
@@ -41,56 +39,41 @@ export interface OpenQuestionCard {
   readonly messageId: MessageId;
 }
 
+export interface ThreadQuestionCards {
+  /** The loaded history asks cards, answered or not. */
+  readonly asked: boolean;
+  readonly open: ReadonlyArray<OpenQuestionCard>;
+}
+
 const cardsByItem = new WeakMap<object, ReadonlyArray<QuestionBlock>>();
 
-/**
- * Each id's newest card in a finished assistant message that finished after the user's latest
- * own message (the server's `openQuestionsAt` rule), answered or not.
- */
-export function askedQuestionCards(
-  items: ReadonlyArray<TimelineItemLike>,
-  latestUserAuthoredMessageAt: string | null,
-): ReadonlyArray<OpenQuestionCard> {
-  const repliedAt =
-    latestUserAuthoredMessageAt === null ? null : Date.parse(latestUserAuthoredMessageAt);
-  const newest = new Map<string, OpenQuestionCard>();
-  for (const { item } of items) {
-    const { type, text, messageId, streaming, updatedAt } = item;
-    if (type !== "assistant_message" || typeof text !== "string" || messageId === undefined) {
-      continue;
-    }
-    if (streaming === true) continue;
-    if (
-      repliedAt !== null &&
-      !Number.isNaN(repliedAt) &&
-      (updatedAt === undefined || DateTime.toEpochMillis(updatedAt) <= repliedAt)
-    ) {
-      continue;
-    }
+/** The thread's open cards by the shared rule the server's `openQuestionsAt` also runs. */
+export function threadQuestionCards(items: ReadonlyArray<TimelineItemLike>): ThreadQuestionCards {
+  const messages = items.flatMap(({ item }) => {
+    const { type, text, messageId } = item;
+    if (typeof text !== "string") return [];
+    if (type === "user_message") return [{ role: "user", text, item, messageId }];
+    if (type !== "assistant_message" || messageId === undefined) return [];
+    return [{ role: "assistant", text, streaming: item.streaming === true, item, messageId }];
+  });
+  let asked = false;
+  const open = openQuestionCards(messages, ({ item, text }) => {
     let cards = cardsByItem.get(item);
     if (cards === undefined) {
       cards = questionCardsInMarkdown(text);
       cardsByItem.set(item, cards);
     }
-    for (const question of cards) {
-      // A re-asked id moves to where it was asked last.
-      newest.delete(question.id);
-      newest.set(question.id, { question, askedInItemId: item.id, messageId });
-    }
-  }
-  return [...newest.values()];
-}
-
-/** The asked cards that no later `<id>: answer` line answers and the agent has not withdrawn. */
-export function openQuestionCards(
-  items: ReadonlyArray<TimelineItemLike>,
-  asked: ReadonlyArray<OpenQuestionCard>,
-): ReadonlyArray<OpenQuestionCard> {
-  return asked.filter(
-    (card) =>
-      findQuestionAnswer(items, card.askedInItemId, card.question.id) === null &&
-      !isQuestionWithdrawn(items, card.askedInItemId, card.question.id),
-  );
+    asked ||= cards.length > 0;
+    return cards;
+  });
+  return {
+    asked,
+    open: open.flatMap(({ question, message }) =>
+      message.messageId === undefined
+        ? []
+        : [{ question, askedInItemId: message.item.id, messageId: message.messageId }],
+    ),
+  };
 }
 
 export function sameOpenQuestionCards(
@@ -152,7 +135,7 @@ export interface WaitingEntryInput {
     "openQuestionsAt" | "hasPendingApprovals" | "hasPendingUserInput"
   >;
   readonly loaded: boolean;
-  /** The loaded history holds the cards behind `openQuestionsAt`, even if all are answered. */
+  /** The loaded history asks cards, even if all are answered. */
   readonly cardsAsked: boolean;
   readonly cards: ReadonlyArray<unknown>;
   readonly requests: {

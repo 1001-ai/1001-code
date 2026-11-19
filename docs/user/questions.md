@@ -27,6 +27,6 @@ When something you wrote later makes one of the agent's open question cards poin
 can withdraw it with a `Q4: no longer needed` line. The card then reads "No longer needed" and
 leaves this page; you can still answer it if you want to.
 
-A thread's question cards leave the list once you reply to it in any way, so answer every
-question you want to answer in the same message. Archived threads and threads your tag filter hides are not listed.
+A question card stays on the list until you answer or skip it, even after you reply to the
+thread about something else, so you can answer cards one at a time. Archived threads and threads your tag filter hides are not listed.
 The mobile app does not have this page.

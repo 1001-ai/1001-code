@@ -18,6 +18,7 @@ import { cn } from "~/lib/utils";
 import {
   parseQuestionQuote,
   QUESTION_SKIPPED_ANSWER,
+  readAnswerLine,
   type QuestionBlock,
 } from "@t3tools/shared/questionCards";
 import { environmentThreadDetails } from "../../state/threads";
@@ -25,7 +26,6 @@ import {
   findQuestionAnswer,
   isQuestionWithdrawn,
   questionOptions,
-  readAnswerLine,
   selectedMultiOptions,
   toggleMultiOption,
   writeAnswerLine,
