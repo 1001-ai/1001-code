@@ -24,6 +24,8 @@ export const MemorySetup = Schema.Struct({
   voiceAgent: Schema.optional(Schema.Array(Schema.String)),
   /** Makes the thread a project's Inbox. */
   inboxAgent: Schema.optional(Schema.Boolean),
+  /** Lines saved in the Inbox's project memory, such as a preference for the threads it starts. */
+  inboxAgentMemories: Schema.optional(Schema.Array(Schema.String)),
 });
 type MemorySetup = typeof MemorySetup.Type;
 
@@ -31,12 +33,26 @@ type MemorySetup = typeof MemorySetup.Type;
  * The text T3 gives the thread: for the voice agent its instructions and its memories, and for
  * any other Claude thread the memory block of a catalog project with nothing saved.
  */
-const projectMemory = () =>
-  buildMemoryBlock({ documents: [], repository: null, proposable: true })?.text ?? "";
+const projectMemory = (lines: ReadonlyArray<string> = []) =>
+  buildMemoryBlock({
+    documents:
+      lines.length === 0
+        ? []
+        : [
+            {
+              scope: "project",
+              file: "memory/projects/app.md",
+              label: "app",
+              text: lines.map((line) => `- ${line}`).join("\n"),
+            },
+          ],
+    repository: null,
+    proposable: true,
+  })?.text ?? "";
 
 export const memoryText = (setup: MemorySetup): string =>
   setup.inboxAgent === true
-    ? [INBOX_AGENT_INSTRUCTIONS, projectMemory()].join("\n\n")
+    ? [INBOX_AGENT_INSTRUCTIONS, projectMemory(setup.inboxAgentMemories)].join("\n\n")
     : setup.voiceAgent === undefined
       ? projectMemory()
       : [

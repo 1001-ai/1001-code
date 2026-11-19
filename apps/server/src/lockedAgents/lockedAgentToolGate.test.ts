@@ -18,7 +18,10 @@ import { Tool, Toolkit } from "effect/ai";
 import { HttpBody, HttpClient, HttpRouter } from "effect/http";
 
 import { INBOX_FORWARD_NOT_TEAMMATE } from "../inboxAgent/inboxAgentForward.ts";
-import { INBOX_SEND_OTHER_PROJECT } from "../inboxAgent/inboxAgentSend.ts";
+import {
+  INBOX_LAUNCH_NEEDS_WORKTREE,
+  INBOX_SEND_OTHER_PROJECT,
+} from "../inboxAgent/inboxAgentSend.ts";
 import { recordInboxThread } from "../inboxAgent/inboxAgentThreads.ts";
 import * as McpHttpServer from "../mcp/McpHttpServer.ts";
 import * as McpInvocationContext from "../mcp/McpInvocationContext.ts";
@@ -54,6 +57,8 @@ const NAMED_TOOLS = [
   "memory_propose",
   "t3_thread_send",
   "t3_thread_wait",
+  "t3_thread_launch",
+  "orchestrator_capabilities",
   "t3_thread_interrupt",
   "inbox_forward",
 ] as const;
@@ -64,6 +69,7 @@ const probe = (name: string) =>
       threadId: Schema.optional(Schema.String),
       message: Schema.optional(Schema.String),
       commentId: Schema.optional(Schema.String),
+      workspaceStrategy: Schema.optional(Schema.Unknown),
     }),
     success: Schema.Struct({ ok: Schema.Boolean }),
     failure: OrchestratorMcpFailure,
@@ -237,12 +243,14 @@ it.effect(
         expect(yield* voice.ran("read_pull_request_guide")).toBe(false);
         expect(yield* voice.ran("t3_thread_read")).toBe(false);
 
-        // The Inbox reads threads and the Board, and messages its own project's threads.
+        // The Inbox reads threads and the Board, and messages and starts its own project's threads.
         const inbox = yield* session(INBOX);
         expect(yield* inbox.listed).toEqual([
           "board_list",
           "inbox_forward",
           "memory_propose",
+          "orchestrator_capabilities",
+          "t3_thread_launch",
           "t3_thread_list",
           "t3_thread_read",
           "t3_thread_search",
@@ -261,6 +269,12 @@ it.effect(
         expect(
           yield* inbox.refusal("inbox_forward", { threadId: CHAT, commentId: "comment-1" }),
         ).toBe(INBOX_FORWARD_NOT_TEAMMATE);
+        const worktree = { type: "worktree", baseRef: "origin/main", startFromOrigin: true };
+        expect(yield* inbox.ran("t3_thread_launch", { workspaceStrategy: worktree })).toBe(true);
+        expect(yield* inbox.refusal("t3_thread_launch", { message: "Fix it" })).toBe(
+          INBOX_LAUNCH_NEEDS_WORKTREE,
+        );
+        expect(yield* inbox.ran("orchestrator_capabilities")).toBe(true);
         expect(yield* inbox.ran("t3_thread_interrupt", { threadId: CHAT })).toBe(false);
         expect(yield* inbox.ran("link_pull_request")).toBe(false);
         expect(yield* inbox.ran("voice_board")).toBe(false);

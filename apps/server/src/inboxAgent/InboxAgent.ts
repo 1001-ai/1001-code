@@ -1,5 +1,6 @@
 import {
   CommandId,
+  INBOX_AGENT_DEFAULT_EFFORT,
   INBOX_AGENT_DEFAULT_MODEL,
   INBOX_AGENT_THREAD_TITLE,
   type ApplicationProjectCreatedEvent,
@@ -193,7 +194,11 @@ const make = Effect.gen(function* () {
       threadId,
       projectId,
       title: INBOX_AGENT_THREAD_TITLE,
-      modelSelection: { instanceId: provider.instanceId, model: INBOX_AGENT_DEFAULT_MODEL },
+      modelSelection: {
+        instanceId: provider.instanceId,
+        model: INBOX_AGENT_DEFAULT_MODEL,
+        options: [{ id: "effort", value: INBOX_AGENT_DEFAULT_EFFORT }],
+      },
       // `t3_thread_send` refuses targets in broader modes than the caller's. The tool lock still
       // gives the Inbox no shell or file tools. `upgradeRuntimeMode` raises an older Inbox.
       runtimeMode: "full-access",

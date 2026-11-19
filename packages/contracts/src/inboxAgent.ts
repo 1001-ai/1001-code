@@ -6,13 +6,14 @@ import type { OrchestrationV2ThreadShell } from "./orchestrationV2.ts";
 
 /**
  * Each project has one Inbox: an ordinary thread named "Inbox" that the server makes and that the
- * user talks to about all of the project's threads. It runs on Claude with read tools only. The
+ * user talks to about all of the project's threads. It runs on Claude with only its own tools. The
  * wire carries nothing new for it: the server knows its thread from its own state file, and a
  * client finds it with `isInboxThreadShell`.
  */
 
-/** The model a new Inbox thread starts on. The user can pick another Claude model. */
-export const INBOX_AGENT_DEFAULT_MODEL = "claude-sonnet-5-5";
+/** The model a new Inbox thread starts on, at medium effort. The user can pick another Claude model. */
+export const INBOX_AGENT_DEFAULT_MODEL = "claude-opus-5-5";
+export const INBOX_AGENT_DEFAULT_EFFORT = "medium";
 export const INBOX_AGENT_THREAD_TITLE = "Inbox";
 /** The Inbox's tool that passes a teammate's message on, unchanged, to one of its project's threads. */
 export const INBOX_FORWARD_TOOL_NAME = "inbox_forward";

@@ -10,7 +10,7 @@ import { type McpServer, McpSchema } from "effect/ai";
 
 import * as McpInvocationContext from "../mcp/McpInvocationContext.ts";
 import { inboxForwardRefusal } from "../inboxAgent/inboxAgentForward.ts";
-import { inboxSendRefusal } from "../inboxAgent/inboxAgentSend.ts";
+import { inboxLaunchRefusal, inboxSendRefusal } from "../inboxAgent/inboxAgentSend.ts";
 import { isInboxThread } from "../inboxAgent/inboxAgentThreads.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import { lockedAgentKindOf } from "./lockedAgentKind.ts";
@@ -18,8 +18,8 @@ import { lockedAgentKindOf } from "./lockedAgentKind.ts";
 /**
  * The check behind T3's MCP server for every tool, on lists and calls: a locked agent thread gets
  * its own kind's tools only, no other caller gets the voice agent's, and a thread that cannot be
- * read gets nothing. An Inbox's `t3_thread_send` also needs `inboxSendRefusal` to allow it, and
- * its `inbox_forward` needs `inboxForwardRefusal`.
+ * read gets nothing. An Inbox's `t3_thread_send`, `t3_thread_launch` and `inbox_forward` also
+ * need `inboxSendRefusal`, `inboxLaunchRefusal` and `inboxForwardRefusal` to allow them.
  */
 export const makeToolGate = Effect.gen(function* () {
   const threads = yield* ThreadManagementService.ThreadManagementService;
@@ -39,9 +39,11 @@ export const makeToolGate = Effect.gen(function* () {
           ? null
           : target === "t3_thread_send"
             ? inboxSendRefusal
-            : target === INBOX_FORWARD_TOOL_NAME
-              ? inboxForwardRefusal
-              : null;
+            : target === "t3_thread_launch"
+              ? inboxLaunchRefusal
+              : target === INBOX_FORWARD_TOOL_NAME
+                ? inboxForwardRefusal
+                : null;
       if (check !== null) {
         const refusal = yield* check(threads, {
           inboxThreadId: threadId,

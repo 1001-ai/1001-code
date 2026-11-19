@@ -794,7 +794,18 @@ it("gives an inbox agent case its instructions, the project memory and its tools
     "mcp__t3-code__t3_thread_search",
     "mcp__t3-code__t3_thread_send",
     "mcp__t3-code__t3_thread_wait",
+    "mcp__t3-code__t3_thread_launch",
   ]);
+  // A saved preference reaches the Inbox in its project memory.
+  const remembered = cases.find((c) => c.setup.memory?.inboxAgentMemories !== undefined)!;
+  const rememberedSystem = buildBase(template, {
+    model: "claude-haiku-5-5",
+    keepUserInstructions: false,
+    memory: remembered.setup.memory,
+  })
+    .system.map((block) => String(block.text))
+    .join("\n");
+  assert.include(rememberedSystem, `- ${remembered.setup.memory?.inboxAgentMemories?.[0]}`);
 });
 
 it("gives a voice agent case its memories and memory_propose, and grades a replacement", () => {
