@@ -4,6 +4,7 @@ import {
   decodeTeamCatalogFiles,
   teamCatalogCheckoutFolder,
   teamCatalogCloneUrl,
+  teamCatalogViewerFromGh,
 } from "./teamCatalogFiles.ts";
 
 const file = (name: string, value: unknown) => ({
@@ -160,5 +161,25 @@ describe("teamCatalogCheckoutFolder", () => {
       "acme",
       "web",
     ]);
+  });
+});
+
+describe("teamCatalogViewerFromGh", () => {
+  it.each([
+    [
+      "a profile name",
+      0,
+      "octocat\tAda Lovelace\n",
+      { login: "octocat", name: "Ada", problem: null },
+    ],
+    ["no profile name", 0, "octocat\t\n", { login: "octocat", problem: null }],
+    [
+      "a signed-out CLI",
+      1,
+      "",
+      { login: null, problem: "The GitHub CLI is not signed in. Run gh auth login." },
+    ],
+  ] as const)("reads %s", (_name, code, stdout, expected) => {
+    expect(teamCatalogViewerFromGh(code, stdout)).toEqual(expected);
   });
 });
