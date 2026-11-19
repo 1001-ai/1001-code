@@ -27,3 +27,21 @@ export function shouldRevealActivePane(
   if (next.activeSurfaceId === null || previous === null) return false;
   return previous.threadKey === next.threadKey && previous.activeSurfaceId !== next.activeSurfaceId;
 }
+
+export interface PaneStripColumn {
+  readonly label: string;
+  readonly left: number;
+  readonly width: number;
+}
+
+/** Which columns show at this scroll position; a column that only touches an edge does not. */
+export function paneStripColumnsOnScreen(
+  columns: ReadonlyArray<PaneStripColumn>,
+  scrollLeft: number,
+  viewportWidth: number,
+): ReadonlyArray<boolean> {
+  return columns.map(
+    (column) =>
+      column.left + column.width > scrollLeft + 1 && column.left < scrollLeft + viewportWidth - 1,
+  );
+}

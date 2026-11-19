@@ -20,6 +20,7 @@ import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "../../workspaceTitlebar"
 import ChatView from "../ChatView";
 import { BackgroundThreadContext } from "../chat/backgroundThread";
 import { PANE_STRIP_ATTRIBUTE, paneStripInboxThreadId } from "./paneStrip.logic";
+import { PaneStripIndicator } from "./PaneStripIndicator";
 import {
   PANE_STRIP_COLUMN_CLASS,
   PaneStripContext,
@@ -53,7 +54,7 @@ function PaneStrip(props: {
   // Narrow windows keep the sheet, so the strip is a lone thread there.
   const narrow = useMediaQuery(RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY);
   const [panesHost, setPanesHost] = useState<HTMLDivElement | null>(null);
-  const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
   const threadColumnRef = useRef<HTMLDivElement | null>(null);
   const shell = useQuietThreadShell(threadRef);
   const inbox = useInboxAgent(
@@ -78,37 +79,42 @@ function PaneStrip(props: {
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- rests the scroller on the thread column when a thread opens or the Inbox column appears beside it
   useLayoutEffect(() => {
-    const scroller = scrollerRef.current;
     const threadColumn = threadColumnRef.current;
-    if (threadKey === null || scroller === null || threadColumn === null) return;
-    scroller.scrollLeft = inboxShown ? threadColumn.offsetLeft : 0;
+    if (threadKey === null || threadColumn === null) return;
+    threadColumn.parentElement?.scrollTo({ left: inboxShown ? threadColumn.offsetLeft : 0 });
   }, [threadKey, inboxShown]);
 
   return (
-    <div
-      ref={scrollerRef}
-      {...{ [PANE_STRIP_ATTRIBUTE]: "" }}
-      className="relative flex min-h-0 min-w-0 flex-1 snap-x snap-mandatory overflow-x-auto overflow-y-hidden overscroll-x-contain [scrollbar-width:none]"
-    >
-      {threadRef !== null && inboxThreadId !== null ? (
-        <InboxPane
-          key={`${threadRef.environmentId}:${inboxThreadId}`}
-          hostRef={threadRef}
-          threadId={inboxThreadId}
-        />
-      ) : null}
+    <div className="relative flex min-h-0 min-w-0 flex-1">
       <div
-        ref={threadColumnRef}
-        className={cn(
-          panesOpen
-            ? PANE_STRIP_COLUMN_CLASS
-            : "flex min-h-0 min-w-0 shrink-0 basis-full snap-start",
-          "flex-row",
-        )}
+        ref={setScroller}
+        {...{ [PANE_STRIP_ATTRIBUTE]: "" }}
+        className="relative flex min-h-0 min-w-0 flex-1 snap-x snap-mandatory overflow-x-auto overflow-y-hidden overscroll-x-contain [scrollbar-width:none]"
       >
-        <PaneStripContext value={narrow ? null : { panesHost }}>{props.children}</PaneStripContext>
+        {threadRef !== null && inboxThreadId !== null ? (
+          <InboxPane
+            key={`${threadRef.environmentId}:${inboxThreadId}`}
+            hostRef={threadRef}
+            threadId={inboxThreadId}
+          />
+        ) : null}
+        <div
+          ref={threadColumnRef}
+          data-pane-strip-label="Thread"
+          className={cn(
+            panesOpen
+              ? PANE_STRIP_COLUMN_CLASS
+              : "flex min-h-0 min-w-0 shrink-0 basis-full snap-start",
+            "flex-row",
+          )}
+        >
+          <PaneStripContext value={narrow ? null : { panesHost }}>
+            {props.children}
+          </PaneStripContext>
+        </div>
+        <div ref={setPanesHost} className="contents" />
       </div>
-      <div ref={setPanesHost} className="contents" />
+      <PaneStripIndicator scroller={scroller} />
     </div>
   );
 }
@@ -131,6 +137,7 @@ function InboxPane(props: { readonly hostRef: ScopedThreadRef; readonly threadId
     <section
       ref={observe}
       data-side-chat-pane
+      data-pane-strip-label="Inbox"
       aria-label="Inbox"
       className={cn(PANE_STRIP_COLUMN_CLASS, "border-r border-border bg-background")}
     >

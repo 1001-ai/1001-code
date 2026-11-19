@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { paneStripInboxThreadId, shouldRevealActivePane } from "./paneStrip.logic";
+import {
+  paneStripColumnsOnScreen,
+  paneStripInboxThreadId,
+  shouldRevealActivePane,
+} from "./paneStrip.logic";
 
 describe("paneStripInboxThreadId", () => {
   it.each([
@@ -48,5 +52,21 @@ describe("shouldRevealActivePane", () => {
     },
   ])("$name", ({ previous, next, expected }) => {
     expect(shouldRevealActivePane(previous, next)).toBe(expected);
+  });
+});
+
+describe("paneStripColumnsOnScreen", () => {
+  const columns = ["Inbox", "Thread", "Diff", "Terminal"].map((label, index) => ({
+    label,
+    left: index * 500,
+    width: 500,
+  }));
+
+  it.each([
+    { name: "resting on the thread", scrollLeft: 500, expected: [false, true, true, false] },
+    { name: "swiped to the Inbox", scrollLeft: 0, expected: [true, true, false, false] },
+    { name: "between two rests", scrollLeft: 750, expected: [false, true, true, true] },
+  ])("$name", ({ scrollLeft, expected }) => {
+    expect(paneStripColumnsOnScreen(columns, scrollLeft, 1000)).toEqual(expected);
   });
 });

@@ -83,6 +83,7 @@ function PaneStripPanes(
       ))}
       <section
         aria-label="New pane"
+        data-pane-strip-label="New pane"
         className={cn(PANE_STRIP_COLUMN_CLASS, "border-l border-border bg-background")}
       >
         <header className={cn(PANE_HEADER_CLASS, isElectron && "drag-region")}>New pane</header>
@@ -138,6 +139,7 @@ function StripPane(props: {
       ref={observe}
       {...workspaceAreaProps("panel", 4, `Workspace panel: ${title}`)}
       data-pane-strip-pane={surface.id}
+      data-pane-strip-label={title}
       onPointerDownCapture={activate}
       onFocusCapture={activate}
       className={cn(PANE_STRIP_COLUMN_CLASS, "border-l border-border bg-background")}
