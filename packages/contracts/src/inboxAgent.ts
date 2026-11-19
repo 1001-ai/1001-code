@@ -52,6 +52,10 @@ export const InboxAgentDigestEntryKind = Schema.Literals([
   "run-failed",
   "question",
   "pull-request",
+  /** A linked pull request was merged; the detail is its URL and title. */
+  "pull-request-merged",
+  /** An agent of the thread moved a Board task to a completed state. */
+  "task-completed",
   /** A teammate's message reached a thread: directly, through the Inbox, or forwarded by it. */
   "message-received",
   /** A teammate's message reached no thread; the detail says why. */
@@ -64,14 +68,17 @@ export const InboxAgentDigestEntry = Schema.Struct({
   threadId: ThreadId,
   title: Schema.String.check(Schema.isMaxLength(INBOX_AGENT_DIGEST_TITLE_MAX_LENGTH)),
   at: IsoDateTime,
-  /** The run's error, the pull request's URL, or where a teammate's message went and why. */
+  /**
+   * The run's error or the first line of its last answer, the pull request's URL, the task, or
+   * where a teammate's message went and why.
+   */
   detail: Schema.optional(
     Schema.String.check(Schema.isMaxLength(INBOX_AGENT_DIGEST_DETAIL_MAX_LENGTH)),
   ),
 });
 export type InboxAgentDigestEntry = typeof InboxAgentDigestEntry.Type;
 
-/** What changed in a project's threads between the user's previous Inbox message and this one. */
+/** What changed in a project's threads since the previous message to the Inbox (the user's or the app's). */
 export const InboxAgentDigest = Schema.Struct({
   since: IsoDateTime,
   until: IsoDateTime,

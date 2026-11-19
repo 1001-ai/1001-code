@@ -18,13 +18,15 @@ const KIND_LABELS: Record<InboxAgentDigestEntry["kind"], string> = {
   "run-failed": "Failed",
   question: "Waiting for you",
   "pull-request": "Pull request",
+  "pull-request-merged": "Merged",
+  "task-completed": "Task done",
   "message-received": "Teammate message",
   "message-not-delivered": "Message not delivered",
 };
 
 /**
  * The digest the Inbox agent was given with this message: what changed in the project's threads
- * since the user's previous message. Collapsed until opened. A message without one (any other
+ * since the previous message to it. Collapsed until opened. A message without one (any other
  * thread's, or one sent while the Inbox was answering) draws nothing.
  */
 export function InboxDigestCard(props: {
