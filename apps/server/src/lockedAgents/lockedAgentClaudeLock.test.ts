@@ -87,7 +87,7 @@ it("gives a voice agent thread its own tools and nothing that runs commands or t
   expect(locked.thinking).toEqual({ type: "disabled" });
 });
 
-it("gives an Inbox thread its five read tools, its own prompt with the project memory, and its thinking", () => {
+it("gives an Inbox thread its own tools, its own prompt with the project memory, and its thinking", () => {
   const unlocked = fullAccess();
   const locked = lockClaudeQueryForLockedAgent(unlocked, inbox, "<memory>project memory</memory>");
   expect(locked.tools).toEqual([]);
@@ -95,6 +95,8 @@ it("gives an Inbox thread its five read tools, its own prompt with the project m
     "mcp__t3-code__t3_thread_list",
     "mcp__t3-code__t3_thread_read",
     "mcp__t3-code__t3_thread_search",
+    "mcp__t3-code__t3_thread_send",
+    "mcp__t3-code__t3_thread_wait",
     "mcp__t3-code__board_list",
     "mcp__t3-code__memory_propose",
   ]);

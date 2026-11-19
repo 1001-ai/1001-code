@@ -266,6 +266,11 @@ import {
 import { SidebarDraftBlock } from "./sidebar/SidebarDraftBlock";
 import { SidebarFolderInboxRow } from "./inboxAgent/InboxSidebarRow";
 import { SidebarProjectsSection } from "./inboxAgent/SidebarProjectsSection";
+import { messageFromInbox, messageFromInboxPlan } from "./inboxAgent/messageFromInbox";
+import {
+  MESSAGE_FROM_INBOX_ITEM_ID,
+  withMessageFromInboxItem,
+} from "./inboxAgent/messageFromInbox.logic";
 import { withoutInboxThreads } from "../state/inboxAgent.logic";
 import {
   SidebarProjectFolderHeader,
@@ -2334,9 +2339,10 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         timestampFormat,
         selectedThreads[0]!.environmentId,
       );
+      const inboxPlan = messageFromInboxPlan(selectedThreads);
       const clicked = await settlePromise(() =>
         api.contextMenu.show(
-          [
+          withMessageFromInboxItem(inboxPlan, [
             ...(unpinMenuItem
               ? [{ ...unpinMenuItem, disabled: !canOperateThreads(pinnedSelectedThreads) }]
               : []),
@@ -2385,11 +2391,15 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               destructive: true,
               disabled: !canOperateThreads(selectedThreads),
             },
-          ],
+          ]),
           position,
         ),
       );
       if (clicked._tag === "Failure" || clicked.value === null) return;
+      if (clicked.value === MESSAGE_FROM_INBOX_ITEM_ID) {
+        await messageFromInbox(inboxPlan, navigateToThread);
+        return;
+      }
       const actionTargets =
         clicked.value === "unpin"
           ? pinnedSelectedThreads

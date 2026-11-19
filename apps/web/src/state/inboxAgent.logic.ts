@@ -15,7 +15,7 @@ export const INBOX_UNAVAILABLE_REASON =
 
 export const INBOX_COMPOSER_PLACEHOLDER = "Ask about this project's threads";
 
-type InboxShell = Pick<
+export type InboxShell = Pick<
   OrchestrationV2ThreadShell,
   | "id"
   | "projectId"

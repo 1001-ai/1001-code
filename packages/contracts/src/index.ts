@@ -72,6 +72,7 @@ export * from "./board.ts";
 export * from "./teamProjectLinks.ts";
 export * from "./memory.ts";
 export * from "./agentsBoard.ts";
+export * from "./projectMoments.ts";
 export * from "./voiceOutput.ts";
 export * from "./voiceAgent.ts";
 export * from "./lockedAgents.ts";

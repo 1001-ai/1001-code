@@ -3,9 +3,11 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   EnvironmentId,
+  MessageId,
   OrchestratorMcpFailure,
   ProjectId,
   ProviderInstanceId,
+  RunId,
   ThreadId,
 } from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
@@ -15,6 +17,7 @@ import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
 import { HttpBody, HttpClient, HttpRouter } from "effect/http";
 
+import { INBOX_SEND_OTHER_PROJECT } from "../inboxAgent/inboxAgentSend.ts";
 import { recordInboxThread } from "../inboxAgent/inboxAgentThreads.ts";
 import * as McpHttpServer from "../mcp/McpHttpServer.ts";
 import * as McpInvocationContext from "../mcp/McpInvocationContext.ts";
@@ -36,6 +39,7 @@ const environmentId = EnvironmentId.make("environment-test");
 const CHAT = ThreadId.make("thread-chat");
 const VOICE = ThreadId.make("thread-voice");
 const INBOX = ThreadId.make("thread-inbox");
+const ELSEWHERE = ThreadId.make("thread-elsewhere");
 
 /**
  * Stand-ins under the real names of the tools the Inbox may use, and one it may not: the gate
@@ -48,10 +52,16 @@ const NAMED_TOOLS = [
   "board_list",
   "memory_propose",
   "t3_thread_send",
+  "t3_thread_wait",
+  "t3_thread_interrupt",
 ] as const;
 const probe = (name: string) =>
   Tool.make(name, {
     description: "A stand-in.",
+    parameters: Schema.Struct({
+      threadId: Schema.optional(Schema.String),
+      message: Schema.optional(Schema.String),
+    }),
     success: Schema.Struct({ ok: Schema.Boolean }),
     failure: OrchestratorMcpFailure,
     failureMode: "return",
@@ -95,7 +105,12 @@ it.effect(
           ],
           // An ordinary thread: only the server's record makes it the Inbox.
           [INBOX, liveThreadShell(INBOX)],
+          [
+            ELSEWHERE,
+            { ...liveThreadShell(ELSEWHERE), projectId: ProjectId.make("project-other") },
+          ],
         ]);
+        const userMessageId = MessageId.make("message-user");
         recordInboxThread(ProjectId.make("project-acme"), INBOX);
         const boardCalls: Array<string> = [];
         const serverLayer = McpHttpServer.layerMcpTransport(
@@ -118,6 +133,14 @@ it.effect(
               Layer.mock(ThreadManagementService.ThreadManagementService)({
                 getThreadShell: (threadId) =>
                   Effect.succeed((shells.get(threadId) as typeof chat | undefined) ?? null),
+                // The Inbox's run answers the user's own message.
+                getThreadRecords: () =>
+                  Effect.succeed({
+                    runs: [{ id: RunId.make("run:mcp-test"), userMessageId }],
+                    messages: [
+                      { id: userMessageId, role: "user", createdBy: "user", creationSource: "web" },
+                    ],
+                  } as never),
               }),
               Layer.mock(VoiceAgent.VoiceAgent)({
                 board: (caller) =>
@@ -170,7 +193,7 @@ it.effect(
                   Effect.map(
                     (body) =>
                       body as {
-                        readonly error?: unknown;
+                        readonly error?: { readonly message?: string };
                         readonly result?: {
                           readonly tools?: ReadonlyArray<{ readonly name: string }>;
                           readonly isError?: boolean;
@@ -186,9 +209,13 @@ it.effect(
                 ),
               ),
               /** Whether the call ran: a tool the caller cannot see fails like one that is not there. */
-              ran: (name: string) =>
-                rpc("tools/call", { name, arguments: {} }).pipe(
+              ran: (name: string, args: object = {}) =>
+                rpc("tools/call", { name, arguments: args }).pipe(
                   Effect.map((body) => body.error === undefined && body.result?.isError !== true),
+                ),
+              refusal: (name: string, args: object) =>
+                rpc("tools/call", { name, arguments: args }).pipe(
+                  Effect.map((body) => body.error?.message),
                 ),
             };
           });
@@ -207,7 +234,7 @@ it.effect(
         expect(yield* voice.ran("read_pull_request_guide")).toBe(false);
         expect(yield* voice.ran("t3_thread_read")).toBe(false);
 
-        // The Inbox reads threads and the Board, and does nothing else.
+        // The Inbox reads threads and the Board, and messages its own project's threads.
         const inbox = yield* session(INBOX);
         expect(yield* inbox.listed).toEqual([
           "board_list",
@@ -215,9 +242,18 @@ it.effect(
           "t3_thread_list",
           "t3_thread_read",
           "t3_thread_search",
+          "t3_thread_send",
+          "t3_thread_wait",
         ]);
         expect(yield* inbox.ran("t3_thread_read")).toBe(true);
+        expect(yield* inbox.ran("t3_thread_send", { threadId: CHAT, message: "Status?" })).toBe(
+          true,
+        );
+        expect(yield* inbox.refusal("t3_thread_send", { threadId: ELSEWHERE, message: "Hi" })).toBe(
+          INBOX_SEND_OTHER_PROJECT,
+        );
         expect(yield* inbox.ran("t3_thread_send")).toBe(false);
+        expect(yield* inbox.ran("t3_thread_interrupt", { threadId: CHAT })).toBe(false);
         expect(yield* inbox.ran("link_pull_request")).toBe(false);
         expect(yield* inbox.ran("voice_board")).toBe(false);
         expect(boardCalls).toEqual([VOICE]);
