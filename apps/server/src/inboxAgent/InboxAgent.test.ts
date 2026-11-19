@@ -48,6 +48,10 @@ const claude = (fields: Partial<ServerProvider> = {}) =>
 const signedOut = claude({ auth: { status: "unauthenticated" } as never });
 
 type Create = Extract<OrchestrationV2ServerCommand, { readonly type: "thread.create" }>;
+type RuntimeModeSet = Extract<
+  OrchestrationV2ServerCommand,
+  { readonly type: "thread.runtime-mode.set" }
+>;
 type Shell = OrchestrationV2ThreadShell & { deletedAt?: unknown };
 
 const projectCreated = (projectId: ProjectId) =>
@@ -65,6 +69,7 @@ const withInbox = <A, E>(
   test: (fixture: {
     readonly service: InboxAgent.InboxAgent["Service"];
     readonly created: Array<Create>;
+    readonly runtimeModeSets: Array<RuntimeModeSet>;
     /** Each create, as the watcher's milestone. */
     readonly creates: Queue.Queue<Create>;
     readonly shells: Map<ThreadId, Shell>;
@@ -83,6 +88,7 @@ const withInbox = <A, E>(
       const stateDir = options.stateDir ?? (yield* fs.makeTempDirectoryScoped());
       const shells = new Map<ThreadId, Shell>();
       const created: Array<Create> = [];
+      const runtimeModeSets: Array<RuntimeModeSet> = [];
       const creates = yield* Queue.unbounded<Create>();
       const projects: Array<ProjectId> = [PROJECT];
       const projectEvents = yield* Queue.unbounded<ApplicationStoredEvent>();
@@ -138,6 +144,14 @@ const withInbox = <A, E>(
           isProviderInstanceEnabledForProject: () => Effect.sync(() => enabled),
           dispatch: (command) =>
             Effect.gen(function* () {
+              if (command.type === "thread.runtime-mode.set") {
+                runtimeModeSets.push(command);
+                // As the orchestrator refuses a change that would end background work.
+                if (command.threadId === "inbox-refused") return yield* Effect.die("busy");
+                const shell = shells.get(command.threadId)!;
+                shells.set(command.threadId, { ...shell, runtimeMode: command.runtimeMode });
+                return undefined as never;
+              }
               if (command.type !== "thread.create") throw new Error(command.type);
               // Two triggers racing would both get here without the service's lock.
               yield* Effect.yieldNow;
@@ -165,6 +179,7 @@ const withInbox = <A, E>(
       return yield* test({
         service,
         created,
+        runtimeModeSets,
         creates,
         shells,
         projects,
@@ -272,6 +287,89 @@ it.effect("takes the oldest Inbox the server made before when nothing is recorde
         created: false,
       });
       expect(created).toEqual([]);
+    }),
+  ),
+);
+
+it.effect("raises an Inbox an older build made to full-access, and leaves a full-access one", () =>
+  withInbox({}, ({ service, created, runtimeModeSets, shells }) =>
+    Effect.gen(function* () {
+      const server = (id: string, fields: Partial<Shell>) =>
+        shells.set(ThreadId.make(id), {
+          ...liveThreadShell(ThreadId.make(id), { runtimeMode: "approval-required" }),
+          projectId: PROJECT,
+          title: "Inbox",
+          createdBy: "system",
+          creationSource: "server",
+          activeRunId: null,
+          ...fields,
+        } as Shell);
+      // Found, not recorded.
+      server("inbox-old", { updatedAt: DateTime.makeUnsafe(5_000) });
+      expect(yield* service.ensure(PROJECT)).toMatchObject({
+        threadId: "inbox-old",
+        created: false,
+      });
+      expect(created).toEqual([]);
+      expect(runtimeModeSets).toEqual([
+        {
+          type: "thread.runtime-mode.set",
+          commandId: "inbox-agent:runtime-mode:inbox-old:5000",
+          threadId: "inbox-old",
+          runtimeMode: "full-access",
+        },
+      ]);
+      expect(shells.get(ThreadId.make("inbox-old"))?.runtimeMode).toBe("full-access");
+      // Recorded and already full-access: nothing is sent.
+      yield* service.ensure(PROJECT);
+      expect(runtimeModeSets).toHaveLength(1);
+
+      // Recorded and lowered again: raised again.
+      server("inbox-old", { updatedAt: DateTime.makeUnsafe(6_000) });
+      yield* service.ensure(PROJECT);
+      expect(runtimeModeSets.map((command) => command.commandId)).toEqual([
+        "inbox-agent:runtime-mode:inbox-old:5000",
+        "inbox-agent:runtime-mode:inbox-old:6000",
+      ]);
+    }),
+  ),
+);
+
+it.effect("returns the Inbox when raising its runtime mode fails", () =>
+  withInbox({}, ({ service, created, runtimeModeSets, shells }) =>
+    Effect.gen(function* () {
+      const threadId = ThreadId.make("inbox-refused");
+      shells.set(threadId, {
+        ...liveThreadShell(threadId, { runtimeMode: "approval-required", activeRunId: null }),
+        projectId: PROJECT,
+        title: "Inbox",
+        createdBy: "system",
+        creationSource: "server",
+      } as Shell);
+      expect(yield* service.ensure(PROJECT)).toEqual({ status: "ready", threadId, created: false });
+      expect(runtimeModeSets).toHaveLength(1);
+      expect(created).toEqual([]);
+      expect(service.isInboxThread(threadId)).toBe(true);
+    }),
+  ),
+);
+
+it.effect("leaves a running Inbox's runtime mode for a later ensure", () =>
+  withInbox({}, ({ service, runtimeModeSets, shells }) =>
+    Effect.gen(function* () {
+      const threadId = ThreadId.make("inbox-running");
+      shells.set(threadId, {
+        ...liveThreadShell(threadId, { runtimeMode: "approval-required" }),
+        projectId: PROJECT,
+        title: "Inbox",
+        createdBy: "system",
+        creationSource: "server",
+      } as Shell);
+      expect(yield* service.ensure(PROJECT)).toMatchObject({ threadId, created: false });
+      expect(runtimeModeSets).toEqual([]);
+      shells.set(threadId, { ...shells.get(threadId)!, activeRunId: null });
+      yield* service.ensure(PROJECT);
+      expect(runtimeModeSets.map((command) => command.threadId)).toEqual([threadId]);
     }),
   ),
 );

@@ -72,17 +72,27 @@ const StateFile = Schema.fromJsonString(
 const decodeState = Schema.decodeUnknownOption(StateFile);
 const encodeState = Schema.encodeSync(StateFile);
 
+/** What `ensure` reads of an Inbox thread. */
+type InboxShell = Pick<
+  OrchestrationV2ThreadShell,
+  | "id"
+  | "projectId"
+  | "title"
+  | "createdBy"
+  | "creationSource"
+  | "lineage"
+  | "createdAt"
+  | "runtimeMode"
+  | "activeRunId"
+  | "updatedAt"
+>;
+
 /** The oldest thread of a project that looks like its Inbox, as clients pick it. */
 function oldestInboxShell(
-  shells: ReadonlyArray<
-    Pick<
-      OrchestrationV2ThreadShell,
-      "id" | "projectId" | "title" | "createdBy" | "creationSource" | "lineage" | "createdAt"
-    >
-  >,
+  shells: ReadonlyArray<InboxShell>,
   projectId: ProjectId,
-): ThreadId | null {
-  let found: (typeof shells)[number] | null = null;
+): InboxShell | null {
+  let found: InboxShell | null = null;
   for (const shell of shells) {
     if (shell.projectId !== projectId || !isInboxThreadShell(shell)) continue;
     if (
@@ -92,7 +102,7 @@ function oldestInboxShell(
       found = shell;
     }
   }
-  return found?.id ?? null;
+  return found;
 }
 
 const make = Effect.gen(function* () {
@@ -136,16 +146,18 @@ const make = Effect.gen(function* () {
   let waitingForClaude = false;
   let created = 0;
 
+  /** The recorded thread's shell while it is still the project's Inbox, else null. */
   const liveThread = (threadId: ThreadId, projectId: ProjectId) =>
     threads
       .getThreadShell(threadId)
       .pipe(
-        Effect.map(
-          (shell) =>
-            shell !== null &&
-            shell.deletedAt == null &&
-            shell.projectId === projectId &&
-            isInboxThreadShell(shell),
+        Effect.map((shell) =>
+          shell !== null &&
+          shell.deletedAt == null &&
+          shell.projectId === projectId &&
+          isInboxThreadShell(shell)
+            ? shell
+            : null,
         ),
       );
 
@@ -183,7 +195,7 @@ const make = Effect.gen(function* () {
       title: INBOX_AGENT_THREAD_TITLE,
       modelSelection: { instanceId: provider.instanceId, model: INBOX_AGENT_DEFAULT_MODEL },
       // `t3_thread_send` refuses targets in broader modes than the caller's. The tool lock still
-      // gives the Inbox no shell or file tools.
+      // gives the Inbox no shell or file tools. `upgradeRuntimeMode` raises an older Inbox.
       runtimeMode: "full-access",
       interactionMode: "default",
       branch: null,
@@ -194,13 +206,46 @@ const make = Effect.gen(function* () {
     return threadId;
   });
 
+  /**
+   * Raises an Inbox an older build made at `approval-required` to `full-access`, as `create`
+   * makes it. Claude cannot switch modes in a session, so the change ends the Inbox's session: a
+   * running Inbox is left for the next ensure. A failure only logs; the Inbox is still returned.
+   */
+  const upgradeRuntimeMode = (shell: InboxShell) =>
+    shell.runtimeMode === "full-access" || shell.activeRunId !== null
+      ? Effect.void
+      : threads
+          .dispatch({
+            type: "thread.runtime-mode.set",
+            // The thread's last change is in the id: a refusal is recorded against its id, and
+            // would otherwise refuse every later try.
+            commandId: CommandId.make(
+              `inbox-agent:runtime-mode:${shell.id}:${DateTime.toEpochMillis(shell.updatedAt)}`,
+            ),
+            threadId: shell.id,
+            runtimeMode: "full-access",
+          })
+          .pipe(
+            Effect.catchCause((cause) =>
+              Effect.logWarning("The Inbox's runtime mode was not raised.", {
+                threadId: shell.id,
+                cause,
+              }),
+            ),
+            Effect.asVoid,
+          );
+
   const ensureUnlocked = Effect.fn("InboxAgent.ensure")(function* (projectId: ProjectId) {
     if (yield* managedFolders.isScratchProject(projectId)) return { status: "skipped" } as const;
     const recorded = inboxThreadOf(projectId);
-    if (recorded !== undefined && (yield* liveThread(recorded, projectId))) {
-      return { status: "ready", threadId: recorded, created: false } as const;
+    const recordedShell = recorded === undefined ? null : yield* liveThread(recorded, projectId);
+    if (recordedShell !== null) {
+      yield* upgradeRuntimeMode(recordedShell);
+      return { status: "ready", threadId: recordedShell.id, created: false } as const;
     }
-    const existing = yield* findExisting(projectId);
+    const existingShell = yield* findExisting(projectId);
+    if (existingShell !== null) yield* upgradeRuntimeMode(existingShell);
+    const existing = existingShell?.id ?? null;
     const threadId = existing ?? (yield* create(projectId));
     if (threadId === null) {
       waitingForClaude = true;
