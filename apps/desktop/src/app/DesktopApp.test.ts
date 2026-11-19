@@ -47,6 +47,7 @@ import * as DesktopShellEnvironment from "../shell/DesktopShellEnvironment.ts";
 import * as DesktopSnapShot from "../snapShot/DesktopSnapShot.ts";
 import * as DesktopRendererHistory from "../telemetry/DesktopRendererHistory.ts";
 import * as DesktopUpdates from "../updates/DesktopUpdates.ts";
+import * as DesktopSelfUpdate from "../updates/DesktopSelfUpdate.ts";
 import * as DesktopApplicationMenu from "../window/DesktopApplicationMenu.ts";
 import * as DesktopWindow from "../window/DesktopWindow.ts";
 import * as DesktopWslBackend from "../wsl/DesktopWslBackend.ts";
@@ -149,6 +150,9 @@ it.effect.each([false, true])(
           Effect.provideService(DesktopUpdates.DesktopUpdates, {
             configure: Effect.void,
           } as unknown as DesktopUpdates.DesktopUpdates["Service"]),
+          Effect.provideService(DesktopSelfUpdate.DesktopSelfUpdate, {
+            start: Effect.void,
+          } as unknown as DesktopSelfUpdate.DesktopSelfUpdate["Service"]),
           Effect.provideService(DesktopLinuxUrlHandler.DesktopLinuxUrlHandler, {
             register: Deferred.succeed(registrationStarted, undefined).pipe(
               Effect.andThen(Deferred.await(releaseRegistration)),

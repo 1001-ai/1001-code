@@ -118,6 +118,7 @@ import { environmentIdsKey } from "~/state/environmentAtomList";
 import { environmentSessionStatesAtom } from "~/state/session";
 import { useCheckProviderUpdates } from "../ProviderUpdatesAction";
 import { canUpdateServer } from "../ServerUpdateAction";
+import { useDesktopSelfUpdateSettingsRow } from "../desktop/DesktopSelfUpdateControls";
 import { downloadLocalUpdate } from "../sidebar/SidebarUpdatePill";
 import { useUpdateEverythingRun } from "../sidebar/updateEverythingRun";
 import { awaitsTrackSwitch, channelSwitchLabel } from "../sidebar/updateEverything.logic";
@@ -177,6 +178,7 @@ function AboutVersionSection() {
   // The desktop updates this machine, whose policy the primary environment reports.
   const primaryPolicy = usePrimaryManagedPolicy();
   const updatesDenial = hasDesktopBridge ? managedUpdatesDenial(primaryPolicy) : undefined;
+  const selfUpdateRow = useDesktopSelfUpdateSettingsRow();
   const nightlyDeniedBy =
     hasDesktopBridge && primaryPolicy?.limits?.updates?.allowNightly === false
       ? primaryPolicy.organization
@@ -328,6 +330,7 @@ function AboutVersionSection() {
             {buttonTooltip ? <TooltipPopup>{buttonTooltip}</TooltipPopup> : null}
           </Tooltip>
         }
+        {...selfUpdateRow}
       />
       {hasDesktopBridge ? (
         <SettingsRow

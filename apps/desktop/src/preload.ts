@@ -12,6 +12,7 @@ import { exposeClerkBridge } from "@clerk/electron/preload";
 import { contextBridge, ipcRenderer, webFrame, webUtils } from "electron";
 
 import * as IpcChannels from "./ipc/channels.ts";
+import * as SelfUpdateChannels from "./ipc/selfUpdateChannels.ts";
 import { mergeLegacyLocalStorage } from "./legacyLocalStorageMerge.ts";
 
 const SNAP_SHOT_EVENT_TYPES = new Set([
@@ -340,6 +341,19 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       ipcRenderer.removeListener(IpcChannels.UPDATE_STATE_CHANNEL, wrappedListener);
     };
   },
+  getSelfUpdateState: () => ipcRenderer.invoke(SelfUpdateChannels.SELF_UPDATE_GET_STATE_CHANNEL),
+  onSelfUpdateState: (listener) => {
+    const wrappedListener = (_event: Electron.IpcRendererEvent, state: unknown) => {
+      if (typeof state !== "object" || state === null) return;
+      listener(state as Parameters<typeof listener>[0]);
+    };
+    ipcRenderer.on(SelfUpdateChannels.SELF_UPDATE_STATE_CHANNEL, wrappedListener);
+    return () => {
+      ipcRenderer.removeListener(SelfUpdateChannels.SELF_UPDATE_STATE_CHANNEL, wrappedListener);
+    };
+  },
+  checkForSelfUpdate: () => ipcRenderer.invoke(SelfUpdateChannels.SELF_UPDATE_CHECK_CHANNEL),
+  restartToUpdate: () => ipcRenderer.invoke(SelfUpdateChannels.SELF_UPDATE_RESTART_CHANNEL),
   webLinks: {
     setReady: (ready) => ipcRenderer.invoke(IpcChannels.WEB_LINK_READY_CHANNEL, ready),
     onOpen: (listener) => {

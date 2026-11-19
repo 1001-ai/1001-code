@@ -34,6 +34,7 @@ vi.mock("../../env", async (importOriginal) => ({
   isElectron: true,
 }));
 vi.mock("./useUpdateEverything", () => ({
+  isHostedByThisApp: () => false,
   useUpdateEverything: () => ({
     hasUpdates: mocks.hasUpdates,
     summary: "Update everything",

@@ -3,7 +3,10 @@
 > This build is a fork that ships separately, and its updates are managed separately. The desktop
 > app, the server, `t3 update`, `t3 service install`, SSH hosts and the mobile app do not check for,
 > offer, download or install T3 Code releases; they say "Updates for this build are managed
-> separately." instead. The rest of this page describes upstream T3 Code.
+> separately." instead. A desktop build set up to update itself is the exception: it checks for a
+> new version every hour, and **Settings → General** and the update button at the bottom of the
+> sidebar check on request and offer **Restart to update** once the new version is ready. The rest
+> of this page describes upstream T3 Code.
 
 The app you use and the server running your agents can be on different machines.
 When a server is behind your web or desktop app, the update button at the bottom

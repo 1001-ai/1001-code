@@ -20,6 +20,7 @@ import type {
   DesktopAppActivationRequest,
   DesktopAppActivationResponse,
 } from "./desktopAppActivation.ts";
+import type { DesktopSelfUpdateCheckResult, DesktopSelfUpdateState } from "./desktopSelfUpdate.ts";
 
 export interface ContextMenuItem<T extends string = string> {
   id: T;
@@ -1160,6 +1161,12 @@ export interface DesktopBridge {
   /** With a version, installs only that downloaded build. */
   installUpdate: (expectedVersion?: string) => Promise<DesktopUpdateActionResult>;
   onUpdateState: (listener: (state: DesktopUpdateState) => void) => () => void;
+  getSelfUpdateState: () => Promise<DesktopSelfUpdateState>;
+  onSelfUpdateState: (listener: (state: DesktopSelfUpdateState) => void) => () => void;
+  /** Checks now unless a build is ready or running; a check already running is waited for. */
+  checkForSelfUpdate: () => Promise<DesktopSelfUpdateCheckResult>;
+  /** Only when `ready`: hands over to the update command and quits. False when it did not. */
+  restartToUpdate: () => Promise<boolean>;
   cliCommand: {
     getState: () => Promise<DesktopCliCommandState>;
     install: () => Promise<DesktopCliCommandState>;

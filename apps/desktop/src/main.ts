@@ -70,6 +70,7 @@ import * as DesktopTelemetryPublisher from "./telemetry/DesktopTelemetryPublishe
 import * as DesktopRendererHistory from "./telemetry/DesktopRendererHistory.ts";
 import * as DesktopUpdatePolicy from "./updates/DesktopUpdatePolicy.ts";
 import * as DesktopUpdates from "./updates/DesktopUpdates.ts";
+import * as DesktopSelfUpdate from "./updates/DesktopSelfUpdate.ts";
 import * as BrowserImport from "./preview/BrowserImport/BrowserImport.ts";
 import * as LinuxBrowserSecret from "./preview/BrowserImport/LinuxBrowserSecret.ts";
 import * as BrowserSession from "./preview/BrowserSession.ts";
@@ -215,6 +216,8 @@ const layerDesktopApplication = Layer.mergeAll(
   DesktopLinuxUrlHandler.layer,
   DesktopCliCommand.layer,
 ).pipe(
+  // Provided, not merged: the application menu's Check for Updates needs it.
+  Layer.provideMerge(DesktopSelfUpdate.layer),
   Layer.provideMerge(layerDesktopSnapShot),
   Layer.provideMerge(
     DesktopUpdates.layer.pipe(

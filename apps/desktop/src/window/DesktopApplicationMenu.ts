@@ -11,6 +11,8 @@ import * as ElectronDialog from "../electron/ElectronDialog.ts";
 import * as ElectronMenu from "../electron/ElectronMenu.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopUpdates from "../updates/DesktopUpdates.ts";
+import * as DesktopSelfUpdate from "../updates/DesktopSelfUpdate.ts";
+import * as DesktopSelfUpdateMenu from "./DesktopSelfUpdateMenu.ts";
 import * as DesktopWindow from "./DesktopWindow.ts";
 
 export class DesktopApplicationMenuActionError extends Schema.TaggedError<DesktopApplicationMenuActionError>()(
@@ -34,6 +36,7 @@ export class DesktopApplicationMenu extends Context.Service<
 
 type DesktopApplicationMenuRuntimeServices =
   | DesktopUpdates.DesktopUpdates
+  | DesktopSelfUpdate.DesktopSelfUpdate
   | DesktopWindow.DesktopWindow
   | ElectronDialog.ElectronDialog;
 
@@ -89,6 +92,7 @@ const checkForUpdatesFromMenu = Effect.gen(function* () {
 }).pipe(Effect.withSpan("desktop.menu.checkForUpdates"));
 
 const handleCheckForUpdatesMenuClick = Effect.gen(function* () {
+  if (yield* DesktopSelfUpdateMenu.handleCheckForUpdatesClick) return;
   const updates = yield* DesktopUpdates.DesktopUpdates;
   const electronDialog = yield* ElectronDialog.ElectronDialog;
   const disabledReason = yield* updates.disabledReason;
