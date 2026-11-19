@@ -1289,7 +1289,7 @@ const SENDER_THREAD_ID = ThreadId.make("thread-sender");
 const AGENT_MESSAGE = "Review finished\n\nThe migration drops the index before backfilling it.";
 
 describe("MessagesTimeline agent messages", () => {
-  it("folds a message from another agent into a one-line preview", async () => {
+  it("shows a message from another agent open, and folds it to a one-line preview", async () => {
     setup();
     const onOpenThread = vi.fn();
     await using screen = await renderTimeline(
@@ -1313,20 +1313,22 @@ describe("MessagesTimeline agent messages", () => {
     );
     const row = screen.button(/^Agent/);
     expect(row.textContent).toContain("Review finished");
-    expect(row.getAttribute("aria-expanded")).toBe("false");
-    expect(screen.text()).not.toContain("drops the index");
-    expect(screen.buttons("Open thread")).toHaveLength(0);
-
-    await click(row);
+    expect(row.getAttribute("aria-expanded")).toBe("true");
     expect(screen.text()).toContain("The migration drops the index before backfilling it.");
     await click(screen.button("Open thread"));
     expect(onOpenThread).toHaveBeenCalledWith(SENDER_THREAD_ID, ENVIRONMENT_ID);
 
-    await click(screen.button(/^Agent/));
+    await click(row);
     expect(screen.text()).not.toContain("drops the index");
+    expect(screen.buttons("Open thread")).toHaveLength(0);
+
+    await click(screen.button(/^Agent/));
+    expect(screen.text()).toContain("drops the index");
 
     // The linked sender shows the title it sent, and its thread cannot be opened from here.
-    await click(screen.button(/^Release lead/));
+    expect(screen.button(/^Release lead/).getAttribute("aria-expanded")).toBe("true");
+    expect(screen.text()).toContain("Linked review finished");
+    await click(screen.button(/^Agent/));
     expect(screen.buttons("Open thread")).toHaveLength(0);
   });
 

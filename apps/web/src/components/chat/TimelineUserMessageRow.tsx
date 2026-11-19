@@ -56,6 +56,11 @@ import {
   SNAP_SHOT_ATTACHMENT_FRAME_CLASS,
   SnapShotAttachmentDetails,
 } from "./SnapShotAttachmentDetails";
+import {
+  AGENT_MESSAGE_BUBBLE_CLASS_NAME,
+  AGENT_MESSAGE_HEADER_CLASS_NAME,
+  AGENT_MESSAGE_STARTS_OPEN,
+} from "./agentMessageStyle";
 import { GuestMessageName, guestBubbleClassName } from "./guestMessageStyle";
 import { MessageCopyButton } from "./MessageCopyButton";
 import { promptLinkFor } from "../promptLinks/copyPromptLink";
@@ -470,7 +475,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
   const userMessage = resolveUserMessagePresentation(row.message);
   // Messages from other agents fold to one line so the user's own messages stay easy to find.
   const folded = userMessage.attribution === "agent";
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(folded && AGENT_MESSAGE_STARTS_OPEN);
   const revealFoldRef = findRevealRef(() => setExpanded(true));
   const senderShell = useQuietThreadShell(folded ? senderRef : null);
   const senderLabel =
@@ -885,7 +890,9 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
           BUBBLE_CHIP_CLASS_NAME,
           userMessage.attribution === "guest"
             ? guestBubbleClassName(false)
-            : !mediaOnly && !fileCardsOnly && !audioOnly && "bg-message",
+            : folded
+              ? AGENT_MESSAGE_BUBBLE_CLASS_NAME
+              : !mediaOnly && !fileCardsOnly && !audioOnly && "bg-message",
           !folded && !mediaOnly && !fileCardsOnly && !audioOnly && "p-3",
           folded && expanded && "w-full",
         )}
@@ -903,23 +910,25 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
           </MessageAuthorHeading>
         )}
         {folded ? (
-          <RoutedMessageFoldedHeader
-            label={senderLabel}
-            expanded={expanded}
-            onToggle={() => setExpanded((value) => !value)}
-            text={userMessage.text}
-            sender={senderRef}
-            environmentId={ctx.activeThreadEnvironmentId}
-            threadKey={ctx.routeThreadKey}
-          >
-            <FoldedMessageHeader
-              icon={MessagesSquareIcon}
+          <div className={AGENT_MESSAGE_HEADER_CLASS_NAME}>
+            <RoutedMessageFoldedHeader
               label={senderLabel}
-              summary={foldSummary}
               expanded={expanded}
               onToggle={() => setExpanded((value) => !value)}
-            />
-          </RoutedMessageFoldedHeader>
+              text={userMessage.text}
+              sender={senderRef}
+              environmentId={ctx.activeThreadEnvironmentId}
+              threadKey={ctx.routeThreadKey}
+            >
+              <FoldedMessageHeader
+                icon={MessagesSquareIcon}
+                label={senderLabel}
+                summary={foldSummary}
+                expanded={expanded}
+                onToggle={() => setExpanded((value) => !value)}
+              />
+            </RoutedMessageFoldedHeader>
+          </div>
         ) : null}
         {/* Find reads the DOM, so a folded message stays mounted but hidden while find is open. */}
         {!folded || expanded || ctx.findActive ? (
@@ -927,10 +936,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             ref={folded ? revealFoldRef : undefined}
             hidden={folded && !expanded}
             dir={markdownProseDirection(resolvedContext.text)}
-            className={cn(
-              folded && "px-3 pb-3",
-              folded && !ctx.findActive && "max-h-96 overflow-auto",
-            )}
+            className={cn(folded && "px-3 pb-3")}
           >
             {!mediaAboveText && mediaBlock}
             {userAudio.length > 0 ? (
