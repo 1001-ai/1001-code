@@ -1,4 +1,9 @@
-import { DesktopSelfUpdateStateSchema, type DesktopSelfUpdateState } from "@t3tools/contracts";
+import {
+  DesktopSelfUpdateCheckResultSchema,
+  DesktopSelfUpdateStateSchema,
+  type DesktopSelfUpdateCheckResult,
+  type DesktopSelfUpdateState,
+} from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
@@ -29,6 +34,7 @@ const STAGE_TIMEOUT = Duration.hours(2);
 const KILL_GRACE = Duration.seconds(5);
 const OUTPUT_TAIL_CHARS = 2_000;
 
+const OFF: DesktopSelfUpdateState = { status: "off" };
 const IDLE: DesktopSelfUpdateState = { status: "idle" };
 const BUILDING: DesktopSelfUpdateState = { status: "building" };
 const READY: DesktopSelfUpdateState = { status: "ready" };
@@ -75,11 +81,6 @@ class DesktopSelfUpdateCommandError extends Schema.TaggedError<DesktopSelfUpdate
   }
 }
 
-/** What a check the user asked for found, or why none ran. */
-export type DesktopSelfUpdateCheckResult =
-  | { readonly status: "off" | "ready" | "building" | "checking" | "up-to-date" | "started" }
-  | { readonly status: "error"; readonly message: string };
-
 export class DesktopSelfUpdate extends Context.Service<
   DesktopSelfUpdate,
   {
@@ -123,7 +124,7 @@ const make = Effect.gen(function* () {
   const shellEnvironment = yield* DesktopShellEnvironment.DesktopShellEnvironment;
   const path = yield* Path.Path;
 
-  const stateRef = yield* Ref.make<DesktopSelfUpdateState>(IDLE);
+  const stateRef = yield* Ref.make<DesktopSelfUpdateState>(OFF);
   // The scope is `start`'s, which closes on quit, so checks and builds stop with the app.
   const activeRef = yield* Ref.make(
     Option.none<{ readonly command: UpdateCommand; readonly scope: Scope.Scope }>(),
@@ -309,6 +310,14 @@ const make = Effect.gen(function* () {
     );
     yield* ipc.handle(
       DesktopIpc.makeIpcMethod({
+        channel: SelfUpdateChannels.SELF_UPDATE_CHECK_CHANNEL,
+        payload: Schema.Void,
+        result: DesktopSelfUpdateCheckResultSchema,
+        handler: () => checkNow,
+      }),
+    );
+    yield* ipc.handle(
+      DesktopIpc.makeIpcMethod({
         channel: SelfUpdateChannels.SELF_UPDATE_RESTART_CHANNEL,
         payload: Schema.Void,
         result: Schema.Boolean,
@@ -337,6 +346,7 @@ const make = Effect.gen(function* () {
       return;
     }
     yield* Ref.set(activeRef, Option.some({ command: command.value, scope }));
+    yield* Ref.set(stateRef, IDLE);
     yield* shellEnvironment.awaitDiscovery.pipe(
       Effect.andThen(Effect.sleep(FIRST_CHECK_DELAY)),
       Effect.andThen(

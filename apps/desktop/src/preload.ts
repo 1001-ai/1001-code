@@ -352,6 +352,7 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       ipcRenderer.removeListener(SelfUpdateChannels.SELF_UPDATE_STATE_CHANNEL, wrappedListener);
     };
   },
+  checkForSelfUpdate: () => ipcRenderer.invoke(SelfUpdateChannels.SELF_UPDATE_CHECK_CHANNEL),
   restartToUpdate: () => ipcRenderer.invoke(SelfUpdateChannels.SELF_UPDATE_RESTART_CHANNEL),
   webLinks: {
     setReady: (ready) => ipcRenderer.invoke(IpcChannels.WEB_LINK_READY_CHANNEL, ready),

@@ -5,6 +5,7 @@ import { restartConfirmation, selfUpdateToast } from "./desktopSelfUpdateToast.l
 describe("selfUpdateToast", () => {
   it.each([
     [null, null],
+    [{ status: "off" } as const, null],
     [{ status: "idle" } as const, null],
     [
       { status: "building" } as const,

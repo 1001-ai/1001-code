@@ -1,4 +1,4 @@
-import { useAtomValue } from "@effect/atom-react";
+import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import type { DesktopBridge, DesktopSelfUpdateState } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Queue from "effect/Queue";
@@ -73,4 +73,28 @@ const desktopSelfUpdateStateAtom = Atom.make(updates, { initialValue: null }).pi
 /** Null outside the desktop app and until the main process answers. */
 export function useDesktopSelfUpdateState(): DesktopSelfUpdateState | null {
   return AsyncResult.getOrElse(useAtomValue(desktopSelfUpdateStateAtom), () => null);
+}
+
+/** A check this window asked for: running, or the last one found nothing new. */
+export type DesktopSelfUpdateCheck = "none" | "checking" | "up-to-date";
+
+const desktopSelfUpdateCheckAtom = Atom.make<DesktopSelfUpdateCheck>("none").pipe(
+  Atom.keepAlive,
+  Atom.withLabel("desktop:self-update-check"),
+);
+
+export function useDesktopSelfUpdateCheck() {
+  const check = useAtomValue(desktopSelfUpdateCheckAtom);
+  const setCheck = useAtomSet(desktopSelfUpdateCheckAtom);
+  const checkNow = () => {
+    const bridge = typeof window === "undefined" ? undefined : window.desktopBridge;
+    if (!bridge || check === "checking") return;
+    setCheck("checking");
+    // A found update and a failure arrive as the state; only "nothing new" has no state to show.
+    void bridge.checkForSelfUpdate().then(
+      (result) => setCheck(result.status === "up-to-date" ? "up-to-date" : "none"),
+      () => setCheck("none"),
+    );
+  };
+  return { check, checkNow };
 }

@@ -28,6 +28,10 @@ import {
   shouldToastDesktopUpdateActionResult,
 } from "../desktopUpdate.logic";
 import { showDesktopUpdateDownloadedToast } from "../desktopUpdate.toast";
+import {
+  DesktopSelfUpdateSidebarButton,
+  useDesktopSelfUpdateOn,
+} from "../desktop/DesktopSelfUpdateControls";
 import { useCheckProviderUpdates } from "../ProviderUpdatesAction";
 import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
 import { Popover, PopoverCreateHandle, PopoverPopup, PopoverTrigger } from "../ui/popover";
@@ -200,6 +204,7 @@ function SidebarUpdateControl() {
   const state = useDesktopUpdateState();
   // The desktop updates this machine, whose policy the primary environment reports.
   const updatesDenial = managedUpdatesDenial(usePrimaryManagedPolicy());
+  const selfUpdateOn = useDesktopSelfUpdateOn();
   const [isActionPending, setIsActionPending] = useState(false);
   const [providerCheck, setProviderCheck] = useState<"button" | "dialog" | null>(null);
   const isCheckingProviders = providerCheck === "button";
@@ -458,6 +463,10 @@ function SidebarUpdateControl() {
         {confirmDialog}
       </SidebarMenuItem>
     );
+  }
+
+  if (selfUpdateOn && !showUpdateDetails) {
+    return <DesktopSelfUpdateSidebarButton>{confirmDialog}</DesktopSelfUpdateSidebarButton>;
   }
 
   const updateButton = (

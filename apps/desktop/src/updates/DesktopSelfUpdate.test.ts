@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest";
-import type { DesktopSelfUpdateState } from "@t3tools/contracts";
+import type { DesktopSelfUpdateCheckResult, DesktopSelfUpdateState } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -178,7 +178,7 @@ describe("DesktopSelfUpdate", () => {
       assert.isFalse(yield* service.enabled);
       assert.deepEqual(yield* service.checkNow, { status: "off" });
       assert.deepEqual(harness.spawned, []);
-      assert.deepEqual(yield* service.getState, { status: "idle" });
+      assert.deepEqual(yield* service.getState, { status: "off" });
       assert.isFalse(yield* service.restartToUpdate);
       assert.deepEqual(harness.events, []);
     }).pipe(Effect.scoped, Effect.provide(harness.layer));
@@ -195,6 +195,7 @@ describe("DesktopSelfUpdate", () => {
         const service = yield* harness.start;
         yield* TestClock.adjust("29 seconds");
         assert.deepEqual(harness.spawned, []);
+        assert.deepEqual(yield* service.getState, { status: "idle" });
 
         yield* TestClock.adjust("1 second");
         assert.deepEqual(
@@ -345,7 +346,7 @@ describe("DesktopSelfUpdate", () => {
   it.effect.each<{
     name: string;
     reply: Reply;
-    result: DesktopSelfUpdate.DesktopSelfUpdateCheckResult;
+    result: DesktopSelfUpdateCheckResult;
     state: DesktopSelfUpdateState;
   }>([
     {
