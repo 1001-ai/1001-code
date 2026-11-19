@@ -4,12 +4,15 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   EMPTY_TEAMMATE_MESSAGES,
   type TeammateMessage,
-  agentMessageArrivalSignal,
+  type ScanShell,
   handleTeammateMessages,
   parseLinearComment,
+  recordScan,
   rememberTeammateMessages,
   routedSenderTarget,
-  teammateMessageFromMatch,
+  scanCandidates,
+  scanKey,
+  teammateMessagesIn,
   unreadBadgeLabel,
   unreadTeammateMessages,
 } from "./teammateMessages.logic";
@@ -57,34 +60,95 @@ describe("parseLinearComment", () => {
   });
 });
 
-describe("teammateMessageFromMatch", () => {
-  const match = {
-    threadId: thread,
-    source: "user" as const,
-    snippet:
-      "[Linear comment a1b2c3d4 on a Linear issue from Jane Doe] Can you take the API half? [End of Linear comment a1b2c3d4. Jane…",
-    messageCreatedAt: "2026-11-19T10:00:00.000Z",
-    messageId: MessageId.make("linear-inbox:thread-1:c1"),
-  };
-
-  it("parses the collapsed snippet the search returns", () => {
-    expect(teammateMessageFromMatch(env, match)).toEqual({
-      nonce: "a1b2c3d4",
-      issue: "a Linear issue",
-      sender: "Jane Doe",
-      environmentId: env,
-      threadId: thread,
-      messageId: match.messageId,
-      preview: "Can you take the API half?",
-      at: match.messageCreatedAt,
-    });
+describe("teammateMessagesIn", () => {
+  const message = (id: string, role: string, text: string) => ({
+    id: MessageId.make(id),
+    role,
+    text,
+    createdAt: "2026-11-19T10:00:00.000Z",
   });
 
-  it("skips assistant hits and messages that only mention the phrase", () => {
-    expect(teammateMessageFromMatch(env, { ...match, source: "assistant" })).toBeNull();
+  it("keeps routed comments among the newest messages", () => {
+    const messages = [
+      message("m1", "user", routed("a1b2c3d4", "\nCan you take the API half?\nThanks")),
+      message("m2", "assistant", routed("ffff0000", "quoted by the agent")),
+      message("m3", "user", "Please look at [Linear comment a1 on ENG-1 from X]"),
+    ];
+    expect(teammateMessagesIn(env, thread, messages)).toEqual([
+      {
+        nonce: "a1b2c3d4",
+        issue: "ENG-12",
+        sender: "Jane Doe's agent",
+        environmentId: env,
+        threadId: thread,
+        messageId: MessageId.make("m1"),
+        preview: "Can you take the API half?",
+        at: "2026-11-19T10:00:00.000Z",
+      },
+    ]);
+  });
+
+  it("reads only the newest ten", () => {
+    const older = message("old", "user", routed("a1b2c3d4", "old"));
+    const filler = Array.from({ length: 10 }, (_, index) => message(`f${index}`, "user", "hi"));
+    expect(teammateMessagesIn(env, thread, [older, ...filler])).toEqual([]);
+  });
+});
+
+describe("scanCandidates", () => {
+  const now = Date.parse("2026-11-19T12:00:00.000Z");
+  const shell = (id: string, overrides: Partial<ScanShell> = {}): ScanShell => ({
+    environmentId: env,
+    id: ThreadId.make(id),
+    latestUserMessageAt: "2026-11-19T11:00:00.000Z",
+    latestUserAuthoredMessageAt: "2026-11-19T09:00:00.000Z",
+    updatedAt: "2026-11-19T11:00:00.000Z",
+    archivedAt: null,
+    deletedAt: null,
+    ...overrides,
+  });
+
+  it("picks recent threads whose last user-role message the user did not type, newest first", () => {
+    const candidates = scanCandidates(
+      [
+        shell("older", { latestUserMessageAt: "2026-11-19T10:00:00.000Z" }),
+        shell("newer"),
+        shell("typed", { latestUserAuthoredMessageAt: "2026-11-19T11:00:00.000Z" }),
+        shell("never-typed", { latestUserAuthoredMessageAt: null }),
+        shell("archived", { archivedAt: "2026-11-19T11:30:00.000Z" }),
+        shell("stale", { updatedAt: "2026-11-01T00:00:00.000Z" }),
+        shell("empty", { latestUserMessageAt: null }),
+      ],
+      {},
+      now,
+    );
+    expect(candidates.map((candidate) => candidate.threadId)).toEqual([
+      "newer",
+      "never-typed",
+      "older",
+    ]);
+  });
+
+  it("skips threads read up to their last message, and returns them once another lands", () => {
+    const [candidate] = scanCandidates([shell("t")], {}, now);
+    const state = recordScan(EMPTY_TEAMMATE_MESSAGES, candidate!);
+    expect(state.scannedAt).toEqual({
+      [scanKey(env, ThreadId.make("t"))]: "2026-11-19T11:00:00.000Z",
+    });
+    expect(scanCandidates([shell("t")], state.scannedAt, now)).toEqual([]);
     expect(
-      teammateMessageFromMatch(env, { ...match, snippet: "…the Linear comment from yesterday" }),
-    ).toBeNull();
+      scanCandidates(
+        [shell("t", { latestUserMessageAt: "2026-11-19T11:30:00.000Z" })],
+        state.scannedAt,
+        now,
+      ).map((next) => next.latestUserMessageAt),
+    ).toEqual(["2026-11-19T11:30:00.000Z"]);
+    expect(recordScan(state, candidate!)).toBe(state);
+  });
+
+  it("reads at most twenty threads a pass", () => {
+    const shells = Array.from({ length: 25 }, (_, index) => shell(`t${index}`));
+    expect(scanCandidates(shells, {}, now)).toHaveLength(20);
   });
 });
 
@@ -104,18 +168,18 @@ describe("teammate message state", () => {
     let state = rememberTeammateMessages(EMPTY_TEAMMATE_MESSAGES, [message("aa", "2026-01-01")]);
     // The search returns one message a thread, so a newer comment replaces the hit, not the record.
     state = rememberTeammateMessages(state, [message("bb", "2026-01-02")]);
-    expect(unreadTeammateMessages(state).map((item) => item.nonce)).toEqual(["bb", "aa"]);
+    expect(unreadTeammateMessages(state.unread).map((item) => item.nonce)).toEqual(["bb", "aa"]);
 
     state = handleTeammateMessages(state, ["bb"], "2026-01-03");
     state = rememberTeammateMessages(state, [message("bb", "2026-01-02")]);
-    expect(unreadTeammateMessages(state).map((item) => item.nonce)).toEqual(["aa"]);
+    expect(unreadTeammateMessages(state.unread).map((item) => item.nonce)).toEqual(["aa"]);
   });
 
   it("keeps a forwarded copy's thread, the newer delivery", () => {
     const forwarded = message("aa", "2026-01-02", ThreadId.make("thread-2"));
     let state = rememberTeammateMessages(EMPTY_TEAMMATE_MESSAGES, [forwarded]);
     state = rememberTeammateMessages(state, [message("aa", "2026-01-01")]);
-    expect(unreadTeammateMessages(state)).toEqual([forwarded]);
+    expect(unreadTeammateMessages(state.unread)).toEqual([forwarded]);
   });
 
   it("returns the same state when nothing is new", () => {
@@ -125,18 +189,6 @@ describe("teammate message state", () => {
 
   it("labels the badge", () => {
     expect([0, 3, 10].map(unreadBadgeLabel)).toEqual([null, "3", "9+"]);
-  });
-});
-
-describe("agentMessageArrivalSignal", () => {
-  it("moves only when a message the user did not write lands", () => {
-    const own = { latestUserMessageAt: "2026-01-03", latestUserAuthoredMessageAt: "2026-01-03" };
-    const routedIn = {
-      latestUserMessageAt: "2026-01-02",
-      latestUserAuthoredMessageAt: "2026-01-01",
-    };
-    expect(agentMessageArrivalSignal([own])).toBe("");
-    expect(agentMessageArrivalSignal([own, routedIn])).toBe("2026-01-02");
   });
 });
 

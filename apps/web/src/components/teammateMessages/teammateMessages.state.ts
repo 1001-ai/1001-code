@@ -1,93 +1,142 @@
 import { useAtomValue } from "@effect/atom-react";
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { enabledEnvironmentIds } from "@t3tools/client-runtime/state/connections";
-import { createEnvironmentRpcQueryAtomFamily } from "@t3tools/client-runtime/state/runtime";
-import {
-  type EnvironmentId,
-  EnvironmentId as EnvironmentIdSchema,
-  MessageId,
-  ORCHESTRATION_V2_WS_METHODS,
-  ThreadId,
-} from "@t3tools/contracts";
+import { EnvironmentId, MessageId, ThreadId } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
+import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
-import { AsyncResult, Atom } from "effect/reactivity";
+import { Atom } from "effect/reactivity";
 import * as Schema from "effect/Schema";
 import { useEffect } from "react";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
-import { environmentCatalog } from "../../connection/catalog";
-import { connectionAtomRuntime } from "../../connection/runtime";
 import { resolveStorage } from "../../lib/storage";
 import { appAtomRegistry } from "../../rpc/atomRegistry";
 import { serverEnvironment } from "../../state/server";
-import { environmentThreadShells } from "../../state/threads";
+import { environmentThreadDetails, environmentThreadShells } from "../../state/threads";
 import { buildThreadRouteParams } from "../../threadRoutes";
 import { openThreadFindOnQuery } from "../chat/threadFindStore";
 import {
   EMPTY_TEAMMATE_MESSAGES,
-  TEAMMATE_MESSAGE_QUERY,
+  SCAN_MESSAGE_COUNT,
+  type ScanCandidate,
+  type ScanShell,
   type TeammateMessage,
   type TeammateMessagesState,
-  agentMessageArrivalSignal,
   handleTeammateMessages,
+  recordScan,
   rememberTeammateMessages,
-  teammateMessageFromMatch,
+  scanCandidates,
+  scanKey,
+  teammateMessagesIn,
   unreadTeammateMessages,
 } from "./teammateMessages.logic";
 
-/** Per environment, the newest time an agent's message (or a wake) landed in one of its threads. */
-const arrivalSignalAtom = Atom.family((environmentId: EnvironmentId) =>
-  Atom.make((get) =>
-    agentMessageArrivalSignal(
-      get(environmentThreadShells.quietThreadShellsAtom).filter(
-        (shell) => shell.environmentId === environmentId,
-      ),
-    ),
-  ).pipe(Atom.withLabel(`web-teammate-messages:arrival:${environmentId}`)),
-);
+/** Shells whose last user-role message the user did not type; changes only when one lands. */
+const arrivalShellsAtom = Atom.make((get) => {
+  const next = get(environmentThreadShells.quietThreadShellsAtom).flatMap((shell): ScanShell[] =>
+    shell.latestUserMessageAt !== null &&
+    shell.latestUserMessageAt !== (shell.latestUserAuthoredMessageAt ?? null)
+      ? [
+          {
+            environmentId: shell.environmentId,
+            id: shell.id,
+            latestUserMessageAt: shell.latestUserMessageAt,
+            latestUserAuthoredMessageAt: shell.latestUserAuthoredMessageAt ?? null,
+            updatedAt: shell.updatedAt,
+            archivedAt: shell.archivedAt,
+            deletedAt: shell.deletedAt,
+          },
+        ]
+      : [],
+  );
+  const previous = Option.getOrUndefined(get.self<ReadonlyArray<ScanShell>>());
+  const same = (left: ScanShell, right: ScanShell) =>
+    left.environmentId === right.environmentId &&
+    left.id === right.id &&
+    left.latestUserMessageAt === right.latestUserMessageAt &&
+    left.archivedAt === right.archivedAt &&
+    left.deletedAt === right.deletedAt;
+  return previous !== undefined &&
+    previous.length === next.length &&
+    previous.every((shell, index) => same(shell, next[index]!))
+    ? previous
+    : next;
+}).pipe(Atom.withLabel("web-teammate-messages:arrival-shells"));
 
-// The client's own thread search, asked again whenever such a message lands; shells carry no text.
-const routedCommentSearch = createEnvironmentRpcQueryAtomFamily(connectionAtomRuntime, {
-  label: "environment-data:teammate-messages:search",
-  tag: ORCHESTRATION_V2_WS_METHODS.searchThreads,
-  idleTtlMs: 60_000,
-  refreshTrigger: ({ environmentId }) => arrivalSignalAtom(environmentId),
-});
+/** A thread that never answers is skipped this pass and tried again on the next arrival. */
+const READ_TIMEOUT_MS = 15_000;
 
-const NO_MESSAGES: ReadonlyArray<TeammateMessage> = [];
+type ScannedMessages = Parameters<typeof teammateMessagesIn>[2];
 
-/** Routed comments the latest searches found, across every enabled environment. */
-const foundTeammateMessagesAtom = Atom.make((get) => {
-  const found: TeammateMessage[] = [];
-  for (const environmentId of enabledEnvironmentIds(get(environmentCatalog.catalogValueAtom))) {
-    const result = get(
-      routedCommentSearch({
-        environmentId,
-        input: { query: TEAMMATE_MESSAGE_QUERY, limit: 50 },
-      }),
+/**
+ * One thread's newest messages, through the same detail subscription the chat uses (a bounded
+ * snapshot of recent history), held only until it is live. Null when it cannot be read.
+ */
+function readRecentMessages(candidate: ScanCandidate): Promise<ScannedMessages | null> {
+  const atom = environmentThreadDetails.stateAtom(
+    scopeThreadRef(candidate.environmentId, candidate.threadId),
+  );
+  return new Promise((resolve) => {
+    let settled = false;
+    let unsubscribe: (() => void) | null = null;
+    const finish = (value: ScannedMessages | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(value);
+      // Not inside the registry's own notification.
+      queueMicrotask(() => unsubscribe?.());
+    };
+    const timer = setTimeout(() => finish(null), READ_TIMEOUT_MS);
+    unsubscribe = appAtomRegistry.subscribe(
+      atom,
+      (state) => {
+        if (state.status === "deleted") return finish([]);
+        if (Option.isSome(state.error)) return finish(null);
+        const projection = Option.getOrNull(state.data);
+        if (state.status !== "live" || projection === null) return;
+        finish(
+          projection.messages.slice(-SCAN_MESSAGE_COUNT).map((message) => ({
+            id: message.id,
+            role: message.role,
+            text: message.text,
+            createdAt: DateTime.formatIso(message.createdAt),
+          })),
+        );
+      },
+      { immediate: true },
     );
-    for (const match of AsyncResult.getOrElse(result, () => null)?.matches ?? []) {
-      const message = teammateMessageFromMatch(environmentId, match);
-      if (message !== null) found.push(message);
+    if (settled) queueMicrotask(() => unsubscribe?.());
+  });
+}
+
+const reading = new Set<string>();
+
+/** Reads each candidate in turn, keeping its routed comments and moving its watermark. */
+async function scanThreads(candidates: ReadonlyArray<ScanCandidate>): Promise<void> {
+  for (const candidate of candidates) {
+    const key = scanKey(candidate.environmentId, candidate.threadId);
+    if (reading.has(key)) continue;
+    reading.add(key);
+    try {
+      const messages = await readRecentMessages(candidate);
+      if (messages === null) continue;
+      const found = teammateMessagesIn(candidate.environmentId, candidate.threadId, messages);
+      useTeammateMessagesStore.setState((state) =>
+        recordScan(rememberTeammateMessages(state, found), candidate),
+      );
+    } finally {
+      reading.delete(key);
     }
   }
-  const previous = Option.getOrUndefined(get.self<ReadonlyArray<TeammateMessage>>());
-  const unchanged =
-    previous !== undefined &&
-    previous.length === found.length &&
-    previous.every(
-      (old, index) => old.nonce === found[index]!.nonce && old.at === found[index]!.at,
-    );
-  return unchanged ? previous : found.length === 0 ? NO_MESSAGES : found;
-}).pipe(Atom.withLabel("web-teammate-messages:found"));
+}
 
 const StoredMessage = Schema.Struct({
   nonce: Schema.String,
   issue: Schema.String,
   sender: Schema.String,
-  environmentId: EnvironmentIdSchema,
+  environmentId: EnvironmentId,
   threadId: ThreadId,
   messageId: Schema.NullOr(MessageId),
   preview: Schema.String,
@@ -96,13 +145,14 @@ const StoredMessage = Schema.Struct({
 const StoredState = Schema.Struct({
   unread: Schema.Record(Schema.String, StoredMessage),
   handled: Schema.Record(Schema.String, Schema.String),
+  scannedAt: Schema.Record(Schema.String, Schema.String),
 });
 const decodeStoredState = Schema.decodeUnknownOption(StoredState);
 
-/** Per device: which routed comments were seen, and which were opened or dismissed. */
+/** Per device: routed comments seen, which were opened or dismissed, and how far each thread was read. */
 const useTeammateMessagesStore = create<TeammateMessagesState>()(
   persist((): TeammateMessagesState => EMPTY_TEAMMATE_MESSAGES, {
-    name: "1001code:teammate-messages:v1",
+    name: "1001code:teammate-messages:v2",
     storage: createJSONStorage(() =>
       resolveStorage(typeof window !== "undefined" ? window.localStorage : undefined),
     ),
@@ -118,18 +168,19 @@ export function dismissTeammateMessages(nonces: ReadonlyArray<string>): void {
 }
 
 /**
- * The unread routed comments, newest first. Reads shells and one bounded search per environment,
- * never a thread's history; what the search found is kept, since it returns one message a thread.
+ * The unread routed comments, newest first. Shells say which threads got a message the user did
+ * not type since this device last looked; only those threads' newest messages are read.
  */
 export function useUnreadTeammateMessages(): ReadonlyArray<TeammateMessage> {
-  const found = useAtomValue(foundTeammateMessagesAtom);
-  const stored = useTeammateMessagesStore();
-  const merged = rememberTeammateMessages(stored, found);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps what the search found in localStorage, which outlives the search's one-per-thread answer
+  const shells = useAtomValue(arrivalShellsAtom);
+  const unread = useTeammateMessagesStore((state) => state.unread);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reads the threads that just got an agent's message over the detail subscription, and stores what it finds in localStorage
   useEffect(() => {
-    useTeammateMessagesStore.setState((state) => rememberTeammateMessages(state, found));
-  }, [found]);
-  return unreadTeammateMessages(merged);
+    void scanThreads(
+      scanCandidates(shells, useTeammateMessagesStore.getState().scannedAt, Date.now()),
+    );
+  }, [shells]);
+  return unreadTeammateMessages(unread);
 }
 
 /** Opens the thread a comment went to, on that message, and marks it read. */
