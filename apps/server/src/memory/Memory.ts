@@ -1,6 +1,8 @@
 import {
   BOARD_ADD_TOOL_NAME,
   BOARD_LIST_TOOL_NAME,
+  BOARD_MESSAGE_TOOL_NAME,
+  BOARD_REPLY_TOOL_NAME,
   BOARD_UPDATE_TOOL_NAME,
   buildMemoryBlock,
   type MemoryCategory,
@@ -133,9 +135,10 @@ export const boardInstructions = (linear: TeamCatalogLinear, link: string): stri
   return [
     "<board>",
     `This project's board is ${board}; its tasks are Linear issues. Use it for every task you read, file or update, unless the user names another board.`,
-    `Use ${BOARD_LIST_TOOL_NAME} to see its open tasks, ${BOARD_ADD_TOOL_NAME} to file a task and ${BOARD_UPDATE_TOOL_NAME} to change one (status, assignee, title or description). They act as the person you work for. Use the Linear connector only for what they do not cover, such as comments.`,
+    `Use ${BOARD_LIST_TOOL_NAME} to see its open tasks, ${BOARD_ADD_TOOL_NAME} to file a task and ${BOARD_UPDATE_TOOL_NAME} to change one (status, assignee, title or description). They act as the person you work for. Use the Linear connector only for what they do not cover.`,
     `Once the requirements are clear and you are about to make your first change (a file edit, a branch or a worktree), the work needs a task on this board. Look for one that covers it. If none does, file one before that first change. Assign it to the person you work for (assignee "me") and set its status to In Progress. Even a small fix gets a task. Answering questions, reading code and planning need none.`,
-    `This thread's link is ${link}. ${BOARD_ADD_TOOL_NAME} and ${BOARD_UPDATE_TOOL_NAME} attach it to the task, so the board and teammates' agents can find this thread; when you take over an existing task, update it with ${BOARD_UPDATE_TOOL_NAME}. Include the link in the "agent:" comments you write there too.`,
+    `This thread's link is ${link}. ${BOARD_ADD_TOOL_NAME} and ${BOARD_UPDATE_TOOL_NAME} attach it to the task, so the board and teammates' agents can find this thread; when you take over an existing task, update it with ${BOARD_UPDATE_TOOL_NAME}.`,
+    `Talk to teammates' agents with ${BOARD_MESSAGE_TOOL_NAME} (a comment on a task, or on a teammate's Agent inbox when there is no task) and answer a teammate's comment delivered here with ${BOARD_REPLY_TOOL_NAME} and its commentId. Both write the "agent:" prefix and this thread's reply address for you, so answers come back here; write only what you mean to say. Do not use the Linear connector for these messages.`,
     "</board>",
   ].join("\n");
 };

@@ -1,6 +1,8 @@
 import {
   BOARD_ADD_TOOL_NAME,
   BOARD_LIST_TOOL_NAME,
+  BOARD_MESSAGE_TOOL_NAME,
+  BOARD_REPLY_TOOL_NAME,
   BOARD_UPDATE_TOOL_NAME,
   BoardTaskList,
   BoardTaskWriteResult,
@@ -10,6 +12,7 @@ import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
 
 import * as Board from "../../../board/Board.ts";
+import * as LinearInbox from "../../../board/LinearInbox.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 
@@ -29,6 +32,16 @@ const dependencies = [
   ThreadManagementService.ThreadManagementService,
   Board.Board,
 ];
+
+const messageText = Text(
+  "What you want to say, in Markdown. Code adds the agent: prefix and this thread's reply address; write neither.",
+  20_000,
+);
+
+const BoardMessageResult = Schema.Struct({
+  task: Schema.String.annotate({ description: "The task the comment is on, such as ENG-12." }),
+  commentId: Schema.String,
+});
 
 const BoardAddTool = Tool.make(BOARD_ADD_TOOL_NAME, {
   description:
@@ -86,4 +99,49 @@ const BoardListTool = Tool.make(BOARD_LIST_TOOL_NAME, {
   .annotate(Tool.Idempotent, true)
   .annotate(Tool.OpenWorld, true);
 
-export const BoardToolkit = Toolkit.make(BoardAddTool, BoardUpdateTool, BoardListTool);
+const BoardMessageTool = Tool.make(BOARD_MESSAGE_TOOL_NAME, {
+  description:
+    "Message a teammate's agent through Linear, as the person you work for: a comment on a task, or, with no task, on the teammate's Agent inbox task (made if missing). The comment carries this thread's reply address, so their answer comes back to this thread. Use it to ask or tell a teammate's agent something; answer a message you received with board_reply instead.",
+  parameters: Schema.Struct({
+    task: Schema.optional(Text("The task to comment on, such as ENG-12.", 50)),
+    to: Schema.optional(
+      Text("The teammate to message, by name or email, when there is no task.", 200),
+    ),
+    text: messageText,
+  }),
+  success: BoardMessageResult,
+  failure: OrchestratorMcpFailure,
+  failureMode: "return",
+  dependencies,
+})
+  .annotate(Tool.Title, "Message a teammate's agent")
+  .annotate(Tool.Readonly, false)
+  .annotate(Tool.Destructive, false)
+  .annotate(Tool.Idempotent, false)
+  .annotate(Tool.OpenWorld, true);
+
+const BoardReplyTool = Tool.make(BOARD_REPLY_TOOL_NAME, {
+  description:
+    "Answer a teammate's Linear comment that was delivered to this thread, in its exchange on Linear, as the person you work for. The reply carries this thread's reply address. Share only what you choose to: the teammate sees the reply, not this thread.",
+  parameters: Schema.Struct({
+    commentId: Text("The comment's id, as its closing marker gives it.", 100),
+    text: messageText,
+  }),
+  success: BoardMessageResult,
+  failure: OrchestratorMcpFailure,
+  failureMode: "return",
+  dependencies: [...dependencies, LinearInbox.LinearInbox],
+})
+  .annotate(Tool.Title, "Reply to a teammate's comment")
+  .annotate(Tool.Readonly, false)
+  .annotate(Tool.Destructive, false)
+  .annotate(Tool.Idempotent, false)
+  .annotate(Tool.OpenWorld, true);
+
+export const BoardToolkit = Toolkit.make(
+  BoardAddTool,
+  BoardUpdateTool,
+  BoardListTool,
+  BoardMessageTool,
+  BoardReplyTool,
+);

@@ -14,6 +14,8 @@ import type { OrchestrationV2ThreadShell } from "./orchestrationV2.ts";
 /** The model a new Inbox thread starts on. The user can pick another Claude model. */
 export const INBOX_AGENT_DEFAULT_MODEL = "claude-sonnet-5-5";
 export const INBOX_AGENT_THREAD_TITLE = "Inbox";
+/** The Inbox's tool that passes a teammate's message on, unchanged, to one of its project's threads. */
+export const INBOX_FORWARD_TOOL_NAME = "inbox_forward";
 
 /**
  * Whether a thread looks like a project's Inbox from the fields every client already has: the
@@ -50,6 +52,10 @@ export const InboxAgentDigestEntryKind = Schema.Literals([
   "run-failed",
   "question",
   "pull-request",
+  /** A teammate's message reached a thread: directly, through the Inbox, or forwarded by it. */
+  "message-received",
+  /** A teammate's message reached no thread; the detail says why. */
+  "message-not-delivered",
 ]);
 export type InboxAgentDigestEntryKind = typeof InboxAgentDigestEntryKind.Type;
 
@@ -58,7 +64,7 @@ export const InboxAgentDigestEntry = Schema.Struct({
   threadId: ThreadId,
   title: Schema.String.check(Schema.isMaxLength(INBOX_AGENT_DIGEST_TITLE_MAX_LENGTH)),
   at: IsoDateTime,
-  /** The run's error, or the pull request's URL. */
+  /** The run's error, the pull request's URL, or where a teammate's message went and why. */
   detail: Schema.optional(
     Schema.String.check(Schema.isMaxLength(INBOX_AGENT_DIGEST_DETAIL_MAX_LENGTH)),
   ),

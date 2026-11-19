@@ -18,6 +18,8 @@ const KIND_LABELS: Record<InboxAgentDigestEntry["kind"], string> = {
   "run-failed": "Failed",
   question: "Waiting for you",
   "pull-request": "Pull request",
+  "message-received": "Teammate message",
+  "message-not-delivered": "Message not delivered",
 };
 
 /**

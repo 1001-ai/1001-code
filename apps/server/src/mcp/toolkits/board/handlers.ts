@@ -2,6 +2,7 @@ import { type BoardError, OrchestratorMcpFailure } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 
 import * as Board from "../../../board/Board.ts";
+import * as LinearInbox from "../../../board/LinearInbox.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import { loadCaller } from "../../threadAccess.ts";
 import { BoardToolkit } from "./tools.ts";
@@ -60,6 +61,34 @@ const handlers = {
       const caller = yield* callingThread;
       const board = yield* Board.Board;
       return yield* board.listTasks(caller.projectId).pipe(Effect.mapError(toMcpFailure));
+    }),
+  ),
+  board_message: McpToolAccess.actsAsCaller((input) =>
+    Effect.gen(function* () {
+      const caller = yield* callingThread;
+      const board = yield* Board.Board;
+      return yield* board
+        .message({
+          projectId: caller.projectId,
+          thread: { id: caller.id, title: caller.title },
+          ...input,
+        })
+        .pipe(Effect.mapError(toMcpFailure));
+    }),
+  ),
+  board_reply: McpToolAccess.actsAsCaller(({ commentId, text }) =>
+    Effect.gen(function* () {
+      const caller = yield* callingThread;
+      const inbox = yield* LinearInbox.LinearInbox;
+      return yield* inbox
+        .reply({ thread: { id: caller.id, title: caller.title }, commentId, text })
+        .pipe(
+          Effect.mapError((error) =>
+            error._tag === "LinearInboxRefusal"
+              ? new OrchestratorMcpFailure({ code: "invalid_request", message: error.detail })
+              : toMcpFailure(error),
+          ),
+        );
     }),
   ),
 } satisfies McpToolAccess.Handlers<typeof BoardToolkit.tools>;

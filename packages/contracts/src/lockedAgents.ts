@@ -1,4 +1,5 @@
 import { BOARD_LIST_TOOL_NAME } from "./board.ts";
+import { INBOX_FORWARD_TOOL_NAME } from "./inboxAgent.ts";
 import { MEMORY_PROPOSE_TOOL_NAME } from "./memory.ts";
 import {
   VOICE_AGENT_BOARD_TOOL_NAME,
@@ -30,6 +31,7 @@ export const LOCKED_AGENT_TOOL_NAMES: Readonly<Record<LockedAgentKind, ReadonlyA
     "t3_thread_wait",
     BOARD_LIST_TOOL_NAME,
     MEMORY_PROPOSE_TOOL_NAME,
+    INBOX_FORWARD_TOOL_NAME,
   ],
 };
 
@@ -38,6 +40,7 @@ const LOCKED_AGENT_ONLY_TOOL_NAMES: ReadonlyArray<string> = [
   VOICE_AGENT_BOARD_TOOL_NAME,
   VOICE_AGENT_SEND_MESSAGE_TOOL_NAME,
   VOICE_AGENT_SHOW_MEDIA_TOOL_NAME,
+  INBOX_FORWARD_TOOL_NAME,
 ];
 
 /**

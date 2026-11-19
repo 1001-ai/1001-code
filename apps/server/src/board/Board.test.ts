@@ -1828,6 +1828,95 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Board", (it) => 
     ),
   );
 
+  it.effect("messages a teammate's Agent inbox, filing it once, and replies in an exchange", () => {
+    let agentInboxes: Array<{ id: string; identifier: string; url: string }> = [];
+    const answers = (operation: string, variables: Record<string, unknown>): Answer => {
+      if (operation === "BoardAgentInbox") {
+        return { body: { data: { issues: { nodes: agentInboxes } } } };
+      }
+      if (operation === "BoardIssueCreate") {
+        const input = variables.input as { title: string };
+        const issue = {
+          id: "id-ENG-9",
+          identifier: "ENG-9",
+          title: input.title,
+          url: "https://linear.app/acme/issue/ENG-9",
+          state: STATES["s-todo"]!,
+          assignee: null,
+          project: null,
+        };
+        agentInboxes = [issue];
+        return { body: { data: { issueCreate: { success: true, issue } } } };
+      }
+      if (operation === "BoardComment") {
+        return {
+          body: { data: { commentCreate: { success: true, comment: { id: "comment-new" } } } },
+        };
+      }
+      return taskAnswers(operation, variables);
+    };
+    return connected(
+      (board, linear) =>
+        Effect.gen(function* () {
+          const message = (fields: Partial<Board.BoardMessageInput>) =>
+            board.message({
+              projectId: PROJECT_ID,
+              thread: THREAD,
+              text: "Who owns it?",
+              ...fields,
+            });
+          const body = (text: string) =>
+            `agent: ${text}\n\nReply address: <t3-thread://v2/env-me/thread-mine>`;
+
+          expect(yield* message({ to: "sam@acme.test" })).toEqual({
+            task: "ENG-9",
+            commentId: "comment-new",
+          });
+          expect(yield* message({ to: "sam@acme.test", text: "agent: And the dedupe?" })).toEqual({
+            task: "ENG-9",
+            commentId: "comment-new",
+          });
+          // Filed once, assigned to them, in the team's first unstarted state; found after that.
+          expect(calls(linear, "BoardIssueCreate").map((call) => call.variables.input)).toEqual([
+            expect.objectContaining({
+              teamId: "team-1",
+              title: "Agent inbox: Sam",
+              assigneeId: "user-2",
+              stateId: "s-todo",
+            }),
+          ]);
+          expect(calls(linear, "BoardAgentInbox")[0]?.variables.filter).toEqual({
+            team: { id: { eq: "team-1" } },
+            assignee: { id: { eq: "user-2" } },
+            title: { startsWith: "Agent inbox:" },
+            state: { type: { nin: ["completed", "canceled"] } },
+          });
+
+          yield* message({ task: "ENG-1" });
+          yield* board.reply({
+            thread: THREAD,
+            issueId: "id-ENG-1",
+            issue: "ENG-1",
+            parentId: "comment-root",
+            text: "Yes, mine.",
+          });
+          expect(calls(linear, "BoardComment").map((call) => call.variables.input)).toEqual([
+            { issueId: "id-ENG-9", body: body("Who owns it?") },
+            { issueId: "id-ENG-9", body: body("And the dedupe?") },
+            { issueId: "id-ENG-1", body: body("Who owns it?") },
+            { issueId: "id-ENG-1", parentId: "comment-root", body: body("Yes, mine.") },
+          ]);
+
+          expect(yield* message({ to: "me" }).pipe(Effect.flip)).toMatchObject({
+            _tag: "BoardInputError",
+          });
+          expect(yield* message({}).pipe(Effect.flip)).toMatchObject({ _tag: "BoardInputError" });
+          expect(calls(linear, "BoardComment")).toHaveLength(4);
+        }).pipe(Effect.orDie),
+      answers,
+    );
+  });
+
   it.effect("task tools need a sign-in and a board", () =>
     Effect.gen(function* () {
       const linear = fakeLinear(taskAnswers);

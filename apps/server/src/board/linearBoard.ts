@@ -24,7 +24,7 @@ import {
 } from "@t3tools/shared/threadLinks";
 import * as Schema from "effect/Schema";
 
-import { CLOSED_STATE_TYPES, commentKind } from "./linearInboxRouting.ts";
+import { AGENT_INBOX_TITLE_PREFIX, CLOSED_STATE_TYPES, commentKind } from "./linearInboxRouting.ts";
 
 /** Linear's GraphQL API, read with an OAuth access token. Queries checked against Linear's public schema. */
 export const LINEAR_API_URL = "https://api.linear.app/graphql";
@@ -154,6 +154,51 @@ export const TASK_QUERY = `query BoardTask($id: String!) {
 export const TEAM_MEMBERS_QUERY = `query BoardTeamMembers($id: String!) {
   team(id: $id) { members(first: 250) { nodes { id name displayName email } } }
 }`;
+
+/** A person's open "Agent inbox" task on a board, where teammates' agents message theirs. */
+export const AGENT_INBOX_QUERY = `query BoardAgentInbox($filter: IssueFilter!) {
+  issues(filter: $filter, first: 1) { nodes { id identifier url } }
+}`;
+
+export function agentInboxFilter(input: {
+  readonly teamId: string;
+  readonly projectId: string | null;
+  readonly assigneeId: string;
+}) {
+  return {
+    team: { id: { eq: input.teamId } },
+    ...(input.projectId === null ? {} : { project: { id: { eq: input.projectId } } }),
+    assignee: { id: { eq: input.assigneeId } },
+    title: { startsWith: AGENT_INBOX_TITLE_PREFIX },
+    state: { type: { nin: [...CLOSED_STATE_TYPES] } },
+  };
+}
+
+export const AgentInboxData = Schema.Struct({
+  issues: Schema.Struct({
+    nodes: Schema.Array(
+      Schema.Struct({ id: Schema.String, identifier: Schema.String, url: Schema.String }),
+    ),
+  }),
+});
+
+/** The state a new Agent inbox task gets: the team's first backlog state, else its first unstarted one. */
+export function agentInboxStateId(states: ReadonlyArray<LinearState>): string | undefined {
+  const sorted = states.toSorted((a, b) => a.position - b.position);
+  return (
+    sorted.find((state) => state.type === "backlog") ??
+    sorted.find((state) => state.type === "unstarted")
+  )?.id;
+}
+
+/**
+ * An agent's message on Linear: the "agent:" prefix the protocol reads, then the reply address
+ * the receiving side routes answers to. Code adds both, so the model writes neither.
+ */
+export function agentMessageBody(text: string, replyAddress: string): string {
+  const message = text.trim().replace(/^agent:\s*/i, "");
+  return `agent: ${message}\n\nReply address: ${replyAddress}`;
+}
 
 /** Open issues of the team (and project), plus those closed within RECENTLY_CLOSED. */
 export function issuesFilter(teamId: string, projectId: string | null) {

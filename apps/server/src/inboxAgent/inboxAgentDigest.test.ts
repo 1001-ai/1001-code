@@ -15,6 +15,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as TestClock from "effect/testing/TestClock";
 
+import type { LinearInboxLogEntry } from "../board/linearInboxLog.ts";
 import { liveThreadShell } from "../mcp/McpToolAccess.testkit.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import {
@@ -133,6 +134,66 @@ it("counts a change at the user's previous message as seen, and one at this mess
     thread("after", { createdAt: at(UNTIL + 1) }),
   ]);
   expect(digest.entries.map((entry) => entry.threadId)).toEqual(["at-until"]);
+});
+
+it("lists teammates' messages of this project: where each went, or why it did not arrive", () => {
+  const message = (
+    commentId: string,
+    hour: number,
+    fields: Partial<LinearInboxLogEntry> = {},
+  ): LinearInboxLogEntry => ({
+    commentId,
+    rootId: commentId,
+    issueId: "issue-1",
+    issue: "ENG-1",
+    sender: "Sam Lee",
+    kind: "agent",
+    at: DateTime.formatIso(at(hour * HOUR)),
+    outcome: "delivered",
+    via: "issue-link",
+    threadId: ThreadId.make("toolbar"),
+    projectIds: [PROJECT],
+    ...fields,
+  });
+  const digest = inboxAgentDigest({
+    shells: [thread("toolbar", { title: "Toolbar" })],
+    projectId: PROJECT,
+    inboxThreadId: INBOX,
+    sinceMs: SINCE,
+    untilMs: UNTIL,
+    messages: [
+      message("direct", 11),
+      message("forwarded", 12, { via: "forward" }),
+      message("to-inbox", 13, { via: "inbox", threadId: INBOX }),
+      message("skipped", 14, {
+        kind: "person",
+        outcome: "not-delivered",
+        via: undefined,
+        reason: "no-thread-link",
+        threadId: undefined,
+      }),
+      message("elsewhere", 15, { projectIds: [ProjectId.make("project-other")] }),
+      message("old", 9),
+    ],
+  });
+  expect(
+    digest.entries.map((entry) => [entry.kind, entry.threadId, entry.title, entry.detail]),
+  ).toEqual([
+    [
+      "message-not-delivered",
+      INBOX,
+      "ENG-1 from Sam Lee",
+      "Not delivered: no thread here is linked to the issue.",
+    ],
+    ["message-received", INBOX, "ENG-1 from Sam Lee's agent", "Delivered to the Inbox."],
+    [
+      "message-received",
+      "toolbar",
+      "ENG-1 from Sam Lee's agent",
+      'Forwarded by the Inbox to "Toolbar".',
+    ],
+    ["message-received", "toolbar", "ENG-1 from Sam Lee's agent", 'Delivered to "Toolbar".'],
+  ]);
 });
 
 it("leaves out side chats, subagents, other projects and the Inbox itself", () => {

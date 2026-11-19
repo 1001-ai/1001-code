@@ -19,6 +19,7 @@ import {
   teamCatalogRepositoryMatches,
 } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { formatThreadLink } from "@t3tools/shared/threadLinks";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Digest from "effect/crypto/Digest";
@@ -45,8 +46,17 @@ import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
 import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
 import * as TeamCatalog from "../teamCatalog/TeamCatalog.ts";
-import { linkedThreadIds } from "./linearInboxRouting.ts";
 import {
+  AGENT_INBOX_TITLE_PREFIX,
+  type LinearMappedProject,
+  linkedThreadIds,
+} from "./linearInboxRouting.ts";
+import {
+  AGENT_INBOX_QUERY,
+  AgentInboxData,
+  agentInboxFilter,
+  agentInboxStateId,
+  agentMessageBody,
   COMMENT_CREATE_MUTATION,
   CommentCreateData,
   ISSUE_CREATE_MUTATION,
@@ -158,8 +168,45 @@ export class Board extends Context.Service<
     readonly listTasks: (
       projectId: ProjectId,
     ) => Effect.Effect<BoardTaskList, BoardError | BoardInputError>;
+    /** Each local project whose catalog entry names a Linear team, with that team. */
+    readonly linearProjects: Effect.Effect<ReadonlyArray<LinearMappedProject>>;
+    /**
+     * Posts an agent's message as the signed-in person: on a task, or on a teammate's Agent inbox
+     * task on the project's board (made if missing), with the thread's reply address.
+     */
+    readonly message: (
+      input: BoardMessageInput,
+    ) => Effect.Effect<BoardMessageResult, BoardError | BoardInputError>;
+    /** Posts an agent's reply in a comment's exchange, with the thread's reply address. */
+    readonly reply: (input: BoardReplyInput) => Effect.Effect<BoardMessageResult, BoardError>;
   }
 >()("t3/board/Board") {}
+
+export interface BoardMessageInput {
+  readonly projectId: ProjectId;
+  readonly thread: BoardTaskThread;
+  /** The task to comment on, such as ENG-12. */
+  readonly task?: string | undefined;
+  /** A teammate, by name or email, whose Agent inbox gets the message when there is no task. */
+  readonly to?: string | undefined;
+  readonly text: string;
+}
+
+export interface BoardReplyInput {
+  readonly thread: BoardTaskThread;
+  readonly issueId: string;
+  /** Such as ENG-12. */
+  readonly issue: string;
+  /** The exchange's first comment. */
+  readonly parentId: string;
+  readonly text: string;
+}
+
+export interface BoardMessageResult {
+  /** Where the comment went, such as ENG-12. */
+  readonly task: string;
+  readonly commentId: string;
+}
 
 /** What an agent sets on a task; only the given fields change. */
 interface BoardTaskFields {
@@ -1292,6 +1339,137 @@ const make = Effect.gen(function* () {
     },
   );
 
+  const linearProjects: Board["Service"]["linearProjects"] = Effect.gen(function* () {
+    const catalog = yield* teamCatalog.snapshot;
+    if (catalog.source === null) return [];
+    const rows = yield* projects
+      .list()
+      .pipe(Effect.orElseSucceed((): ReadonlyArray<ProjectStore.ProjectRow> => []));
+    const mapped: Array<LinearMappedProject> = [];
+    for (const row of rows) {
+      if (row.archivedAt !== null || row.deletedAt !== null) continue;
+      const target = yield* resolveTarget(row.projectId);
+      if (target._tag === "linear")
+        mapped.push({ projectId: row.projectId, linear: target.linear });
+    }
+    return mapped;
+  }).pipe(Effect.withSpan("Board.linearProjects"));
+
+  const replyAddress = (thread: BoardTaskThread) =>
+    formatThreadLink({ environmentId, threadId: thread.id });
+
+  const postComment = Effect.fn("Board.postComment")(function* (
+    generation: number,
+    input: { readonly issueId: string; readonly body: string; readonly parentId?: string },
+  ) {
+    const { commentCreate } = yield* linear(
+      generation,
+      COMMENT_CREATE_MUTATION,
+      { input },
+      CommentCreateData,
+    );
+    if (!commentCreate.success) {
+      return yield* new BoardError({
+        reason: "invalid-response",
+        detail: "Linear did not accept the comment.",
+      });
+    }
+    return commentCreate.comment.id;
+  });
+
+  /** The teammate's open Agent inbox task on this board, filed and assigned to them if missing. */
+  const agentInbox = Effect.fn("Board.agentInbox")(function* (scope: TaskBoard, to: string) {
+    if (to.trim().toLowerCase() === "me") {
+      return yield* new BoardInputError({
+        detail: "Message a teammate by name or email, not the person you work for.",
+      });
+    }
+    const assignee = yield* assigneeId(scope, to);
+    const filter = agentInboxFilter({
+      teamId: scope.team.id,
+      projectId: scope.project?.id ?? null,
+      assigneeId: assignee,
+    });
+    const { issues } = yield* linear(
+      scope.generation,
+      AGENT_INBOX_QUERY,
+      { filter },
+      AgentInboxData,
+    );
+    const found = issues.nodes[0];
+    if (found !== undefined) return found;
+    const { team } = yield* linear(
+      scope.generation,
+      TEAM_MEMBERS_QUERY,
+      { id: scope.team.id },
+      TeamMembersData,
+    );
+    const member = team.members.nodes.find((candidate) => candidate.id === assignee);
+    const name = member?.displayName || member?.name || to.trim();
+    const stateId = agentInboxStateId(scope.team.states.nodes);
+    const { issueCreate } = yield* linear(
+      scope.generation,
+      ISSUE_CREATE_MUTATION,
+      {
+        input: {
+          teamId: scope.team.id,
+          ...(scope.project === null ? {} : { projectId: scope.project.id }),
+          title: `${AGENT_INBOX_TITLE_PREFIX} ${name}`,
+          description: `Teammates' agents leave messages for ${name}'s agents here, one comment each. A message's reply address says where to answer.`,
+          assigneeId: assignee,
+          ...(stateId === undefined ? {} : { stateId }),
+        },
+      },
+      IssueCreateData,
+    );
+    if (!issueCreate.success || issueCreate.issue === null) return yield* notAccepted;
+    yield* afterWrite(scope);
+    return issueCreate.issue;
+  });
+
+  const message: Board["Service"]["message"] = Effect.fn("Board.message")(function* (input) {
+    const scope = yield* taskBoard(input.projectId, "send the message");
+    let issue: { readonly id: string; readonly identifier: string };
+    if (input.task !== undefined) {
+      const { issue: found } = yield* linear(
+        scope.generation,
+        TASK_QUERY,
+        { id: input.task },
+        TaskData,
+      );
+      if (found === null) {
+        return yield* new BoardError({
+          reason: "issue-not-found",
+          detail: `${input.task} is not a Linear issue your user can see.`,
+        });
+      }
+      issue = found;
+    } else if (input.to !== undefined) {
+      issue = yield* agentInbox(scope, input.to);
+    } else {
+      return yield* new BoardInputError({
+        detail: "Name the task to comment on (task), or the teammate to message (to).",
+      });
+    }
+    const commentId = yield* postComment(scope.generation, {
+      issueId: issue.id,
+      body: agentMessageBody(input.text, replyAddress(input.thread)),
+    });
+    return { task: issue.identifier, commentId };
+  });
+
+  const reply: Board["Service"]["reply"] = Effect.fn("Board.reply")(function* (input) {
+    const generation = credentialGeneration;
+    const credential = yield* readCredential;
+    if (credential === null) return yield* signInFirst("reply");
+    const commentId = yield* postComment(generation, {
+      issueId: input.issueId,
+      parentId: input.parentId,
+      body: agentMessageBody(input.text, replyAddress(input.thread)),
+    });
+    return { task: input.issue, commentId };
+  });
+
   return Board.of({
     connection: SubscriptionRef.get(connectionState),
     connectionChanges: SubscriptionRef.changes(connectionState),
@@ -1307,6 +1485,9 @@ const make = Effect.gen(function* () {
     addTask,
     updateTask,
     listTasks,
+    linearProjects,
+    message,
+    reply,
     session: Effect.gen(function* () {
       // Taken before the read, so a sign-in change in between fails the session's queries.
       const generation = credentialGeneration;

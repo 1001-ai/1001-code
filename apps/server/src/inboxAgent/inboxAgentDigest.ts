@@ -25,6 +25,8 @@ import {
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 
+import { type LinearInboxLogEntry, linearInboxLog } from "../board/linearInboxLog.ts";
+import { skipReasonText } from "../board/linearInboxRouting.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import { isInboxThread } from "./inboxAgentThreads.ts";
 
@@ -57,10 +59,9 @@ function clip(text: string, max: number): string {
 const iso = (millis: number) => DateTime.formatIso(DateTime.makeUnsafe(millis));
 
 /**
- * What changed in one project's listed threads after `sinceMs` and up to `untilMs`: threads made,
- * each thread's latest run started, finished or failed, questions opened and pull requests
- * linked. Side chats, subagents, other projects and the Inbox itself are left out. Newest first;
- * the oldest are cut past the cap.
+ * What changed in one project's listed threads in (`sinceMs`, `untilMs`], with teammates'
+ * messages from the Linear inbox's log. Side chats, subagents, other projects and the Inbox
+ * itself are left out. Newest first; the oldest are cut past the cap.
  */
 export function inboxAgentDigest(input: {
   readonly shells: ReadonlyArray<DigestShell>;
@@ -68,6 +69,7 @@ export function inboxAgentDigest(input: {
   readonly inboxThreadId: ThreadId;
   readonly sinceMs: number;
   readonly untilMs: number;
+  readonly messages?: ReadonlyArray<LinearInboxLogEntry>;
 }): InboxAgentDigest {
   const entries: Array<InboxAgentDigestEntry & { readonly ms: number }> = [];
   const inWindow = (time: DateTime.Utc | null | undefined): number | null => {
@@ -145,6 +147,33 @@ export function inboxAgentDigest(input: {
         link.snapshot === null ? link.url : `${link.url} ${link.snapshot.title}`,
       );
     }
+  }
+  const titles = new Map(input.shells.map((shell) => [shell.id, shell.title]));
+  const titleOf = (threadId: ThreadId | undefined) =>
+    threadId === input.inboxThreadId
+      ? "the Inbox"
+      : threadId === undefined
+        ? "a thread"
+        : `"${titles.get(threadId) ?? "a thread"}"`;
+  for (const message of input.messages ?? []) {
+    if (!message.projectIds.includes(input.projectId)) continue;
+    const ms = Date.parse(message.at);
+    if (!(ms > input.sinceMs && ms <= input.untilMs)) continue;
+    const from = message.kind === "agent" ? `${message.sender}'s agent` : message.sender;
+    const detail =
+      message.outcome === "not-delivered"
+        ? `Not delivered: ${skipReasonText(message.reason)}.`
+        : message.via === "forward"
+          ? `Forwarded by the Inbox to ${titleOf(message.threadId)}.`
+          : `Delivered to ${titleOf(message.threadId)}.`;
+    entries.push({
+      kind: message.outcome === "delivered" ? "message-received" : "message-not-delivered",
+      threadId: message.threadId ?? input.inboxThreadId,
+      title: clip(`${message.issue} from ${from}`, INBOX_AGENT_DIGEST_TITLE_MAX_LENGTH),
+      at: iso(ms),
+      ms,
+      detail: clip(detail, INBOX_AGENT_DIGEST_DETAIL_MAX_LENGTH),
+    });
   }
   entries.sort((left, right) => right.ms - left.ms);
   const kept = entries
@@ -242,6 +271,7 @@ export const attachInboxAgentDigest = Effect.fn("InboxAgent.attachDigest")(funct
         inboxThreadId: inbox.id,
         sinceMs: inboxAgentDigestSinceMs(inbox, untilMs),
         untilMs,
+        messages: linearInboxLog(),
       });
       const context = withInboxAgentDigestRecord(plain.context, digest);
       return context === undefined ? plain : { ...plain, context };
