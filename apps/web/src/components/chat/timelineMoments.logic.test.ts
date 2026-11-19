@@ -9,12 +9,12 @@ import { describe, expect, it } from "vite-plus/test";
 
 import type { MessagesTimelineRow } from "./MessagesTimeline.logic";
 import {
+  agentsBoardMomentCards,
   applyProjectMomentsItem,
   EMPTY_PROJECT_MOMENTS,
   findMessageRow,
   mergeMomentCards,
   resolveMomentCardsVisible,
-  teammateMomentCards,
   momentStackEntries,
   newestMomentArrival,
   resolveMomentCardMaxWidth,
@@ -92,6 +92,16 @@ const board = (messages: AgentsBoardData["messages"]): AgentsBoardData => ({
       needs: null,
     },
     {
+      id: "adalove-4",
+      owner: "Ada Lovelace",
+      tool: null,
+      task: null,
+      started: null,
+      latestStatus: null,
+      latestAt: null,
+      needs: null,
+    },
+    {
       id: "lin-3",
       owner: null,
       tool: null,
@@ -142,7 +152,7 @@ describe("applyProjectMomentsItem", () => {
   });
 });
 
-describe("teammateMomentCards", () => {
+describe("agentsBoardMomentCards", () => {
   const messages = [
     agentMessage("m1", "ada-1", "question", at(17, 9)),
     agentMessage("m2", "sam-2", "question", at(17, 10)),
@@ -151,30 +161,50 @@ describe("teammateMomentCards", () => {
     agentMessage("m5", "lin-3", "started", at(17, 13)),
     agentMessage("m6", "ada-7", "blocked", at(17, 14)),
     agentMessage("m7", "ada-power-9", "question", at(17, 15)),
+    agentMessage("m8", "adalove-4", "done", at(17, 16)),
   ];
 
-  it("leaves out the viewer's own agents by owner or agent id, and working updates", () => {
-    const cards = teammateMomentCards(board(messages), "ADA");
-    expect(cards.map((card) => [card.label, card.person, card.pullRequestUrl])).toEqual([
-      ["Agent asked a question", "Sam", null],
-      ["Agent is done", "Sam", "https://github.com/acme/app/pull/7"],
-      ["Agent started", "A teammate", null],
-      ["Agent asked a question", "ada-power", null],
+  it("puts the viewer's own agents under You by board name, whole or first word, or agent id", () => {
+    // The login matches no owner: agents write their person's name, not the GitHub login.
+    const cards = agentsBoardMomentCards(board(messages), { login: "octo-ada", name: "Ada" });
+    expect(cards.map((card) => [card.label, card.person, card.personal])).toEqual([
+      ["Agent asked a question", "You", true],
+      ["Agent asked a question", "Sam", false],
+      ["Agent is done", "Sam", false],
+      ["Agent started", "A teammate", false],
+      ["Agent asked a question", "You", true],
+      ["Agent asked a question", "ada-power", false],
+      ["Agent is done", "You", true],
+    ]);
+    expect(cards.find((card) => card.id === "board:m4")?.pullRequestUrl).toBe(
+      "https://github.com/acme/app/pull/7",
+    );
+  });
+
+  it("matches the login when the profile has no name", () => {
+    const cards = agentsBoardMomentCards(board(messages), { login: "ADA" });
+    expect(cards.filter((card) => card.personal).map((card) => card.id)).toEqual([
+      "board:m1",
+      "board:m6",
+      "board:m8",
     ]);
   });
 
-  it("keeps every agent when no one is signed in", () => {
-    expect(teammateMomentCards(board(messages), null)).toHaveLength(6);
+  it("treats every agent as a teammate when no one is signed in", () => {
+    const cards = agentsBoardMomentCards(board(messages), null);
+    expect(cards).toHaveLength(7);
+    expect(cards.some((card) => card.personal)).toBe(false);
   });
 });
 
 describe("mergeMomentCards", () => {
-  const teammates = teammateMomentCards(
+  const boardCards = agentsBoardMomentCards(
     board([
       agentMessage("m1", "sam-2", "done", at(17, 10)),
       agentMessage("m0", "sam-2", "done", at(1, 10)),
+      agentMessage("m2", "ada-1", "done", at(17, 12)),
     ]),
-    "ada",
+    { login: "ada" },
   );
   const input = {
     moments: [
@@ -185,7 +215,7 @@ describe("mergeMomentCards", () => {
         pullRequest: { number: 4, url: "u", title: null },
       }),
     ],
-    teammates,
+    board: boardCards,
     sinceMillis: Date.parse(at(10, 0)),
   };
 
@@ -195,12 +225,13 @@ describe("mergeMomentCards", () => {
       ["Thread started", true],
       ["Agent is done", false],
       ["PR #4 is in testing", true],
+      ["Agent is done", true],
     ]);
   });
 
-  it("hides teammates when the toggle is off", () => {
+  it("hides teammates when the toggle is off, but not the viewer's own board cards", () => {
     const cards = mergeMomentCards({ ...input, showTeammates: false });
-    expect(cards.map((card) => card.personal)).toEqual([true, true]);
+    expect(cards.map((card) => card.id)).toEqual(["a", "b", "board:m2"]);
   });
 });
 
@@ -212,9 +243,15 @@ describe("momentStackEntries", () => {
         moment("b", at(17, 9)),
         moment("c", at(18, 7)),
         moment("d", at(18, 9)),
-        moment("e", at(18, 10)),
+        moment("e", at(18, 11)),
       ],
-      teammates: teammateMomentCards(board([agentMessage("s", "sam-2", "done", at(18, 8))]), "ada"),
+      board: agentsBoardMomentCards(
+        board([
+          agentMessage("s", "sam-2", "done", at(18, 8)),
+          agentMessage("o", "ada-1", "done", at(18, 10)),
+        ]),
+        { login: "ada" },
+      ),
       showTeammates: true,
       sinceMillis: 0,
     });
@@ -236,6 +273,7 @@ describe("momentStackEntries", () => {
       ["c", "You"],
       ["board:s", "Sam"],
       ["d", "You"],
+      ["board:o", null],
       ["e", null],
     ]);
   });

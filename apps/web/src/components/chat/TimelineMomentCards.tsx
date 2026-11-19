@@ -33,7 +33,7 @@ import {
   momentStackEntries,
   newestMomentArrival,
   resolveMomentCardMaxWidth,
-  teammateMomentCards,
+  agentsBoardMomentCards,
 } from "./timelineMoments.logic";
 
 const TEAMMATES_STORAGE_KEY = "t3code:timeline-moments:teammates";
@@ -96,7 +96,7 @@ export function TimelineMomentCards({
 }) {
   const environmentId = threadRef.environmentId;
   const board = useAgentsBoard(environmentId, projectId);
-  const viewerLogin = useTeamCatalog(environmentId)?.viewer.login ?? null;
+  const viewer = useTeamCatalog(environmentId)?.viewer ?? null;
   const refreshBoard = useAtomCommand(agentsBoardRefresh);
   const timestampFormat = useClientSettings((settings) => settings.timestampFormat);
   const [showTeammates, setShowTeammates] = useLocalStorage(
@@ -132,7 +132,7 @@ export function TimelineMomentCards({
 
   const cards = mergeMomentCards({
     moments,
-    teammates: boardReady ? teammateMomentCards(board.board, viewerLogin) : [],
+    board: boardReady ? agentsBoardMomentCards(board.board, viewer) : [],
     showTeammates,
     sinceMillis: nowMillis - WINDOW_MILLIS,
   });

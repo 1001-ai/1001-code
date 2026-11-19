@@ -82,6 +82,11 @@ export type TeamCatalogInvalidFile = typeof TeamCatalogInvalidFile.Type;
 /** Who edits on this environment: the GitHub CLI's signed-in login, matched against `owners`. */
 export const TeamCatalogViewer = Schema.Struct({
   login: Schema.NullOr(TeamCatalogOwner),
+  /**
+   * The name the agents board knows this person by: their GitHub profile's first name, as their
+   * signed board messages use. Absent when the profile has no name.
+   */
+  name: Schema.optionalKey(TrimmedNonEmptyString),
   /** Why there is no login, such as the GitHub CLI being signed out. */
   problem: Schema.NullOr(Schema.String),
 });

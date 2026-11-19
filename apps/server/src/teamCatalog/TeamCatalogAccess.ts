@@ -6,6 +6,7 @@ import * as Layer from "effect/Layer";
 
 import * as ProcessRunner from "../processRunner.ts";
 import { unsetInheritedRepositoryEnv } from "../vcs/VcsProcess.ts";
+import { teamCatalogViewerFromGh } from "./teamCatalogFiles.ts";
 
 /**
  * What this environment's own credentials allow: the GitHub CLI's signed-in login, whether git
@@ -46,14 +47,14 @@ const make = Effect.gen(function* () {
   };
 
   const viewer: TeamCatalogAccess["Service"]["viewer"] = processRunner
-    .run({ command: "gh", args: ["api", "user", "--jq", ".login"], env, timeout: "15 seconds" })
+    .run({
+      command: "gh",
+      args: ["api", "user", "--jq", '[.login, (.name // "")] | @tsv'],
+      env,
+      timeout: "15 seconds",
+    })
     .pipe(
-      Effect.map((output): TeamCatalogViewer => {
-        const login = output.stdout.trim();
-        return output.code === 0 && /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(login)
-          ? { login, problem: null }
-          : { login: null, problem: "The GitHub CLI is not signed in. Run gh auth login." };
-      }),
+      Effect.map((output) => teamCatalogViewerFromGh(output.code, output.stdout)),
       Effect.orElseSucceed((): TeamCatalogViewer => ({
         login: null,
         problem: "The GitHub CLI (gh) is not installed, so owners cannot be recognized.",
