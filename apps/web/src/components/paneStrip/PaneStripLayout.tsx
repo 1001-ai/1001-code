@@ -15,12 +15,7 @@ import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "../../workspaceTitlebar"
 import { TimelineMomentCards } from "../chat/TimelineMomentCards";
 import { PANE_STRIP_ATTRIBUTE } from "./paneStrip.logic";
 import { PaneStripIndicator } from "./PaneStripIndicator";
-import {
-  PANE_STRIP_COLUMN_CLASS,
-  PaneStripContext,
-  usePaneOnScreen,
-  usePaneStripSetting,
-} from "./paneStripMode";
+import { PaneStripContext, usePaneOnScreen, usePaneStripSetting } from "./paneStripMode";
 
 // The cards were written for a chat's margin: these stand in for the open chat's rows and minimap.
 const NO_ROWS: [] = [];
@@ -105,9 +100,10 @@ function PaneStrip(props: {
           ref={threadColumnRef}
           data-pane-strip-label="Thread"
           className={cn(
-            panesOpen
-              ? PANE_STRIP_COLUMN_CLASS
-              : "flex min-h-0 min-w-0 shrink-0 basis-full snap-start",
+            "flex min-h-0 min-w-0 shrink-0 grow-0 snap-start",
+            // Beside panes the thread keeps the width its details card needs to stay open, so
+            // on most windows the next pane peeks in at the right edge rather than sharing evenly.
+            panesOpen ? "basis-[min(100%,max(50%,64rem))]" : "basis-full",
             // The thread's controls are pinned to the window's corner; here they stay with the thread.
             "flex-row [&_[data-workspace-titlebar-controls]]:absolute",
           )}
