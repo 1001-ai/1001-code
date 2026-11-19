@@ -21,6 +21,7 @@ import { RightPanelEmptyState, surfaceTitle } from "../RightPanelTabs";
 import { Button } from "../ui/button";
 import { shouldRevealActivePane } from "./paneStrip.logic";
 import { PANE_STRIP_COLUMN_CLASS, type PaneStripHandle, usePaneOnScreen } from "./paneStripMode";
+import { usePaneStripOrder } from "./paneStripPlacement";
 
 type PanelProps = ComponentProps<typeof ChatRightPanel>;
 
@@ -49,6 +50,7 @@ function PaneStripPanes(
   const { host, threadKey, activeSurfaceId } = props;
   const browserProfiles = useBrowserDefaults().profiles;
   const reducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
+  const surfaces = usePaneStripOrder(props.surfaces);
   const shown = useRef<{ threadKey: string; activeSurfaceId: string | null } | null>(null);
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- scrolls the strip's DOM scroller to the pane that just became active
@@ -70,7 +72,7 @@ function PaneStripPanes(
 
   return (
     <>
-      {props.surfaces.map((surface) => (
+      {surfaces.map((surface) => (
         <StripPane
           key={surface.id}
           surface={surface}

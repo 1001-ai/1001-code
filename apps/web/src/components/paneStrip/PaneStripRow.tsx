@@ -1,6 +1,7 @@
 import { SettingsRow } from "../settings/settingsLayout";
 import { Switch } from "../ui/switch";
 import { usePaneStripSetting } from "./paneStripMode";
+import { PaneStripPlacementRow } from "./PaneStripPlacementRow";
 
 /** The Labs switch for the pane strip. It is saved in this browser, not on the server. */
 export function PaneStripRow() {
@@ -17,6 +18,8 @@ export function PaneStripRow() {
           aria-label="Pane strip"
         />
       }
-    />
+    >
+      {enabled ? <PaneStripPlacementRow /> : null}
+    </SettingsRow>
   );
 }
