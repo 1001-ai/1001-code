@@ -109,6 +109,7 @@ import {
 import { pickSnoozePreset, resolveSnoozePresets, type SnoozePreset } from "../Sidebar.snooze";
 import { useThreadShell } from "../../state/entities";
 import { ProjectFavicon, type ProjectFaviconProject } from "../ProjectFavicon";
+import { StartedByAutomationIcon, StartedByAutomationLabel } from "../StartedByAutomation";
 import { ThreadSearchMatchExcerpt } from "../ThreadSearchMatch";
 import { makeWorkspaceFileDropHandlers } from "../chat/workspaceFileDrop";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
@@ -1159,6 +1160,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
   const diff = latestRunDiff(thread);
   // Only the trailing icons would remain, so the row moves them to the title line instead.
   const metaLineEmpty =
+    thread.startedByScheduledTaskId === undefined &&
     !checkoutThread.branch &&
     !showsScratchMachine &&
     prBadge === null &&
@@ -1166,7 +1168,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     runningTerminalIds.length === 0;
   const metaLine = metaLineEmpty ? null : (
     <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-secondary-label text-xs">
-      {checkoutThread.branch ? (
+      {thread.startedByScheduledTaskId !== undefined ? (
+        <StartedByAutomationLabel
+          environmentId={thread.environmentId}
+          scheduledTaskId={thread.startedByScheduledTaskId}
+        />
+      ) : checkoutThread.branch ? (
         <>
           <ThreadWorktreeIndicator thread={checkoutThread} />
           <span className="flex min-w-0 flex-1">
@@ -1274,6 +1281,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                 </span>
               )}
               {draftIndicator}
+              {thread.startedByScheduledTaskId !== undefined && !multiline ? (
+                <StartedByAutomationIcon />
+              ) : null}
               {title}
               {multiline ? titleLineIcons : null}
               {pinIndicator}

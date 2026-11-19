@@ -42,6 +42,7 @@ import { cn } from "~/lib/utils";
 import { textDirection } from "~/textDirection";
 import { useClientSettings } from "../../hooks/useSettings";
 import { GuestShareIndicator } from "./GuestShareControls";
+import { StartedByAutomationBadge } from "../StartedByAutomation";
 
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
@@ -255,7 +256,7 @@ export const ChatHeader = memo(function ChatHeader({
     >
       <WorkspaceBreadcrumb
         ariaLabel="Thread breadcrumb"
-        className="flex-1 overflow-clip [overflow-clip-margin:2px]"
+        className="@container/thread-header flex-1 overflow-clip [overflow-clip-margin:2px]"
       >
         {activeProject ? (
           <>
@@ -391,6 +392,7 @@ export const ChatHeader = memo(function ChatHeader({
               </TooltipPopup>
             </Tooltip>
           ) : null}
+          {renamingTitle === null ? <StartedByAutomationBadge threadRef={activeThreadRef} /> : null}
         </WorkspaceBreadcrumbItem>
       </WorkspaceBreadcrumb>
       {isServerThread ? <GuestShareIndicator threadRef={activeThreadRef} /> : null}

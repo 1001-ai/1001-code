@@ -2181,6 +2181,8 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   latestUserAuthoredMessageAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   /** When the agent last asked question cards the user has not replied to. Absent from older servers. */
   openQuestionsAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
+  /** The scheduled task whose prompt is the thread's first message. Absent otherwise, and from older servers. */
+  startedByScheduledTaskId: Schema.optional(ScheduledTaskId),
   hasActionableProposedPlan: Schema.Boolean,
   pendingBackgroundTasks: Schema.optional(Schema.Array(OrchestrationV2PendingBackgroundTask)).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),

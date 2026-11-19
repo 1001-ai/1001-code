@@ -164,6 +164,8 @@ export interface EnvironmentThreadShell {
   readonly latestUserAuthoredMessageAt?: string | null;
   /** When the agent last asked question cards the user has not replied to. */
   readonly openQuestionsAt?: string | null;
+  /** The scheduled task whose prompt is the thread's first message, if one started it. */
+  readonly startedByScheduledTaskId?: OrchestrationV2ThreadShell["startedByScheduledTaskId"];
   readonly hasPendingApprovals: boolean;
   readonly hasPendingUserInput: boolean;
   readonly pendingUserInputAt?: string | null;
@@ -316,6 +318,9 @@ export function presentThreadShell(
       ? {}
       : { latestUserAuthoredMessageAt: nullableIso(thread.latestUserAuthoredMessageAt) }),
     openQuestionsAt: nullableIso(thread.openQuestionsAt ?? null),
+    ...(thread.startedByScheduledTaskId === undefined
+      ? {}
+      : { startedByScheduledTaskId: thread.startedByScheduledTaskId }),
     hasPendingApprovals:
       thread.pendingRuntimeRequest !== null &&
       thread.pendingRuntimeRequest.kind !== "user_input" &&
