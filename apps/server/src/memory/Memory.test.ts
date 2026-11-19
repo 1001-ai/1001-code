@@ -796,7 +796,7 @@ it.effect("proposes a change or removal of a saved line only where exactly one f
 
     const change = yield* memory.proposeFromAgent(
       editProposal({
-        text: "Run all tests before pushing.",
+        text: "- Run all tests before pushing.",
         replaces: " - Run the web tests before pushing. ",
       }),
     );
@@ -825,6 +825,12 @@ it.effect("proposes a change or removal of a saved line only where exactly one f
     const added = yield* memory.proposeFromAgent(agentProposal("Keep replies short."));
     expect(added.id).not.toBe(removal.id);
     expect(added.kind).toBeUndefined();
+
+    // After a GitHub CLI account switch, the line is looked up in the signed-in person's file.
+    const bob = yield* makeMemory({ catalog: catalog(), liveLogin: "Bob" }).build;
+    expect(
+      yield* bob.proposeFromAgent(editProposal({ replaces: "Bob's own rule." })),
+    ).toMatchObject({ kind: "remove", scope: "personal", file: "memory/people/bob.md" });
   }).pipe(Effect.scoped),
 );
 
@@ -839,7 +845,7 @@ it.effect("accepting a change or removal edits every copy of the line in its own
     const memory = yield* fixture.build;
     const decide = (proposalId: string, choice: "me" | "team" | "accept") =>
       memory.decide(
-        { projectId: PROJECT_ID, proposalId, choice, text: "Run all tests before pushing." },
+        { projectId: PROJECT_ID, proposalId, choice, text: "- Run all tests before pushing." },
         "session-1",
       );
     const change = yield* memory.proposeFromAgent(

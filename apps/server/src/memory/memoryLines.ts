@@ -32,7 +32,7 @@ export const replaceMemoryLine = (
       return [];
     }
     found = true;
-    return [`${LIST_ITEM.exec(line)?.[0] ?? ""}${next}`];
+    return [`${LIST_ITEM.exec(line)?.[0] ?? ""}${memoryLineText(next)}`];
   });
   return found ? lines.join("\n") : null;
 };

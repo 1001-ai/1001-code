@@ -522,9 +522,15 @@ const make = Effect.gen(function* () {
     readonly replaces: string;
   }) {
     const replaces = memoryLineText(input.replaces);
-    const { view } = yield* readWithProject(input.projectId);
-    const found = view.documents.filter(
-      (document) => document.file !== null && hasMemoryLine(document.text, replaces),
+    const { view, project } = yield* readWithProject(input.projectId);
+    const documents = yield* Effect.forEach(
+      ["team", "project", "personal", "personal-project"] as const,
+      (scope) => writableDocument(view, project, scope),
+    );
+    const found = documents.flatMap((document) =>
+      document !== undefined && document.file !== null && hasMemoryLine(document.text, replaces)
+        ? [document]
+        : [],
     );
     const where = found[0];
     if (replaces === "" || where === undefined || where.file === null) {
@@ -546,7 +552,7 @@ const make = Effect.gen(function* () {
     const kind: MemoryProposalKind = input.text === "" ? "remove" : "change";
     return yield* addProposal({
       ...input,
-      text: kind === "remove" ? replaces : input.text,
+      text: kind === "remove" ? replaces : memoryLineText(input.text),
       replaces,
       kind,
       scope: where.scope,
@@ -802,7 +808,7 @@ const make = Effect.gen(function* () {
 
     // Start from the newest catalog, so the pull request rarely meets a moved file.
     yield* teamCatalog.refresh({ force: true });
-    const line = input.text.trim();
+    const line = edit ? memoryLineText(input.text) : input.text.trim();
     const origin = [
       `Proposed by an agent in the thread "${proposal.threadTitle}".`,
       ...(proposal.reason === "" ? [] : [`Its reason: ${proposal.reason}`]),
