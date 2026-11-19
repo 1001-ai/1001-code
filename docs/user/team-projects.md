@@ -315,6 +315,14 @@ starts.
 When you write to it while it is idle, it first reads what changed in the project's threads
 since your previous message to it, and shows that as **What changed** above your message.
 
-The Inbox can list, read and search threads, read the [Board](#board) and propose memories. It
-cannot run commands, change files or send messages to other threads, and it has no branch,
-commit or terminal controls. It runs only when you write to it.
+The Inbox can list, read and search threads, read the [Board](#board) and propose memories. When
+you ask, it also messages threads of its own project: to ask how something stands or to pass on
+work. It waits for each answer and reports back. Name the threads, or select them in the sidebar
+and drag them into the message, and it sends to each right away. You can also select threads of
+one project, right-click them and choose **Message from Inbox…**: the project's Inbox opens with
+them already in your message. If you ask it to choose the threads itself, it first shows the ones
+it found as a question, and sends only to those you tick.
+
+It messages threads only in a turn you started with your own message, never threads of another
+project. It cannot run commands or change files, and it has no branch, commit or terminal
+controls. It runs only when you write to it.

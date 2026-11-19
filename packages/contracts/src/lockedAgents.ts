@@ -26,6 +26,8 @@ export const LOCKED_AGENT_TOOL_NAMES: Readonly<Record<LockedAgentKind, ReadonlyA
     "t3_thread_list",
     "t3_thread_read",
     "t3_thread_search",
+    "t3_thread_send",
+    "t3_thread_wait",
     BOARD_LIST_TOOL_NAME,
     MEMORY_PROPOSE_TOOL_NAME,
   ],

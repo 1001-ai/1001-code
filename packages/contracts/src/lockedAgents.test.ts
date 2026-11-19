@@ -33,7 +33,8 @@ describe("lockedAgents", () => {
     ["t3_thread_read", "inbox", true],
     ["board_list", "inbox", true],
     ["memory_propose", "inbox", true],
-    ["t3_thread_send", "inbox", false],
+    ["t3_thread_send", "inbox", true],
+    ["t3_thread_interrupt", "inbox", false],
     ["voice_board", "inbox", false],
     ["voice_board", "voice", true],
     ["t3_thread_read", "voice", false],
@@ -43,11 +44,13 @@ describe("lockedAgents", () => {
     expect(lockedAgentToolAllowed(tool, kind)).toBe(allowed);
   });
 
-  it("gives the Inbox exactly its five read tools", () => {
+  it("gives the Inbox exactly its read tools and the two to message threads", () => {
     expect(LOCKED_AGENT_TOOL_NAMES.inbox).toEqual([
       "t3_thread_list",
       "t3_thread_read",
       "t3_thread_search",
+      "t3_thread_send",
+      "t3_thread_wait",
       "board_list",
       "memory_propose",
     ]);
