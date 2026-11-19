@@ -15,7 +15,7 @@ import {
   mergeMomentCards,
   resolveMomentCardsVisible,
   teammateMomentCards,
-  withDaySeparators,
+  momentStackEntries,
 } from "./timelineMoments.logic";
 
 const threadId = ThreadId.make("thread:exports");
@@ -153,11 +153,11 @@ describe("teammateMomentCards", () => {
 
   it("leaves out the viewer's own agents by owner or agent id, and working updates", () => {
     const cards = teammateMomentCards(board(messages), "ADA");
-    expect(cards.map((card) => [card.label, card.personal, card.pullRequestUrl])).toEqual([
-      ["Sam's agent asked a question", false, null],
-      ["Sam's agent is done", false, "https://github.com/acme/app/pull/7"],
-      ["A teammate's agent started", false, null],
-      ["ada-power's agent asked a question", false, null],
+    expect(cards.map((card) => [card.label, card.person, card.pullRequestUrl])).toEqual([
+      ["Agent asked a question", "Sam", null],
+      ["Agent is done", "Sam", "https://github.com/acme/app/pull/7"],
+      ["Agent started", "A teammate", null],
+      ["Agent asked a question", "ada-power", null],
     ]);
   });
 
@@ -191,7 +191,7 @@ describe("mergeMomentCards", () => {
     const cards = mergeMomentCards({ ...input, showTeammates: true });
     expect(cards.map((card) => [card.label, card.personal])).toEqual([
       ["Thread started", true],
-      ["Sam's agent is done", false],
+      ["Agent is done", false],
       ["PR #4 is in testing", true],
     ]);
   });
@@ -202,32 +202,39 @@ describe("mergeMomentCards", () => {
   });
 });
 
-describe("withDaySeparators", () => {
-  it("starts each local day with Today, Yesterday or its date", () => {
+describe("momentStackEntries", () => {
+  it("starts each local day with Today, Yesterday or its date, and names each person's run", () => {
     const cards = mergeMomentCards({
       moments: [
         moment("a", at(15, 9)),
         moment("b", at(17, 9)),
-        moment("c", at(18, 8)),
+        moment("c", at(18, 7)),
         moment("d", at(18, 9)),
+        moment("e", at(18, 10)),
       ],
-      teammates: [],
+      teammates: teammateMomentCards(board([agentMessage("s", "sam-2", "done", at(18, 8))]), "ada"),
       showTeammates: true,
       sinceMillis: 0,
     });
-    const entries = withDaySeparators(cards, Date.parse(at(18, 12)));
-    expect(entries.map((entry) => (entry.kind === "day" ? entry.label : entry.card.id))).toEqual([
+    const entries = momentStackEntries(cards, Date.parse(at(18, 12)));
+    expect(
+      entries.map((entry) =>
+        entry.kind === "day" ? entry.label : [entry.card.id, entry.groupName],
+      ),
+    ).toEqual([
       new Date(2026, 10, 15).toLocaleDateString(undefined, {
         weekday: "short",
         month: "short",
         day: "numeric",
       }),
-      "a",
+      ["a", "You"],
       "Yesterday",
-      "b",
+      ["b", "You"],
       "Today",
-      "c",
-      "d",
+      ["c", "You"],
+      ["board:s", "Sam"],
+      ["d", "You"],
+      ["e", null],
     ]);
   });
 });
