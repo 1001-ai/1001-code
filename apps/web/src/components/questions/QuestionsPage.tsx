@@ -28,7 +28,10 @@ import type { ChatComposerHandle } from "../chat/ChatComposer";
 import { ComposerBanner } from "../chat/ComposerBanner";
 import { ComposerPendingUserInputPanel } from "../chat/ComposerPendingUserInputPanel";
 import { QuestionCard } from "../chat/MarkdownQuestionBlock";
-import { usePendingThreadRequests } from "../chat/usePendingThreadRequests";
+import {
+  usePendingThreadRequests,
+  usePendingUserInputDraft,
+} from "../chat/usePendingThreadRequests";
 import { useEnvironmentLookups, useProjectLookups } from "../CommandPaletteLookups";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
@@ -471,8 +474,14 @@ function QuestionsUserInput({ threadRef }: { readonly threadRef: ScopedThreadRef
     composerRef,
     setThreadError: (_threadId, message) => setError(message),
   });
+  const draft = usePendingUserInputDraft({
+    environmentId: threadRef.environmentId,
+    activeThreadId: threadRef.threadId,
+    activePendingUserInput: requests.activePendingUserInput,
+    supportsQuestionAttachments: false,
+  });
   if (requests.pendingUserInputs.length === 0) return null;
-  const activeQuestion = requests.activePendingProgress?.activeQuestion;
+  const activeQuestion = draft.activePendingProgress?.activeQuestion;
   return (
     <div className="flex flex-col gap-1.5 px-4 py-3">
       <ComposerBanner.Root variant="info">
@@ -486,8 +495,8 @@ function QuestionsUserInput({ threadRef }: { readonly threadRef: ScopedThreadRef
               ? [...requests.respondingRequestIds, requests.activePendingUserInput.requestId]
               : requests.respondingRequestIds
           }
-          answers={requests.activePendingDraftAnswers}
-          questionIndex={requests.activePendingQuestionIndex}
+          answers={draft.activePendingDraftAnswers}
+          questionIndex={draft.activePendingQuestionIndex}
           onToggleOption={requests.onSelectActivePendingUserInputOption}
           onAdvance={requests.onAdvanceActivePendingUserInput}
           onDismiss={requests.onDismissUserInput}
