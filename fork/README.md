@@ -337,6 +337,13 @@ One entry for each place this fork changes a file upstream owns, or replaces som
 - **On conflict:** take upstream's code and put the import and the spread back on whatever set upstream's ACP identity check reads.
 - **Check:** `vp test run src/server/forkT3McpTools.test.ts` (from `packages/provider-acp`) passes.
 
+### Thread tools' activity rows say "thread", not "T3 thread"
+
+- **Where:** `withForkT3McpToolLabels` in fork-only `packages/shared/src/forkT3McpToolLabels.ts` replaces the object of the thread tools' labels ("Sending to a thread"). `packages/shared/src/t3McpToolPresentation.ts` carries the hook: the import, and `withForkT3McpToolLabels({` … `})` around the `T3_MCP_TOOLS` table.
+- **Why:** the app is 1001 Code, so rows like "Sending to a T3 thread" named the wrong product. `t3_thread_read` keeps upstream's " a T3 thread", because `threadReadLabelPrefix` in `apps/web/src/components/chat/MessagesTimeline.logic.ts` matches it to show the thread's title instead.
+- **On conflict:** take upstream's table and wrap it again; drop an entry here when upstream renames that tool.
+- **Check:** `git grep -n "withForkT3McpToolLabels" -- packages/shared/src/t3McpToolPresentation.ts` shows the import and the wrap.
+
 ### Back after a link jumps the chat
 
 - **Where:** fork-only files hold the feature: `apps/web/src/components/chat/JumpBack.tsx` (the `useJumpBack` hook and the Back pill) and `chat/jumpBack.logic.ts`. Upstream files carry only the hooks:
