@@ -1,6 +1,8 @@
 import {
   type AgentsBoardData,
   type AgentsBoardStatus,
+  isListedThreadLineage,
+  type OrchestrationV2AppThreadLineage,
   PROJECT_MOMENTS_LIMIT,
   type ProjectMoment,
   type ProjectMomentsStreamItem,
@@ -168,15 +170,20 @@ export interface AgentsBoardViewer {
 }
 
 /**
- * The branches exactly one of this environment's threads in the project is on. A branch several
- * threads share, such as the default branch, says nothing about which thread an agent is.
+ * The branches exactly one of this environment's listed threads in the project is on. A branch
+ * several threads share, such as the default branch, says nothing about which thread an agent is;
+ * subagents, side chats and the voice agent run on their parent's branch, so they do not count.
  */
 export function singleThreadBranches(
-  threads: ReadonlyArray<{ readonly branch: string | null }>,
+  threads: ReadonlyArray<{
+    readonly branch: string | null;
+    readonly lineage: OrchestrationV2AppThreadLineage;
+  }>,
 ): ReadonlySet<string> {
   const counts = new Map<string, number>();
-  for (const { branch } of threads) {
-    if (branch !== null) counts.set(branch, (counts.get(branch) ?? 0) + 1);
+  for (const { branch, lineage } of threads) {
+    if (branch === null || !isListedThreadLineage(lineage) || lineage.voiceAgent === true) continue;
+    counts.set(branch, (counts.get(branch) ?? 0) + 1);
   }
   return new Set([...counts].filter(([, count]) => count === 1).map(([branch]) => branch));
 }

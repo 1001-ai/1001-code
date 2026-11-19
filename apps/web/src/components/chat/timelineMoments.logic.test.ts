@@ -1,5 +1,6 @@
 import {
   type AgentsBoardData,
+  type OrchestrationV2AppThreadLineage,
   MessageId,
   PROJECT_MOMENTS_LIMIT,
   type ProjectMoment,
@@ -154,6 +155,13 @@ describe("applyProjectMomentsItem", () => {
   });
 });
 
+const lineage = (overrides: Partial<OrchestrationV2AppThreadLineage> = {}) => ({
+  parentThreadId: null,
+  relationshipToParent: null,
+  rootThreadId: threadId,
+  ...overrides,
+});
+
 describe("agentsBoardMomentCards", () => {
   const messages = [
     agentMessage("m1", "ada-1", "question", at(17, 9)),
@@ -195,10 +203,13 @@ describe("agentsBoardMomentCards", () => {
   it("leaves out the viewer's own cards that repeat this environment's moments", () => {
     const local = {
       branches: singleThreadBranches([
-        { branch: "feat/export" },
-        { branch: "main" },
-        { branch: "main" },
-        { branch: null },
+        { branch: "feat/export", lineage: lineage() },
+        // A subagent and a side chat on their parent's branch leave it the thread's own.
+        { branch: "feat/export", lineage: lineage({ relationshipToParent: "subagent" }) },
+        { branch: "feat/export", lineage: lineage({ sideChat: true }) },
+        { branch: "main", lineage: lineage() },
+        { branch: "main", lineage: lineage() },
+        { branch: null, lineage: lineage() },
       ]),
       moments: [moment("local-done", at(17, 10), { kind: "done" })],
     };
