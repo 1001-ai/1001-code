@@ -138,7 +138,6 @@ export function useLampVoice(input: {
   const speech = useEnvironmentSpeechInput({
     environmentId: input.environmentId,
     ownerKey: `lamp:${input.threadKey}`,
-    draftText: NO_DRAFT.text,
     // While the layer closes, dictation refuses to start, abandons a recording and drops a late transcript.
     disabled: input.closing,
     readDraft: () => NO_DRAFT,
