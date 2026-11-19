@@ -241,7 +241,9 @@ const watch = Effect.gen(function* () {
           ),
         ),
       );
-      if (outcome !== "running") firstSeen.delete(projectId);
+      // A failed wake keeps its news and tries again a batch's length later.
+      if (outcome === "failed") firstSeen.set(projectId, nowMs);
+      else if (outcome !== "running") firstSeen.delete(projectId);
     }
   });
 

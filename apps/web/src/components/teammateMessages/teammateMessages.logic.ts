@@ -70,10 +70,17 @@ export interface TeammateMessage extends LinearCommentHeader {
   readonly at: string;
 }
 
-/** Messages read from each candidate thread: its newest ones, where a fresh arrival is. */
-export const SCAN_MESSAGE_COUNT = 10;
+/**
+ * User-role messages read from a thread this device never read: its newest ones, where a fresh
+ * arrival is. A thread gets up to 12 routed comments a day, plus the Inbox's wake notes.
+ */
+const FIRST_SCAN_MESSAGE_COUNT = 40;
 
-/** The routed comments among a thread's newest messages. */
+/**
+ * The routed comments among a thread's recent messages, oldest first: every one after `scannedAt`
+ * (this device's watermark for the thread), so a burst is read whole, or the newest few when the
+ * thread was never read here.
+ */
 export function teammateMessagesIn(
   environmentId: EnvironmentId,
   threadId: ThreadId,
@@ -82,9 +89,16 @@ export function teammateMessagesIn(
     readonly role: string;
     readonly text: string;
     readonly createdAt: string;
+    /** The watermark is the thread's newest user-message `updatedAt`. */
+    readonly updatedAt: string;
   }>,
+  scannedAt: string | undefined,
 ): ReadonlyArray<TeammateMessage> {
-  return messages.slice(-SCAN_MESSAGE_COUNT).flatMap((message) => {
+  const unread =
+    scannedAt === undefined
+      ? messages.slice(-FIRST_SCAN_MESSAGE_COUNT)
+      : messages.filter((message) => message.updatedAt > scannedAt);
+  return unread.flatMap((message) => {
     if (message.role !== "user") return [];
     const comment = parseLinearComment(message.text);
     if (comment === null) return [];

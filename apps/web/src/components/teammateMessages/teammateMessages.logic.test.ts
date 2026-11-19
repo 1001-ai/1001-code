@@ -61,11 +61,17 @@ describe("parseLinearComment", () => {
 });
 
 describe("teammateMessagesIn", () => {
-  const message = (id: string, role: string, text: string) => ({
+  const message = (
+    id: string,
+    role: string,
+    text: string,
+    createdAt = "2026-11-19T10:00:00.000Z",
+  ) => ({
     id: MessageId.make(id),
     role,
     text,
-    createdAt: "2026-11-19T10:00:00.000Z",
+    createdAt,
+    updatedAt: createdAt,
   });
 
   it("keeps routed comments among the newest messages", () => {
@@ -74,7 +80,7 @@ describe("teammateMessagesIn", () => {
       message("m2", "assistant", routed("ffff0000", "quoted by the agent")),
       message("m3", "user", "Please look at [Linear comment a1 on ENG-1 from X]"),
     ];
-    expect(teammateMessagesIn(env, thread, messages)).toEqual([
+    expect(teammateMessagesIn(env, thread, messages, undefined)).toEqual([
       {
         nonce: "a1b2c3d4",
         issue: "ENG-12",
@@ -88,10 +94,17 @@ describe("teammateMessagesIn", () => {
     ]);
   });
 
-  it("reads only the newest ten", () => {
-    const older = message("old", "user", routed("a1b2c3d4", "old"));
-    const filler = Array.from({ length: 10 }, (_, index) => message(`f${index}`, "user", "hi"));
-    expect(teammateMessagesIn(env, thread, [older, ...filler])).toEqual([]);
+  it("reads a whole burst after the watermark, and the newest forty of a thread never read", () => {
+    const at = (minute: number) => `2026-11-19T10:${String(minute).padStart(2, "0")}:00.000Z`;
+    const older = message("old", "user", routed("a1b2c3d4", "old"), at(1));
+    const burst = Array.from({ length: 40 }, (_, index) =>
+      message(`f${index}`, "user", "hi", at(index + 2)),
+    );
+    const nonces = (scannedAt: string | undefined) =>
+      teammateMessagesIn(env, thread, [older, ...burst], scannedAt).map((found) => found.nonce);
+    expect(nonces(undefined)).toEqual([]);
+    expect(nonces(at(0))).toEqual(["a1b2c3d4"]);
+    expect(nonces(at(1))).toEqual([]);
   });
 });
 

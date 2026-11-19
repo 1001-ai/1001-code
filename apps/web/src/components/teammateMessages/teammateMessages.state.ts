@@ -18,7 +18,6 @@ import { buildThreadRouteParams } from "../../threadRoutes";
 import { openThreadFindOnQuery } from "../chat/threadFindStore";
 import {
   EMPTY_TEAMMATE_MESSAGES,
-  SCAN_MESSAGE_COUNT,
   type ScanCandidate,
   type ScanShell,
   type TeammateMessage,
@@ -70,8 +69,8 @@ const READ_TIMEOUT_MS = 15_000;
 type ScannedMessages = Parameters<typeof teammateMessagesIn>[2];
 
 /**
- * One thread's newest messages, through the same detail subscription the chat uses (a bounded
- * snapshot of recent history), held only until it is live. Null when it cannot be read.
+ * One thread's recent user-role messages, through the same detail subscription the chat uses (a
+ * bounded snapshot of recent history), held only until it is live. Null when it cannot be read.
  */
 function readRecentMessages(candidate: ScanCandidate): Promise<ScannedMessages | null> {
   const atom = environmentThreadDetails.stateAtom(
@@ -97,12 +96,19 @@ function readRecentMessages(candidate: ScanCandidate): Promise<ScannedMessages |
         const projection = Option.getOrNull(state.data);
         if (state.status !== "live" || projection === null) return;
         finish(
-          projection.messages.slice(-SCAN_MESSAGE_COUNT).map((message) => ({
-            id: message.id,
-            role: message.role,
-            text: message.text,
-            createdAt: DateTime.formatIso(message.createdAt),
-          })),
+          projection.messages.flatMap((message) =>
+            message.role === "user"
+              ? [
+                  {
+                    id: message.id,
+                    role: message.role,
+                    text: message.text,
+                    createdAt: DateTime.formatIso(message.createdAt),
+                    updatedAt: DateTime.formatIso(message.updatedAt),
+                  },
+                ]
+              : [],
+          ),
         );
       },
       { immediate: true },
@@ -122,7 +128,12 @@ async function scanThreads(candidates: ReadonlyArray<ScanCandidate>): Promise<vo
     try {
       const messages = await readRecentMessages(candidate);
       if (messages === null) continue;
-      const found = teammateMessagesIn(candidate.environmentId, candidate.threadId, messages);
+      const found = teammateMessagesIn(
+        candidate.environmentId,
+        candidate.threadId,
+        messages,
+        useTeammateMessagesStore.getState().scannedAt[key],
+      );
       useTeammateMessagesStore.setState((state) =>
         recordScan(rememberTeammateMessages(state, found), candidate),
       );

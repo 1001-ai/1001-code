@@ -60,13 +60,17 @@ import {
 
 /**
  * Delivers teammates' Linear comments into local threads (see `routeComment`) as queued messages,
- * and an agent comment no thread takes to the Inbox of the project its team maps to. Each
- * delivery and skip is logged for the Inbox digest; the log decides what a thread may answer.
+ * and an agent comment no thread takes to the Inbox of the project its team maps to (waiting a day
+ * for that Inbox when the project has none yet). Each delivery and skip is logged for the Inbox
+ * digest; the log decides what a thread may answer.
  */
 export class LinearInbox extends Context.Service<
   LinearInbox,
   {
-    /** One pass: failed deliveries again, then every team; the layer runs it every 10 seconds. */
+    /**
+     * One pass: failed deliveries again, comments waiting for an Inbox, then every team; the
+     * layer runs it every 10 seconds.
+     */
     readonly poll: Effect.Effect<void>;
     /** Passes a teammate's message the Inbox received on, unchanged, to one of its project's threads. */
     readonly forward: (input: {
@@ -116,6 +120,7 @@ const Delivery = Schema.Struct({
   linkedSender: OrchestrationV2LinkedSender,
 });
 type Delivery = typeof Delivery.Type;
+const { threadId: _threadId, ...unaddressedFields } = Delivery.fields;
 
 /** Kept in the state directory, so a restart neither replays comments nor resets the limits. */
 const InboxState = Schema.fromJsonString(
@@ -134,6 +139,12 @@ const InboxState = Schema.fromJsonString(
         entry: Schema.optional(LinearInboxLogEntry),
       }),
     ),
+    /** Agent comments for a project that has no Inbox yet, with when they arrived. */
+    awaitingInbox: Schema.optional(
+      Schema.Array(
+        Schema.Struct({ ...unaddressedFields, since: Schema.String, entry: LinearInboxLogEntry }),
+      ),
+    ),
     log: Schema.optional(Schema.Array(LinearInboxLogEntry)),
   }),
 );
@@ -143,6 +154,8 @@ const encodeState = Schema.encodeSync(InboxState);
 
 /** A comment whose delivery failed this many times is dropped. */
 const MAX_DELIVERY_ATTEMPTS = 5;
+/** How long an agent comment waits for its project's Inbox to be made. */
+const INBOX_WAIT_MS = 24 * 60 * 60_000;
 
 /** Stands in for a sender whose comment links no thread, so clients still show its name. */
 const LINEAR_ENVIRONMENT = EnvironmentId.make("linear");
@@ -271,6 +284,71 @@ const make = Effect.gen(function* () {
     state = { ...state, held: kept };
   });
 
+  /** Whether the thread took its day's comments; waiting retries count from when they arrived. */
+  const atDailyLimit = (threadId: ThreadId, nowMs: number) =>
+    recentDeliveries(state.delivered[threadId] ?? [], nowMs).length +
+      recentDeliveries(
+        state.held.filter((item) => item.threadId === threadId).map((item) => item.since),
+        nowMs,
+      ).length >=
+    DAILY_THREAD_LIMIT;
+
+  type AwaitingInbox = NonNullable<InboxState["awaitingInbox"]>[number];
+
+  /** Comments waiting for their project's Inbox go to it once it exists; after a day they drop. */
+  const releaseAwaitingInbox = Effect.fn("LinearInbox.releaseAwaitingInbox")(function* () {
+    const now = yield* DateTime.now;
+    const at = DateTime.formatIso(now);
+    const kept: Array<AwaitingInbox> = [];
+    for (const item of state.awaitingInbox ?? []) {
+      const { since, entry, ...unaddressed } = item;
+      const { via: _via, ...skippedEntry } = entry;
+      const inboxId = inboxThreadOf(item.projectId);
+      const inbox =
+        inboxId === undefined
+          ? null
+          : yield* threads.getThreadShell(inboxId).pipe(Effect.orElseSucceed(() => undefined));
+      if (inbox === undefined) {
+        kept.push(item);
+        continue;
+      }
+      if (inboxId === undefined || inbox === null) {
+        if (now.epochMilliseconds - Date.parse(since) < INBOX_WAIT_MS) {
+          kept.push(item);
+          continue;
+        }
+        record({ ...skippedEntry, at, outcome: "not-delivered", reason: "no-inbox" });
+        yield* Effect.logInfo("Linear inbox drops a comment: its project still has no Inbox.", {
+          comment: item.commentId,
+          projectId: item.projectId,
+        });
+        continue;
+      }
+      const instance = yield* instances.getInstance(inbox.providerInstanceId);
+      const reason: SkipReason | null =
+        threadSkipReason(inbox, instance?.driverKind, null) ??
+        (atDailyLimit(inboxId, now.epochMilliseconds) ? "daily-limit" : null);
+      if (reason !== null) {
+        record({ ...skippedEntry, at, outcome: "not-delivered", reason, threadId: inboxId });
+        yield* Effect.logInfo("Linear inbox skips a comment.", {
+          comment: item.commentId,
+          threadId: inboxId,
+          reason,
+        });
+        continue;
+      }
+      const retry = yield* deliverOrHold({
+        ...unaddressed,
+        threadId: inboxId,
+        since,
+        attempts: 0,
+        entry: { ...entry, threadId: inboxId },
+      });
+      if (retry !== null) state = { ...state, held: [...state.held, retry] };
+    }
+    state = { ...state, awaitingInbox: kept };
+  });
+
   /** The first of a candidate's threads that exists, read now. */
   const firstThread = Effect.fnUntraced(function* (threadIds: ReadonlyArray<ThreadId>) {
     for (const threadId of threadIds) {
@@ -342,6 +420,27 @@ const make = Effect.gen(function* () {
     });
     if (route._tag === "skip") return yield* skipped(route.reason);
     if (base === null) return;
+    const message = Effect.gen(function* () {
+      return {
+        commentId: comment.id,
+        text: framedComment({
+          body: comment.body,
+          issue: base.issue,
+          sender,
+          kind: route.kind,
+          nonce: Hex.encode(yield* random.randomBytes(4)),
+          commentId: comment.id,
+          url: comment.url,
+        }),
+        linkedSender: {
+          ...(senderThread(comment.body, environmentId) ?? {
+            environmentId: LINEAR_ENVIRONMENT,
+            threadId: ThreadId.make(`linear-comment-${comment.id}`),
+          }),
+          title: route.kind === "agent" ? `${sender}'s agent` : sender,
+        },
+      };
+    });
 
     // A failed read fails the poll before the cursor passes this comment, so it is read again.
     let target: Target | null = null;
@@ -366,47 +465,34 @@ const make = Effect.gen(function* () {
       if (others.length > 0) return yield* skipped("several-projects");
       const inboxId = inboxThreadOf(projectId);
       const inbox = inboxId === undefined ? null : yield* threads.getThreadShell(inboxId);
-      if (inboxId === undefined || inbox === null) return yield* skipped("no-inbox");
+      if (inboxId === undefined || inbox === null) {
+        const reason = exchangeSkipReason(comment, context.memberIds);
+        if (reason !== null) return yield* skipped(reason);
+        const waiting: AwaitingInbox = {
+          ...(yield* message),
+          projectId,
+          since: at,
+          entry: { ...base, outcome: "delivered", via: "inbox", projectIds: [projectId] },
+        };
+        state = { ...state, awaitingInbox: [...(state.awaitingInbox ?? []), waiting] };
+        return yield* Effect.logInfo("Linear inbox keeps a comment until there is an Inbox.", {
+          ...fields,
+          projectId,
+        });
+      }
       target = { threadId: inboxId, thread: inbox, via: "inbox" };
     }
 
     const { threadId, thread, via } = target;
     const instance = yield* instances.getInstance(thread.providerInstanceId);
-    // Waiting retries count for a day from when they arrived, like delivered ones.
-    const waiting =
-      recentDeliveries(state.delivered[threadId] ?? [], nowMs).length +
-      recentDeliveries(
-        state.held.filter((item) => item.threadId === threadId).map((item) => item.since),
-        nowMs,
-      ).length;
     const reason =
       threadSkipReason(thread, instance?.driverKind, via === "inbox" ? null : nowMs) ??
       exchangeSkipReason(comment, context.memberIds) ??
-      (waiting >= DAILY_THREAD_LIMIT ? "daily-limit" : null);
+      (atDailyLimit(threadId, nowMs) ? "daily-limit" : null);
     if (reason !== null) {
       return yield* skipped(reason, { threadId, projectId: thread.projectId });
     }
-    const delivery: Delivery = {
-      threadId,
-      projectId: thread.projectId,
-      commentId: comment.id,
-      text: framedComment({
-        body: comment.body,
-        issue: base.issue,
-        sender,
-        kind: route.kind,
-        nonce: Hex.encode(yield* random.randomBytes(4)),
-        commentId: comment.id,
-        url: comment.url,
-      }),
-      linkedSender: {
-        ...(senderThread(comment.body, environmentId) ?? {
-          environmentId: LINEAR_ENVIRONMENT,
-          threadId: ThreadId.make(`linear-comment-${comment.id}`),
-        }),
-        title: route.kind === "agent" ? `${sender}'s agent` : sender,
-      },
-    };
+    const delivery: Delivery = { ...(yield* message), threadId, projectId: thread.projectId };
     const retry = yield* deliverOrHold({
       ...delivery,
       since: at,
@@ -468,6 +554,7 @@ const make = Effect.gen(function* () {
     .withPermits(1)(
       Effect.gen(function* () {
         yield* releaseHeld();
+        yield* releaseAwaitingInbox();
         const session = yield* board.session;
         const catalog = yield* teamCatalog.snapshot;
         if (session !== null && catalog.source !== null) {

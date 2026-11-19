@@ -12,13 +12,15 @@ import {
 import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
 import { expect, it } from "@effect/vitest";
 import * as DateTime from "effect/DateTime";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as TestClock from "effect/testing/TestClock";
 
 import * as ServerConfig from "../config.ts";
-import { recordInboxThread } from "../inboxAgent/inboxAgentThreads.ts";
+import { recordInboxThread, replaceInboxThreads } from "../inboxAgent/inboxAgentThreads.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
@@ -394,6 +396,53 @@ it.effect(
       expect(yield* reply("thread-mine").pipe(Effect.flip)).toMatchObject({
         _tag: "LinearInboxRefusal",
       });
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);
+
+it.effect(
+  "keeps an agent comment for a project with no Inbox until one is made, for at most a day",
+  () =>
+    Effect.gen(function* () {
+      replaceInboxThreads(new Map());
+      const comments = [
+        samComment("comment-1", "2026-11-15T12:00:00.000Z", "agent: who owns the cursor?", false),
+      ];
+      const inbox = makeInbox(yield* tempBaseDir, comments);
+      // Each poll builds the service again, so the comment waits in the state file.
+      yield* inbox.poll;
+      yield* inbox.poll;
+      yield* inbox.poll;
+      expect(inbox.sent).toEqual([]);
+      expect(linearInboxLog()).toEqual([]);
+
+      yield* TestClock.adjust(Duration.hours(12));
+      comments.push(
+        samComment("comment-2", "2026-11-15T12:01:00.000Z", "agent: and the dedupe?", false),
+      );
+      yield* inbox.poll;
+      yield* TestClock.adjust(Duration.hours(12));
+      yield* inbox.poll;
+      const outcomes = () =>
+        linearInboxLog().map((entry) => [
+          entry.commentId,
+          entry.outcome,
+          entry.via ?? entry.reason,
+        ]);
+      // The first waited a day and is dropped; the second still waits.
+      expect(outcomes()).toEqual([["comment-1", "not-delivered", "no-inbox"]]);
+
+      recordInboxThread(WEB, INBOX);
+      yield* inbox.poll;
+      expect(inbox.sent.map((input) => input.commandId)).toEqual([
+        "linear-inbox:thread-inbox:comment-2",
+      ]);
+      expect(outcomes()).toEqual([
+        ["comment-1", "not-delivered", "no-inbox"],
+        ["comment-2", "delivered", "inbox"],
+      ]);
+      expect(linearInboxLog()[1]).toMatchObject({ threadId: INBOX, projectIds: [WEB] });
+      yield* inbox.poll;
+      expect(inbox.sent).toHaveLength(1);
     }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
