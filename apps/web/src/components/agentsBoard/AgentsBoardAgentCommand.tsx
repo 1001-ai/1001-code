@@ -6,8 +6,12 @@ import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 /** The one line a person gives an agent so it reads the branch's instructions, with a copy button. */
-export function AgentsBoardAgentCommand(props: { readonly branch: string }) {
-  const command = agentsBoardAgentCommand(props.branch);
+export function AgentsBoardAgentCommand(props: {
+  readonly branch: string;
+  /** The repository that holds the branch, when it is not the project's own. */
+  readonly repository: string | undefined;
+}) {
+  const command = agentsBoardAgentCommand(props.branch, props.repository);
   const { copyToClipboard, isCopied } = useCopyToClipboard({ target: "the line for an agent" });
   return (
     <div className="flex items-center gap-1.5 rounded-md border border-border bg-muted/50 py-1 ps-2.5 pe-1">

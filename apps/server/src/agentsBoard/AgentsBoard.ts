@@ -42,6 +42,7 @@ import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
 import * as TeamCatalog from "../teamCatalog/TeamCatalog.ts";
+import { teamCatalogCloneUrl } from "../teamCatalog/teamCatalogFiles.ts";
 import { unsetInheritedRepositoryEnv } from "../vcs/VcsProcess.ts";
 import {
   AGENTS_BOARD_LIMITS,
@@ -55,10 +56,10 @@ import {
 import { imageTypeOf } from "./agentsBoardMedia.ts";
 
 /**
- * The agents board of a team project: the messages agents write to a branch of the project's
- * repository. The branch is fetched with the environment's own git credentials into a bare
- * repository in the state directory and read with git plumbing, so nothing on it is checked out
- * or run. It is fetched when a client opens the board or asks, never in the background.
+ * The agents board of a team project: the messages agents write to a branch of its repository,
+ * or of the one its catalog file names. It is fetched with the environment's own git credentials
+ * into a bare repository in the state directory and read with git plumbing, so nothing on it is
+ * checked out or run, and only when a client opens the board or asks, never in the background.
  */
 export class AgentsBoard extends Context.Service<
   AgentsBoard,
@@ -68,7 +69,7 @@ export class AgentsBoard extends Context.Service<
     /** The board now, then every change. Subscribing fetches a branch not fetched lately. */
     readonly changes: (projectId: ProjectId) => Stream.Stream<AgentsBoardSnapshot>;
     readonly refresh: (projectId: ProjectId) => Effect.Effect<AgentsBoardSnapshot>;
-    /** Names the branch for the project's repository on this environment, then fetches it. */
+    /** Names the branch for the board's repository on this environment, then fetches it. */
     readonly setBranch: (
       input: AgentsBoardSetBranchInput,
     ) => Effect.Effect<AgentsBoardSnapshot, AgentsBoardError>;
@@ -111,6 +112,8 @@ class GitFailure extends Schema.TaggedError<GitFailure>()("GitFailure", {
 
 interface Target {
   readonly project: AgentsBoardProject;
+  /** The repository that holds the board, when the catalog names another than the project's. */
+  readonly repository: string | null;
   readonly repositoryKey: string;
   readonly cloneUrl: string;
   readonly branch: string;
@@ -296,15 +299,23 @@ const make = Effect.gen(function* () {
       teamCatalogRepositoryMatches(candidate.project.repo, identity),
     );
     if (entry === undefined) return "not-in-catalog" as const;
-    const repositoryKey = teamCatalogRepositoryKey(entry.project.repo);
+    const named = entry.project.agents?.repo;
+    const repository =
+      named !== undefined &&
+      teamCatalogRepositoryKey(named) !== teamCatalogRepositoryKey(entry.project.repo)
+        ? named
+        : null;
+    const repositoryKey = teamCatalogRepositoryKey(repository ?? entry.project.repo);
     const chosen = branches[repositoryKey];
     // The folder's name comes from a hash, so nothing the catalog says becomes a path.
     const hash = yield* digest.digestHex(Digest.sha256, new TextEncoder().encode(repositoryKey));
     return {
       cache: path.join(root, "repos", `${hash.slice(0, 32)}.git`),
       project: { key: entry.project.key, name: entry.project.name },
+      repository,
       repositoryKey,
-      cloneUrl: entry.cloneUrl,
+      cloneUrl:
+        repository === null ? entry.cloneUrl : teamCatalogCloneUrl(repository, catalog.source),
       // A hand-edited settings file gets the same check as the setting.
       branch:
         chosen !== undefined && isAgentsBoardBranch(chosen) ? chosen : AGENTS_BOARD_DEFAULT_BRANCH,
@@ -431,7 +442,12 @@ const make = Effect.gen(function* () {
   });
 
   const snapshotOf = (target: Target, state: BranchState): AgentsBoardSnapshot => {
-    const base = { project: target.project, branch: target.branch, refreshing: state.refreshing };
+    const base = {
+      project: target.project,
+      branch: target.branch,
+      ...(target.repository === null ? {} : { repository: target.repository }),
+      refreshing: state.refreshing,
+    };
     if (state.missing) return { status: "missing-branch", ...base };
     if (state.board !== null) {
       return {

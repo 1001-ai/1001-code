@@ -24,7 +24,7 @@ function branchStatus(snapshot: TeamBoard): string {
     case "loading":
       return "Not fetched yet.";
     case "missing-branch":
-      return "The repository has no such branch yet.";
+      return `${snapshot.repository ?? "The repository"} has no such branch yet.`;
     case "failed":
       return `Could not fetch: ${snapshot.failure}`;
     case "ready": {
@@ -35,8 +35,8 @@ function branchStatus(snapshot: TeamBoard): string {
 }
 
 /**
- * Which branch of the team project's repository holds its agents' messages. Kept on this
- * environment for now, so each person sets it; the default name needs no setting.
+ * Which branch holds the team project's agents' messages, in its own repository or the one the
+ * catalog names. Kept on this environment for now, so each person sets it; the default needs none.
  */
 export function AgentsBoardBranchSetting(props: {
   readonly environmentId: EnvironmentId;
@@ -75,8 +75,17 @@ export function AgentsBoardBranchSetting(props: {
     <div className="space-y-1.5 border-t border-border/60 px-3 py-3 sm:px-4">
       <h3 className="text-xs font-medium text-muted-foreground">Agent messages</h3>
       <p className="text-xs text-muted-foreground">
-        Agents working in this project write short messages to a branch of its repository. The
-        Agents board in the right panel shows them. The branch name is saved on this environment.
+        Agents working in this project write short messages to a branch of{" "}
+        {snapshot.repository === undefined ? (
+          "its repository"
+        ) : (
+          <>
+            another repository, <code className="font-mono">{snapshot.repository}</code>, as the
+            project's team catalog file says
+          </>
+        )}
+        . The Agents board in the right panel shows them. The branch name is saved on this
+        environment.
       </p>
       <div className="flex flex-wrap items-center gap-2">
         <DraftInput
@@ -105,7 +114,7 @@ export function AgentsBoardBranchSetting(props: {
       <p className="pt-1 text-xs text-muted-foreground">
         To have an agent write there, give it this line:
       </p>
-      <AgentsBoardAgentCommand branch={snapshot.branch} />
+      <AgentsBoardAgentCommand branch={snapshot.branch} repository={snapshot.repository} />
     </div>
   );
 }

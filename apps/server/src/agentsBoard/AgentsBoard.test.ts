@@ -30,6 +30,9 @@ import { AGENTS_BOARD_LIMITS } from "./agentsBoardFiles.ts";
 
 const PROJECT_ID = ProjectId.make("project-web");
 const BRANCH = "agent-reports";
+const NOTES_REPOSITORY = "example.com/acme/web-notes";
+/** What the catalog's own source, over HTTPS on the same host, makes of that repository. */
+const NOTES_URL = "https://example.com/acme/web-notes.git";
 
 const GIT_IDENTITY = {
   GIT_AUTHOR_NAME: "Test",
@@ -74,11 +77,14 @@ type Services =
 const withBoard = <A, E>(
   test: (fixture: {
     readonly remote: string;
+    /** A second repository, which the service reaches as `NOTES_URL`. */
+    readonly notes: string;
     readonly stateDir: string;
-    /** Commits files to a branch of the project repository; a Buffer is written as bytes. */
+    /** Commits files to a branch of a repository, the project's unless named; a Buffer is bytes. */
     readonly commit: (
       branch: string,
       files: Record<string, string | Buffer>,
+      repository?: string,
     ) => Effect.Effect<void, Error>;
     readonly service: AgentsBoard.AgentsBoard["Service"];
     /** Starts another server on the same state directory. */
@@ -100,40 +106,44 @@ const withBoard = <A, E>(
     const runner = yield* ProcessRunner.ProcessRunner;
     const temp = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-agents-board-" });
     const remote = path.join(temp, "web");
-    const git = (args: ReadonlyArray<string>) =>
+    const notes = path.join(temp, "web-notes");
+    const git = (repository: string, args: ReadonlyArray<string>) =>
       runner
         .run({
           command: "git",
-          args: ["-C", remote, ...args],
+          args: ["-C", repository, ...args],
           env: { ...process.env, ...GIT_IDENTITY },
         })
         .pipe(
           Effect.tap((output) => Effect.sync(() => expect(output.code, output.stderr).toBe(0))),
         );
-    yield* fileSystem.makeDirectory(remote);
-    yield* git(["init", "--quiet", "--initial-branch=main"]);
-    yield* git(["commit", "--quiet", "--allow-empty", "-m", "product code"]);
-    const commit = (branch: string, files: Record<string, string | Buffer>) =>
+    for (const repository of [remote, notes]) {
+      yield* fileSystem.makeDirectory(repository);
+      yield* git(repository, ["init", "--quiet", "--initial-branch=main"]);
+      yield* git(repository, ["commit", "--quiet", "--allow-empty", "-m", "first commit"]);
+    }
+    const commit = (branch: string, files: Record<string, string | Buffer>, repository = remote) =>
       Effect.gen(function* () {
         const exists = yield* runner.run({
           command: "git",
-          args: ["-C", remote, "rev-parse", "--verify", "--quiet", `refs/heads/${branch}`],
+          args: ["-C", repository, "rev-parse", "--verify", "--quiet", `refs/heads/${branch}`],
         });
         yield* git(
+          repository,
           exists.code === 0
             ? ["checkout", "--quiet", branch]
             : ["checkout", "--quiet", "--orphan", branch],
         );
         for (const [name, value] of Object.entries(files)) {
-          const target = path.join(remote, name);
+          const target = path.join(repository, name);
           yield* fileSystem.makeDirectory(path.dirname(target), { recursive: true });
           yield* typeof value === "string"
             ? fileSystem.writeFileString(target, value)
             : fileSystem.writeFile(target, value);
         }
-        yield* git(["add", "--all"]);
-        yield* git(["commit", "--quiet", "--allow-empty", "-m", "report"]);
-        yield* git(["checkout", "--quiet", "main"]);
+        yield* git(repository, ["add", "--all"]);
+        yield* git(repository, ["commit", "--quiet", "--allow-empty", "-m", "report"]);
+        yield* git(repository, ["checkout", "--quiet", "main"]);
       });
 
     const catalog = yield* SubscriptionRef.make<TeamCatalogSnapshot>({
@@ -170,6 +180,9 @@ const withBoard = <A, E>(
       stdoutInvalidUtf8: false,
       stderrInvalidUtf8: false,
     });
+    // No test reaches the network: the other repository's URL is the temp repository.
+    const reach = (input: Parameters<ProcessRunner.ProcessRunner["Service"]["run"]>[0]) =>
+      runner.run({ ...input, args: input.args.map((arg) => (arg === NOTES_URL ? notes : arg)) });
     const countingRunner = ProcessRunner.ProcessRunner.of({
       run: (input) => {
         // No test reaches GitHub: the CLI's answer is the fixture's.
@@ -177,11 +190,11 @@ const withBoard = <A, E>(
           return Effect.succeed(profile === null ? answer(1, "") : answer(0, `${profile}\n`));
         }
         if (input.args.includes("fetch")) fetches += 1;
-        if (!input.args.includes("push")) return runner.run(input);
+        if (!input.args.includes("push")) return reach(input);
         pushes.push(input.args);
         const racing = race;
         race = null;
-        return (racing ?? Effect.void).pipe(Effect.orDie, Effect.andThen(runner.run(input)));
+        return (racing ?? Effect.void).pipe(Effect.orDie, Effect.andThen(reach(input)));
       },
     });
     const configLayer = ServerConfig.layerTest(temp, path.join(temp, "home"));
@@ -219,6 +232,7 @@ const withBoard = <A, E>(
     );
     return yield* test({
       remote,
+      notes,
       stateDir,
       commit,
       service: yield* start,
@@ -575,6 +589,69 @@ it.live(
         ]);
       }),
     ),
+);
+
+it.live("keeps the board in the repository the catalog names for it, and writes there", () =>
+  withBoard(({ commit, service, catalog, remote, notes, stateDir, pushes }) =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const runner = yield* ProcessRunner.ProcessRunner;
+      yield* commit(BRANCH, { "reports/kim-1.md": "# kim-1\n\n- owner: Kim\n" });
+      yield* commit(BRANCH, { "reports/sam-2.md": REPORT }, notes);
+      const boardIn = (repo: string | undefined) =>
+        SubscriptionRef.update(catalog, (current) => ({
+          ...current,
+          projects: current.projects.map((entry) => ({
+            ...entry,
+            project: {
+              key: entry.project.key,
+              name: entry.project.name,
+              repo: entry.project.repo,
+              owners: entry.project.owners,
+              ...(repo === undefined ? {} : { agents: { repo } }),
+            },
+          })),
+        }));
+
+      // Without the field, and when it names the project's own repository, nothing changes.
+      for (const repo of [undefined, "Example.com/acme/web.git"]) {
+        yield* boardIn(repo);
+        const own = yield* service.refresh(PROJECT_ID);
+        expect(own).toMatchObject({ status: "ready", board: { agents: [{ id: "kim-1" }] } });
+        expect(own).not.toHaveProperty("repository");
+      }
+
+      yield* boardIn(NOTES_REPOSITORY);
+      expect(yield* service.read(PROJECT_ID)).toMatchObject({
+        status: "loading",
+        repository: NOTES_REPOSITORY,
+      });
+      expect(yield* service.refresh(PROJECT_ID)).toMatchObject({
+        status: "ready",
+        project: { key: "web", name: "Web app" },
+        repository: NOTES_REPOSITORY,
+        board: { agents: [{ id: "sam-2" }] },
+      });
+      // Each repository has its own cache, and the branch name is kept for the board's.
+      const state = path.join(stateDir, "agents-board");
+      expect(yield* fileSystem.readDirectory(path.join(state, "repos"))).toHaveLength(2);
+      yield* service.setBranch({ projectId: PROJECT_ID, branch: "team/agent-notes" });
+      expect(
+        JSON.parse(yield* fileSystem.readFileString(path.join(state, "settings.json"))),
+      ).toEqual({ branches: { [NOTES_REPOSITORY]: "team/agent-notes" } });
+      yield* service.setBranch({ projectId: PROJECT_ID, branch: null });
+
+      yield* service.sendInboxMessage({ ...SEND, to: "sam-2", text: "Does it cover the toolbar?" });
+      expect(pushes().map((args) => args.at(-2))).toEqual([NOTES_URL]);
+      const inbox = (repository: string) =>
+        runner
+          .run({ command: "git", args: ["-C", repository, "show", `${BRANCH}:inbox/sam-2.md`] })
+          .pipe(Effect.map((output) => output.code));
+      expect(yield* inbox(notes)).toBe(0);
+      expect(yield* inbox(remote)).not.toBe(0);
+    }),
+  ),
 );
 
 it.live("refuses a message it cannot sign, address or keep short, and pushes nothing", () =>

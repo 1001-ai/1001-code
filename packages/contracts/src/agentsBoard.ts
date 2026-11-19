@@ -1,13 +1,17 @@
 import * as Schema from "effect/Schema";
 
 import { IsoDateTime, NonNegativeInt, ProjectId } from "./baseSchemas.ts";
-import { TeamCatalogProjectKey } from "./teamCatalog.ts";
+import {
+  TeamCatalogProjectKey,
+  TeamCatalogRepository,
+  teamCatalogHttpsUrl,
+} from "./teamCatalog.ts";
 
 /**
- * The agents board is a branch of a team project's repository that holds no product code: agents
- * write `reports/<agent-id>.md` while they work, people's messages to them sit in
- * `inbox/<agent-id>.md` and `inbox/all.md`, and screenshots in `media/<agent-id>/<file>`.
- * Everything on it is text other agents wrote, so every field here is capped and plain.
+ * The agents board is a branch that holds no product code, in a team project's repository or
+ * the one its catalog file names: agents write `reports/<agent-id>.md`, people's messages to
+ * them sit in `inbox/<agent-id>.md` and `inbox/all.md`, and screenshots in
+ * `media/<agent-id>/<file>`. It is all text other agents wrote, so every field is capped and plain.
  */
 export const AGENTS_BOARD_DEFAULT_BRANCH = "agent-reports";
 export const AGENTS_BOARD_REPORTS_DIRECTORY = "reports";
@@ -162,6 +166,8 @@ export type AgentsBoardUnavailableReason = typeof AgentsBoardUnavailableReason.T
 const OfProject = {
   project: AgentsBoardProject,
   branch: AgentsBoardBranch,
+  /** The repository that holds the branch, as the catalog names it, when not the project's own. */
+  repository: Schema.optionalKey(TeamCatalogRepository),
   /** A fetch of the branch is running. */
   refreshing: Schema.Boolean,
 };
@@ -264,7 +270,12 @@ export class AgentsBoardError extends Schema.TaggedError<AgentsBoardError>()("Ag
   }
 }
 
-/** The one line a person gives an agent, so it reads the branch's instructions. */
-export function agentsBoardAgentCommand(branch: string): string {
-  return `git fetch origin ${branch} && git show origin/${branch}:README.md`;
+/**
+ * The one line a person gives an agent, so it reads the branch's instructions. A board kept in
+ * another repository is named by URL, because `origin` is the project's own repository.
+ */
+export function agentsBoardAgentCommand(branch: string, repository?: string): string {
+  return repository === undefined
+    ? `git fetch origin ${branch} && git show origin/${branch}:README.md`
+    : `git fetch ${teamCatalogHttpsUrl(repository)} ${branch} && git show FETCH_HEAD:README.md`;
 }

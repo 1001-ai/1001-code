@@ -42,6 +42,11 @@ export const TeamCatalogLinear = Schema.Struct({
 });
 export type TeamCatalogLinear = typeof TeamCatalogLinear.Type;
 
+/** Where the project's agents board is kept, when not on a branch of its own repository. */
+export const TeamCatalogAgents = Schema.Struct({
+  repo: TeamCatalogRepository,
+});
+
 export const TeamCatalogProject = Schema.Struct({
   key: TeamCatalogProjectKey,
   name: TrimmedNonEmptyString.check(Schema.isMaxLength(100)),
@@ -50,6 +55,7 @@ export const TeamCatalogProject = Schema.Struct({
   parent: Schema.optionalKey(TeamCatalogProjectKey),
   links: Schema.optionalKey(Schema.Array(TeamCatalogLink)),
   linear: Schema.optionalKey(TeamCatalogLinear),
+  agents: Schema.optionalKey(TeamCatalogAgents),
 });
 export type TeamCatalogProject = typeof TeamCatalogProject.Type;
 
@@ -137,6 +143,12 @@ export function isTeamCatalogSource(source: string): boolean {
     return false;
   }
   return source.startsWith("/") || /^[^@/:]+@[^/:]+:\S+$/.test(source);
+}
+
+/** The repository over HTTPS, which is how it is fetched when nothing names another transport. */
+export function teamCatalogHttpsUrl(repo: string): string {
+  const trimmed = repo.trim();
+  return `https://${trimmed.endsWith(".git") ? trimmed : `${trimmed}.git`}`;
 }
 
 /** The repository as repository identities key it: lowercase, no port, trailing `/` or `.git`. */

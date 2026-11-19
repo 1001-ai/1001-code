@@ -2,6 +2,7 @@ import {
   TeamCatalogProject,
   type TeamCatalogInvalidFile,
   type TeamCatalogViewer,
+  teamCatalogHttpsUrl,
   teamCatalogRepositoryKey,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
@@ -112,7 +113,7 @@ export function teamCatalogCloneUrl(repo: string, source: string): string {
 
   const ssh = SSH_SOURCE.exec(source);
   if (ssh) {
-    if (port !== undefined) return `https://${hostPart}/${repository}`;
+    if (port !== undefined) return teamCatalogHttpsUrl(repo);
     if (!sameHost(ssh[2])) return `git@${host}:${repository}`;
     const user = ssh[1] === undefined ? "" : `${ssh[1]}@`;
     const sshPort = ssh[3] === undefined ? "" : `:${ssh[3]}`;
@@ -122,7 +123,7 @@ export function teamCatalogCloneUrl(repo: string, source: string): string {
   }
   const scp = source.includes("://") ? null : SCP_SOURCE.exec(source);
   if (scp && scp[1] !== undefined) {
-    if (port !== undefined) return `https://${hostPart}/${repository}`;
+    if (port !== undefined) return teamCatalogHttpsUrl(repo);
     return `${sameHost(scp[2]) ? scp[1] : "git"}@${host}:${repository}`;
   }
   const https = HTTPS_SOURCE.exec(source);
@@ -130,7 +131,7 @@ export function teamCatalogCloneUrl(repo: string, source: string): string {
     const sourcePort = port === undefined && https[3] !== undefined ? `:${https[3]}` : "";
     return `${https[1]!.toLowerCase()}://${hostPart}${sourcePort}/${repository}`;
   }
-  return `https://${hostPart}/${repository}`;
+  return teamCatalogHttpsUrl(repo);
 }
 
 const GITHUB_LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
