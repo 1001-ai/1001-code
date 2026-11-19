@@ -228,6 +228,7 @@ describe("openQuestionCards", () => {
     expect(
       open([user("u0", "Q1: Yes"), askThree, user("u1", "Q2: No\nQ1: Yes\nQ3: skipped")]),
     ).toEqual([]);
+    expect(open([askThree, user("u1", "Q2: dismissed")])).toEqual(["a1:Q1", "a1:Q3"]);
   });
 
   it("counts only each id's newest card", () => {

@@ -375,8 +375,8 @@ type MessageDispatch = Extract<OrchestrationV2Command, { readonly type: "message
 /**
  * A message the user sends to a project's Inbox gets a digest of what changed since the previous
  * message to it (theirs or a wake note), kept on the message so every reader sees what the agent
- * saw. A message sent while a run is under way (steered or queued) gets none. Only the server
- * writes the record: one a client sent is dropped. Any failure sends the message without one.
+ * saw. A message sent mid-run (steered or queued) or recorded without a run gets none. Only the
+ * server writes the record: one a client sent is dropped. Any failure sends the message without one.
  */
 export const attachInboxAgentDigest = Effect.fn("InboxAgent.attachDigest")(function* (
   command: MessageDispatch,
@@ -399,6 +399,7 @@ export const attachInboxAgentDigest = Effect.fn("InboxAgent.attachDigest")(funct
     command.dispatchMode.type === "steer_active" ||
     command.dispatchMode.type === "restart_active" ||
     command.dispatchMode.type === "queue_after_active" ||
+    command.dispatchMode.type === "record_only" ||
     inbox.activeRunId !== null
   ) {
     return plain;

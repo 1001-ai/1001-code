@@ -436,6 +436,11 @@ it.effect("keeps the digest on a message the user sends to an idle Inbox", () =>
       /^<inbox_digest since="[^"]+" until="[^"]+">\n<change kind="thread-created" thread="new" title="Sign-in page"[^\n]*\n<\/inbox_digest>\n\nWhat changed\?$/,
     );
     expect(inboxAgentProviderText(sent.text, sent, thread("chat"))).toBe("What changed?");
+    // A dismissal reaches no agent, so it neither takes nor uses up the news.
+    const dismissal = yield* attachInboxAgentDigest(
+      message({ text: "Q2: dismissed", dispatchMode: { type: "record_only" }, context: forged }),
+    ).pipe(Effect.provide(withThreads(shells)));
+    expect(dismissal.context?.records ?? []).toEqual([]);
   }),
 );
 
