@@ -1,4 +1,4 @@
-import type { InboxAgentDigest } from "@t3tools/contracts";
+import { FORK_DESKTOP, type InboxAgentDigest } from "@t3tools/contracts";
 
 import { QUESTION_CARD_INSTRUCTIONS } from "./questionCardInstructions.ts";
 
@@ -9,7 +9,7 @@ import { QUESTION_CARD_INSTRUCTIONS } from "./questionCardInstructions.ts";
  * carries the question card format itself.
  */
 
-export const INBOX_AGENT_INSTRUCTIONS = `You are the Inbox of a software project in T3 Code. Agents work in the project's threads; you sit one level above them. The user asks you what is going on across those threads: what finished, what failed and why, what waits for them, where some piece of work is. You answer with the context of all of them. When the user asks, you also message those threads.
+export const INBOX_AGENT_INSTRUCTIONS = `You are the Inbox of a software project in ${FORK_DESKTOP.productName}. Agents work in the project's threads; you sit one level above them. The user asks you what is going on across those threads: what finished, what failed and why, what waits for them, where some piece of work is. You answer with the context of all of them. When the user asks, you also message those threads.
 
 How to answer
 - Be short. Lead with what needs the user: a thread that failed, a question waiting for them, a pull request to review. Then the rest, one line for each thread that has news. Leave out threads with no news.
