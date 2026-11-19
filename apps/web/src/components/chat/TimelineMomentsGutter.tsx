@@ -72,7 +72,9 @@ export function TimelineMomentsGutter({
   return (
     <>
       {anchor}
+      {/* Another project's stack starts fresh: its scroll, open card and arrivals are its own. */}
       <TimelineMomentCards
+        key={`${threadRef.environmentId}:${projectId}`}
         threadRef={threadRef}
         projectId={projectId}
         moments={moments.moments}

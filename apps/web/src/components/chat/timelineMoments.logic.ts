@@ -58,14 +58,12 @@ export interface MomentCard {
   readonly tone: MomentTone;
   /** From this environment's own threads; teammates' cards come from the agents board. */
   readonly personal: boolean;
+  /** Whose card it is, shown above each run of one person's cards: "You" or the teammate. */
+  readonly person: string;
   readonly threadId: ThreadId | null;
   readonly threadTitle: string | null;
   readonly messageId: string | null;
   readonly pullRequestUrl: string | null;
-}
-
-function possessive(name: string): string {
-  return name.endsWith("s") ? `${name}'` : `${name}'s`;
 }
 
 function momentLabel(moment: ProjectMoment): string {
@@ -107,6 +105,7 @@ function projectMomentCard(moment: ProjectMoment): MomentCard {
     detail: moment.snippet,
     tone: TONE_BY_KIND[moment.kind],
     personal: true,
+    person: "You",
     threadId: moment.threadId,
     threadTitle: moment.threadTitle,
     messageId: moment.messageId,
@@ -145,12 +144,12 @@ export function teammateMomentCards(
     if (message._tag !== "agent") continue;
     const owner = owners.get(message.agentId) ?? null;
     if (isViewersBoardAgent(message.agentId, owner, viewerLogin)) continue;
-    const whose = possessive(owner ?? "A teammate");
     const base = {
       id: `board:${message.id}`,
       at: message.at,
       detail: message.text,
       personal: false,
+      person: owner ?? "A teammate",
       threadId: null,
       threadTitle: message.agentId,
       messageId: null,
@@ -160,7 +159,7 @@ export function teammateMomentCards(
       case "blocked":
         cards.push({
           ...base,
-          label: `${whose} agent asked a question`,
+          label: "Agent asked a question",
           tone: "ask",
           pullRequestUrl: null,
         });
@@ -168,7 +167,7 @@ export function teammateMomentCards(
       case "done":
         cards.push({
           ...base,
-          label: `${whose} agent is done`,
+          label: "Agent is done",
           tone: "done",
           pullRequestUrl: message.pr !== null && PR_URL.test(message.pr) ? message.pr : null,
         });
@@ -176,7 +175,7 @@ export function teammateMomentCards(
       case "started":
         cards.push({
           ...base,
-          label: `${whose} agent started`,
+          label: "Agent started",
           tone: "started",
           pullRequestUrl: null,
         });
@@ -204,7 +203,12 @@ export function mergeMomentCards(input: {
 
 export type MomentStackEntry =
   | { readonly kind: "day"; readonly id: string; readonly label: string }
-  | { readonly kind: "card"; readonly card: MomentCard };
+  | {
+      readonly kind: "card";
+      readonly card: MomentCard;
+      /** The person's name on the first card of their run within a day; null on the rest. */
+      readonly groupName: string | null;
+    };
 
 function localDayStart(millis: number): number {
   const date = new Date(millis);
@@ -225,23 +229,43 @@ function dayLabel(millis: number, nowMillis: number): string {
   });
 }
 
-/** Cards with a separator before the first card of each local day. */
-export function withDaySeparators(
+/**
+ * Cards with a separator before the first card of each local day, each run of one person's
+ * cards named on its first card. A new day starts a new run.
+ */
+export function momentStackEntries(
   cards: ReadonlyArray<MomentCard>,
   nowMillis: number,
 ): ReadonlyArray<MomentStackEntry> {
   const entries: MomentStackEntry[] = [];
   let currentDay: number | null = null;
+  let currentPerson: string | null = null;
   for (const card of cards) {
     const millis = Date.parse(card.at);
     const day = localDayStart(millis);
     if (day !== currentDay) {
       currentDay = day;
+      currentPerson = null;
       entries.push({ kind: "day", id: `day:${day}`, label: dayLabel(millis, nowMillis) });
     }
-    entries.push({ kind: "card", card });
+    const person = `${card.personal}:${card.person}`;
+    entries.push({ kind: "card", card, groupName: person === currentPerson ? null : card.person });
+    currentPerson = person;
   }
   return entries;
+}
+
+/**
+ * Whether the stack's newest card is newer than any it showed before. A newest card that leaves,
+ * or the Teammates switch hiding and showing cards, changes the newest without anything arriving.
+ */
+export function newestMomentArrival(
+  newestSeen: number | null,
+  newest: number | null,
+): { readonly arrived: boolean; readonly newestSeen: number | null } {
+  if (newest === null) return { arrived: false, newestSeen };
+  if (newestSeen !== null && newest <= newestSeen) return { arrived: false, newestSeen };
+  return { arrived: true, newestSeen: newest };
 }
 
 const MOMENT_CARDS_MIN_GUTTER = 200;
@@ -254,12 +278,16 @@ export function resolveMomentCardsVisible(sideGutter: number, visible: boolean):
     : sideGutter >= MOMENT_CARDS_MIN_GUTTER;
 }
 
-// The tick, the gaps and the timestamp beside the card.
+// The stack's side padding, the time column and the gap after it.
 const MOMENT_CARD_CHROME = 96;
 const MOMENT_CARD_MAX_WIDTH = 300;
 
-export function resolveMomentCardMaxWidth(sideGutter: number): number {
-  return Math.max(80, Math.min(MOMENT_CARD_MAX_WIDTH, Math.floor(sideGutter) - MOMENT_CARD_CHROME));
+// Your own cards sit this much further right than teammates' (`ms-3`).
+const PERSONAL_CARD_INDENT = 12;
+
+export function resolveMomentCardMaxWidth(sideGutter: number, personal: boolean): number {
+  const room = Math.floor(sideGutter) - MOMENT_CARD_CHROME - (personal ? PERSONAL_CARD_INDENT : 0);
+  return Math.max(80, Math.min(MOMENT_CARD_MAX_WIDTH, room));
 }
 
 /** The loaded timeline row that shows a message, keyed the way the minimap keys its strips. */

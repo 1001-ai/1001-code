@@ -15,7 +15,9 @@ import {
   mergeMomentCards,
   resolveMomentCardsVisible,
   teammateMomentCards,
-  withDaySeparators,
+  momentStackEntries,
+  newestMomentArrival,
+  resolveMomentCardMaxWidth,
 } from "./timelineMoments.logic";
 
 const threadId = ThreadId.make("thread:exports");
@@ -153,11 +155,11 @@ describe("teammateMomentCards", () => {
 
   it("leaves out the viewer's own agents by owner or agent id, and working updates", () => {
     const cards = teammateMomentCards(board(messages), "ADA");
-    expect(cards.map((card) => [card.label, card.personal, card.pullRequestUrl])).toEqual([
-      ["Sam's agent asked a question", false, null],
-      ["Sam's agent is done", false, "https://github.com/acme/app/pull/7"],
-      ["A teammate's agent started", false, null],
-      ["ada-power's agent asked a question", false, null],
+    expect(cards.map((card) => [card.label, card.person, card.pullRequestUrl])).toEqual([
+      ["Agent asked a question", "Sam", null],
+      ["Agent is done", "Sam", "https://github.com/acme/app/pull/7"],
+      ["Agent started", "A teammate", null],
+      ["Agent asked a question", "ada-power", null],
     ]);
   });
 
@@ -191,7 +193,7 @@ describe("mergeMomentCards", () => {
     const cards = mergeMomentCards({ ...input, showTeammates: true });
     expect(cards.map((card) => [card.label, card.personal])).toEqual([
       ["Thread started", true],
-      ["Sam's agent is done", false],
+      ["Agent is done", false],
       ["PR #4 is in testing", true],
     ]);
   });
@@ -202,33 +204,60 @@ describe("mergeMomentCards", () => {
   });
 });
 
-describe("withDaySeparators", () => {
-  it("starts each local day with Today, Yesterday or its date", () => {
+describe("momentStackEntries", () => {
+  it("starts each local day with Today, Yesterday or its date, and names each person's run", () => {
     const cards = mergeMomentCards({
       moments: [
         moment("a", at(15, 9)),
         moment("b", at(17, 9)),
-        moment("c", at(18, 8)),
+        moment("c", at(18, 7)),
         moment("d", at(18, 9)),
+        moment("e", at(18, 10)),
       ],
-      teammates: [],
+      teammates: teammateMomentCards(board([agentMessage("s", "sam-2", "done", at(18, 8))]), "ada"),
       showTeammates: true,
       sinceMillis: 0,
     });
-    const entries = withDaySeparators(cards, Date.parse(at(18, 12)));
-    expect(entries.map((entry) => (entry.kind === "day" ? entry.label : entry.card.id))).toEqual([
+    const entries = momentStackEntries(cards, Date.parse(at(18, 12)));
+    expect(
+      entries.map((entry) =>
+        entry.kind === "day" ? entry.label : [entry.card.id, entry.groupName],
+      ),
+    ).toEqual([
       new Date(2026, 10, 15).toLocaleDateString(undefined, {
         weekday: "short",
         month: "short",
         day: "numeric",
       }),
-      "a",
+      ["a", "You"],
       "Yesterday",
-      "b",
+      ["b", "You"],
       "Today",
-      "c",
-      "d",
+      ["c", "You"],
+      ["board:s", "Sam"],
+      ["d", "You"],
+      ["e", null],
     ]);
+  });
+});
+
+describe("newestMomentArrival", () => {
+  it.each([
+    ["the first newest card", null, 100, { arrived: true, newestSeen: 100 }],
+    ["a newer card", 100, 200, { arrived: true, newestSeen: 200 }],
+    ["the newest card leaving or hidden", 200, 100, { arrived: false, newestSeen: 200 }],
+    ["an older card shown again", 200, 200, { arrived: false, newestSeen: 200 }],
+    ["an empty stack", 200, null, { arrived: false, newestSeen: 200 }],
+  ] as const)("%s", (_name, seen, newest, expected) => {
+    expect(newestMomentArrival(seen, newest)).toEqual(expected);
+  });
+});
+
+describe("resolveMomentCardMaxWidth", () => {
+  it("leaves room for the time column, and for the indent of your own cards", () => {
+    expect(resolveMomentCardMaxWidth(300, false)).toBe(204);
+    expect(resolveMomentCardMaxWidth(300, true)).toBe(192);
+    expect(resolveMomentCardMaxWidth(120, true)).toBe(80);
   });
 });
 

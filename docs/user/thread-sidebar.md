@@ -252,14 +252,16 @@ thread** from its long-press menu on mobile.
 On web and desktop, when the window leaves a wide margin left of the chat, that margin lists the
 project's moments from the last seven days as small cards, newest at the bottom: questions agents
 asked, threads started, messages between agents, finished work, and pull requests in testing or
-merged. It covers every thread of the project, not just the open one. A narrower window shows the
-chat's turn markers there instead. Hover a card for details; click it, or **Jump to it**, to
-scroll to that point in this thread, or **Open thread** for a moment in another thread. **Open
-PR** opens its pull request.
+merged. It covers every thread of the project, not just the open one. Each card shows its time on
+the left, and each run of one person's cards starts with their name. A narrower window shows the
+chat's turn markers there instead. Hover or focus a card to open it in place with its details;
+click it, or **Jump to it**, to scroll to that point in this thread, or **Open thread** for a
+moment in another thread. **Open PR** opens its pull request. A new card always brings the list
+back to the newest.
 
 In a [team project](./team-projects.md), the list also shows when teammates' agents on the
-[Agents board](./team-projects.md#agents-board) start, ask a question, or finish. Their cards sit a
-little further left than yours. The **Teammates** switch at the top of the list hides them; the
+[Agents board](./team-projects.md#agents-board) start, ask a question, or finish, under the
+teammate's name. Their cards sit a little further left than yours. The **Teammates** switch at the top of the list hides them; the
 choice is kept in this browser.
 
 ## Inspect agent work

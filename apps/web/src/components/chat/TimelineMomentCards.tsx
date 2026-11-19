@@ -10,7 +10,7 @@ import {
   PlayIcon,
 } from "lucide-react";
 import * as Schema from "effect/Schema";
-import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from "react";
 
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { useClientSettings } from "~/hooks/useSettings";
@@ -30,9 +30,10 @@ import {
   type MomentCard,
   type MomentTone,
   mergeMomentCards,
+  momentStackEntries,
+  newestMomentArrival,
   resolveMomentCardMaxWidth,
   teammateMomentCards,
-  withDaySeparators,
 } from "./timelineMoments.logic";
 
 const TEAMMATES_STORAGE_KEY = "t3code:timeline-moments:teammates";
@@ -58,19 +59,20 @@ function MomentIcon({ tone, className }: { tone: MomentTone; className?: string 
   return <Icon aria-hidden="true" className={cn("shrink-0", color, className)} />;
 }
 
-// The prompt box's glass surface. Cards sit over the empty gutter, so they skip its backdrop
-// blur (a blur per card costs a layer each and shows nothing there); the hover detail keeps it.
+// The prompt box's glass surface without its backdrop blur: cards stay inside the empty gutter,
+// where a blur per card costs a layer each and shows nothing.
 const MOMENT_GLASS =
   "border border-border bg-(--moment-glass)/(--glass-opacity) [--moment-glass:var(--card)] dark:[--moment-glass:var(--surface-raised)] [html[data-theme-id]_&]:[--moment-glass:var(--app-theme-surface-raised)]";
 
-interface HoveredCard {
-  readonly card: MomentCard;
-  /** Set for a card in the upper half, which the detail grows down from. */
-  readonly top: number | null;
-  /** Set for a card in the lower half, which the detail grows up from, clear of the prompt box. */
-  readonly bottom: number | null;
-  readonly left: number;
-  readonly minWidth: number;
+// A short pause before a hovered card opens, so a pointer passing over the stack opens nothing.
+const OPEN_DELAY_MILLIS = 120;
+// On first load the newest cards rise in one after another, this far apart.
+const ARRIVAL_STAGGER = { cards: 12, millis: 30 } as const;
+
+/** The card that is open, and the card whose detail stays mounted while it closes. */
+interface Expanded {
+  readonly open: string | null;
+  readonly shown: string | null;
 }
 
 export function TimelineMomentCards({
@@ -104,8 +106,9 @@ export function TimelineMomentCards({
   );
   const navigate = useNavigate();
   const openPullRequest = useOpenPrLink(threadRef);
-  const [hovered, setHovered] = useState<HoveredCard | null>(null);
-  const rootRef = useRef<HTMLDivElement | null>(null);
+  const [expanded, setExpanded] = useState<Expanded>({ open: null, shown: null });
+  const openTimerRef = useRef<number | null>(null);
+  const stackRef = useRef<HTMLDivElement | null>(null);
   const atBottomRef = useRef(true);
   const boardReady = board?.status === "ready";
   const teamProject = board !== null && board.status !== "unavailable";
@@ -133,8 +136,45 @@ export function TimelineMomentCards({
     showTeammates,
     sinceMillis: nowMillis - WINDOW_MILLIS,
   });
-  const entries = withDaySeparators(cards, nowMillis);
-  const cardMaxWidth = resolveMomentCardMaxWidth(gutterWidth);
+  const entries = momentStackEntries(cards, nowMillis);
+  const [arrivalDelays] = useState(
+    () =>
+      new Map(
+        cards
+          .slice(-ARRIVAL_STAGGER.cards)
+          .map((card, index) => [card.id, index * ARRIVAL_STAGGER.millis]),
+      ),
+  );
+
+  // Every newer card brings the stack back to the newest, wherever it was scrolled.
+  const newestAt = cards.length === 0 ? null : Date.parse(cards[cards.length - 1]!.at);
+  const newestSeenRef = useRef<number | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- scrolls the stack, a DOM node, to the card that just arrived before it paints
+  useLayoutEffect(() => {
+    const arrival = newestMomentArrival(newestSeenRef.current, newestAt);
+    newestSeenRef.current = arrival.newestSeen;
+    const node = stackRef.current;
+    if (!arrival.arrived || node === null) return;
+    atBottomRef.current = true;
+    node.scrollTop = node.scrollHeight;
+  }, [newestAt]);
+
+  const cancelOpen = () => {
+    if (openTimerRef.current !== null) window.clearTimeout(openTimerRef.current);
+    openTimerRef.current = null;
+  };
+  const openCard = (id: string) => {
+    cancelOpen();
+    setExpanded({ open: id, shown: id });
+  };
+  const openCardSoon = (id: string) => {
+    cancelOpen();
+    openTimerRef.current = window.setTimeout(() => openCard(id), OPEN_DELAY_MILLIS);
+  };
+  const closeCard = (id: string) => {
+    cancelOpen();
+    setExpanded((current) => (current.open === id ? { ...current, open: null } : current));
+  };
 
   const rowFor = (card: MomentCard) =>
     card.threadId === threadRef.threadId && card.messageId !== null
@@ -160,26 +200,11 @@ export function TimelineMomentCards({
     if (card.threadId === threadRef.threadId) jumpTo(card);
     else if (card.threadId !== null) openThread(card);
     else if (card.pullRequestUrl !== null) openPullRequest(event, card.pullRequestUrl);
-    setHovered(null);
-  };
-
-  const showDetail = (card: MomentCard, element: HTMLElement) => {
-    const root = rootRef.current;
-    if (!root) return;
-    const rootRect = root.getBoundingClientRect();
-    const rect = element.getBoundingClientRect();
-    const growsDown = rect.top - rootRect.top < rootRect.height / 2;
-    setHovered({
-      card,
-      top: growsDown ? rect.top - rootRect.top : null,
-      bottom: growsDown ? null : rootRect.bottom - rect.bottom,
-      left: rect.left - rootRect.left,
-      minWidth: rect.width,
-    });
   };
 
   const attachStack = (node: HTMLDivElement | null) => {
     if (!node) return;
+    stackRef.current = node;
     const list = node.firstElementChild;
     const pinToBottom = () => {
       if (atBottomRef.current) node.scrollTop = node.scrollHeight;
@@ -188,30 +213,36 @@ export function TimelineMomentCards({
     const forwardWheel = (event: WheelEvent) => {
       if (node.scrollHeight <= node.clientHeight) onWheel(event);
     };
+    // Only a move up leaves the bottom: while a card opens, the list grows between this pin and
+    // the next, so a scroll event can read "not at the bottom" just after a pin.
+    let lastTop = node.scrollTop;
     const onScroll = () => {
-      atBottomRef.current = node.scrollHeight - node.scrollTop - node.clientHeight <= 2;
-      setHovered(null);
+      const top = node.scrollTop;
+      if (node.scrollHeight - top - node.clientHeight <= 2) atBottomRef.current = true;
+      else if (top < lastTop) atBottomRef.current = false;
+      lastTop = top;
     };
     node.addEventListener("wheel", forwardWheel, { passive: false });
     node.addEventListener("scroll", onScroll, { passive: true });
-    const stopObserving = list instanceof HTMLElement ? observeResize(list, pinToBottom) : null;
+    // A card opening or arriving grows the list; a window or panel resize shrinks the stack.
+    const stops = [
+      list instanceof HTMLElement ? observeResize(list, pinToBottom) : null,
+      observeResize(node, pinToBottom),
+    ];
     pinToBottom();
     return () => {
       node.removeEventListener("wheel", forwardWheel);
       node.removeEventListener("scroll", onScroll);
-      stopObserving?.();
+      for (const stop of stops) stop?.();
+      stackRef.current = null;
     };
   };
 
   return (
     <div
-      ref={rootRef}
       className="pointer-events-none absolute inset-y-0 left-0 z-40 flex select-none flex-col"
       data-testid="timeline-moment-cards"
       style={{ width: gutterWidth }}
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setHovered(null);
-      }}
     >
       {teamProject ? (
         <label className="pointer-events-auto flex w-fit items-center gap-2 px-3 pt-3 pb-1.5 text-muted-foreground text-xs">
@@ -223,134 +254,154 @@ export function TimelineMomentCards({
           Teammates
         </label>
       ) : null}
-      <div
-        ref={attachStack}
-        className="pointer-events-auto flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain [scrollbar-width:none]"
-      >
-        <div className="mt-auto flex flex-col gap-1.5 px-3 pt-3 pb-6">
-          {entries.map((entry) => {
-            if (entry.kind === "day") {
+      <div className="relative min-h-0 flex-1">
+        <div
+          ref={attachStack}
+          className="pointer-events-auto flex h-full flex-col overflow-y-auto overscroll-contain [scrollbar-width:none]"
+        >
+          <div className="mt-auto flex flex-col px-3 pt-24 pb-6">
+            {entries.map((entry, index) => {
+              const first = index === 0;
+              if (entry.kind === "day") {
+                return (
+                  <div
+                    key={entry.id}
+                    className={cn(
+                      "ps-18 text-3xs text-muted-foreground uppercase tracking-wider",
+                      !first && "mt-3",
+                    )}
+                  >
+                    {entry.label}
+                  </div>
+                );
+              }
+              const card = entry.card;
+              const row = card.tone === "prompt" || card.tone === "agent" ? rowFor(card) : null;
+              const afterDay = entries[index - 1]?.kind === "day";
+              const isOpen = expanded.open === card.id;
+              const cardWidth = resolveMomentCardMaxWidth(gutterWidth, card.personal);
               return (
                 <div
-                  key={entry.id}
-                  className="mt-1 ps-7 text-3xs text-muted-foreground uppercase tracking-wider"
+                  key={card.id}
+                  className={cn(
+                    "transition-[opacity,translate] duration-200 ease-out starting:translate-y-2 starting:opacity-0 motion-reduce:transition-none motion-reduce:starting:translate-y-0 motion-reduce:starting:opacity-100",
+                    first || afterDay ? "mt-1.5" : entry.groupName !== null ? "mt-4" : "mt-1",
+                  )}
+                  style={{ transitionDelay: `${arrivalDelays.get(card.id) ?? 0}ms` }}
                 >
-                  {entry.label}
+                  {entry.groupName !== null ? (
+                    <div
+                      className={cn(
+                        "mb-1 truncate text-2xs text-muted-foreground",
+                        card.personal ? "ps-21" : "ps-18",
+                      )}
+                    >
+                      {entry.groupName}
+                    </div>
+                  ) : null}
+                  <div className="flex items-start gap-2">
+                    <span
+                      className="w-16 shrink-0 truncate text-2xs text-muted-foreground leading-7.5 tabular-nums transition-colors duration-150 motion-reduce:transition-none data-[in-view=true]:text-foreground"
+                      data-in-view="false"
+                      ref={(node) => {
+                        if (row === null) return;
+                        if (node) stripMap.set(row.rowId, node);
+                        else stripMap.delete(row.rowId);
+                      }}
+                    >
+                      <time dateTime={card.at}>
+                        {formatShortTimestamp(card.at, timestampFormat)}
+                      </time>
+                    </span>
+                    <div
+                      className={cn(
+                        "min-w-0 overflow-hidden rounded-lg transition-[width] duration-200 ease-out [interpolate-size:allow-keywords] motion-reduce:transition-none",
+                        MOMENT_GLASS,
+                        card.personal && "ms-3",
+                      )}
+                      style={{
+                        maxWidth: cardWidth,
+                        width: isOpen ? cardWidth : "fit-content",
+                      }}
+                      onPointerEnter={() => openCardSoon(card.id)}
+                      onPointerLeave={() => closeCard(card.id)}
+                      onFocus={() => openCard(card.id)}
+                      onBlur={(event) => {
+                        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                          closeCard(card.id);
+                        }
+                      }}
+                    >
+                      <button
+                        type="button"
+                        aria-expanded={isOpen}
+                        className="flex w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-lg px-2 py-1 text-left font-medium text-foreground text-xs leading-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+                        onClick={(event) => primaryAction(card, event)}
+                      >
+                        <MomentIcon tone={card.tone} className="size-3.5" />
+                        <span className="truncate">{card.label}</span>
+                      </button>
+                      {/* w-0 with min-w-full: a closed card's detail never widens the card. */}
+                      <div
+                        inert={!isOpen}
+                        className={cn(
+                          "grid w-0 min-w-full transition-[grid-template-rows,opacity] duration-200 ease-out motion-reduce:transition-none",
+                          isOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
+                        )}
+                      >
+                        <div className="min-h-0 overflow-hidden">
+                          {expanded.shown === card.id ? (
+                            <MomentCardDetail
+                              card={card}
+                              inThisThread={card.threadId === threadRef.threadId}
+                              onJump={() => jumpTo(card)}
+                              onOpenThread={() => openThread(card)}
+                              onOpenPullRequest={(event, url) => openPullRequest(event, url)}
+                            />
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               );
-            }
-            const card = entry.card;
-            const row = card.tone === "prompt" || card.tone === "agent" ? rowFor(card) : null;
-            return (
-              <div key={card.id} className="flex items-center gap-2">
-                <span
-                  aria-hidden="true"
-                  className="h-0.5 w-5 shrink-0 origin-left scale-x-[0.6] rounded-full bg-foreground opacity-55 transition-[transform,opacity] duration-150 motion-reduce:transition-none data-[in-view=true]:scale-x-100 data-[in-view=true]:opacity-100"
-                  data-in-view="false"
-                  ref={(node) => {
-                    if (row === null) return;
-                    if (node) stripMap.set(row.rowId, node);
-                    else stripMap.delete(row.rowId);
-                  }}
-                />
-                <button
-                  type="button"
-                  className={cn(
-                    "flex min-w-0 cursor-pointer items-center gap-1.5 rounded-lg px-2 py-1 text-left font-medium text-foreground text-xs leading-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
-                    MOMENT_GLASS,
-                    card.personal && "ms-3",
-                  )}
-                  style={{ maxWidth: cardMaxWidth }}
-                  onPointerEnter={(event) => showDetail(card, event.currentTarget)}
-                  onFocus={(event) => showDetail(card, event.currentTarget)}
-                  onClick={(event) => primaryAction(card, event)}
-                >
-                  <MomentIcon tone={card.tone} className="size-3.5" />
-                  <span className="truncate">{card.label}</span>
-                </button>
-                <time
-                  className="shrink-0 text-2xs text-muted-foreground tabular-nums"
-                  dateTime={card.at}
-                >
-                  {formatShortTimestamp(card.at, timestampFormat)}
-                </time>
-              </div>
-            );
-          })}
+            })}
+          </div>
         </div>
+        {/* Older cards fade into the page; a gradient over the stack costs nothing per frame. */}
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-background to-transparent" />
       </div>
-      {hovered ? (
-        <MomentCardDetail
-          hovered={hovered}
-          inThisThread={hovered.card.threadId === threadRef.threadId}
-          onLeave={() => setHovered(null)}
-          onPrimary={(event) => primaryAction(hovered.card, event)}
-          onJump={() => {
-            jumpTo(hovered.card);
-            setHovered(null);
-          }}
-          onOpenThread={() => openThread(hovered.card)}
-          onOpenPullRequest={(event, url) => openPullRequest(event, url)}
-        />
-      ) : null}
     </div>
   );
 }
 
 function MomentCardDetail({
-  hovered,
+  card,
   inThisThread,
-  onLeave,
-  onPrimary,
   onJump,
   onOpenThread,
   onOpenPullRequest,
 }: {
-  hovered: HoveredCard;
+  card: MomentCard;
   inThisThread: boolean;
-  onLeave: () => void;
-  onPrimary: (event: MouseEvent<HTMLElement>) => void;
   onJump: () => void;
   onOpenThread: () => void;
   onOpenPullRequest: (event: MouseEvent<HTMLElement>, url: string) => void;
 }) {
-  const card = hovered.card;
   const source =
     card.threadId === null ? card.threadTitle : inThisThread ? "This thread" : card.threadTitle;
   return (
-    // Overlaps the message column like the minimap's preview; it grows in place from the card.
-    <div
-      className={cn(
-        "pointer-events-auto absolute z-50 w-max max-w-80 rounded-xl p-3 text-left text-popover-foreground shadow-xl backdrop-blur-(--glass-blur) backdrop-saturate-(--glass-saturation) shadow-black/25 transition-[opacity,scale] duration-150 ease-out starting:scale-95 starting:opacity-0 motion-reduce:transition-none motion-reduce:starting:scale-100 motion-reduce:starting:opacity-100",
-        MOMENT_GLASS,
-        hovered.top === null ? "origin-bottom-left" : "origin-top-left",
-      )}
-      style={{
-        top: hovered.top ?? undefined,
-        bottom: hovered.bottom ?? undefined,
-        left: hovered.left,
-        minWidth: hovered.minWidth,
-      }}
-      onPointerLeave={onLeave}
-    >
-      <button
-        type="button"
-        className="flex cursor-pointer items-start gap-1.5 text-left font-medium text-sm leading-5 focus-visible:outline-none"
-        onClick={onPrimary}
-      >
-        <MomentIcon tone={card.tone} className="mt-0.5 size-4" />
-        <span className="min-w-0 break-words">{card.label}</span>
-      </button>
-      {source ? <div className="mt-0.5 text-muted-foreground text-xs">{source}</div> : null}
+    <div className="px-2 pb-2 text-left">
+      {source ? <div className="truncate text-muted-foreground text-xs">{source}</div> : null}
       {card.detail ? (
         <p
-          className="mt-1.5 overflow-hidden text-foreground/85 text-xs leading-5"
+          className="mt-1 overflow-hidden text-foreground/85 text-xs leading-5"
           style={{ display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: 4 }}
         >
           {card.detail}
         </p>
       ) : null}
-      <div className="mt-2 flex gap-1.5">
+      <div className="mt-2 flex flex-wrap gap-1.5">
         {card.pullRequestUrl !== null ? (
           <Button
             size="xs"
