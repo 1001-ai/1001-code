@@ -2,6 +2,7 @@ import type { ComponentProps } from "react";
 
 import { BoardIssueRefScope, useBoardIssueRefs } from "../board/boardIssueLinks";
 import ChatMarkdown from "../ChatMarkdown";
+import { BackReferenceScope, useBackReferences } from "./BackReferenceLink";
 import { QuestionAskedInItemContext } from "./questionBlockScope";
 import { QuestionRefScope, useQuestionRefs } from "./QuestionRefLink";
 
@@ -16,18 +17,27 @@ export function AssistantQuestionMarkdown({
     text: props.text,
     streaming: props.isStreaming === true,
   });
-  const issueRefs = useBoardIssueRefs({
+  const backReferences = useBackReferences({
     threadRef: props.threadRef,
+    itemId: askedInItemId,
     text: props.text,
     streaming: props.isStreaming === true,
     markdownProps: questionRefs.markdownProps,
   });
+  const issueRefs = useBoardIssueRefs({
+    threadRef: props.threadRef,
+    text: props.text,
+    streaming: props.isStreaming === true,
+    markdownProps: backReferences.markdownProps,
+  });
   return (
     <QuestionAskedInItemContext value={askedInItemId ?? null}>
       <QuestionRefScope value={questionRefs.scope}>
-        <BoardIssueRefScope value={issueRefs.scope}>
-          <ChatMarkdown {...props} {...issueRefs.markdownProps} />
-        </BoardIssueRefScope>
+        <BackReferenceScope value={backReferences.scope}>
+          <BoardIssueRefScope value={issueRefs.scope}>
+            <ChatMarkdown {...props} {...issueRefs.markdownProps} />
+          </BoardIssueRefScope>
+        </BackReferenceScope>
       </QuestionRefScope>
     </QuestionAskedInItemContext>
   );

@@ -3,9 +3,14 @@ import { FORK_DESKTOP } from "@t3tools/contracts";
 import { QUESTION_CARD_INSTRUCTIONS } from "./questionCardInstructions.ts";
 import { appendLiveAppCheckout } from "./liveCheckoutInstructions.ts";
 import { REPLY_MARKER_INSTRUCTIONS } from "./replyMarkerInstructions.ts";
+import { BACK_REFERENCE_INSTRUCTIONS } from "./backReferenceInstructions.ts";
 
 export { QUESTION_CARD_INSTRUCTIONS };
 export { REPLY_MARKER_INSTRUCTIONS, replyMarkerCodexContext } from "./replyMarkerInstructions.ts";
+export {
+  BACK_REFERENCE_INSTRUCTIONS,
+  backReferenceCodexContext,
+} from "./backReferenceInstructions.ts";
 export { liveAppCheckoutCodexContext, setLiveAppCheckout } from "./liveCheckoutInstructions.ts";
 export * from "./voiceAgentInstructions.ts";
 export * from "./inboxAgentInstructions.ts";
@@ -27,6 +32,8 @@ export function buildRuntimeInstructions(runtime: {
   readonly liveAppCheckout?: boolean;
   /** False when the caller sends the reply marker text in its own entry. */
   readonly replyMarkers?: boolean;
+  /** False when the caller sends the back-reference text in its own entry. */
+  readonly backReferences?: boolean;
 }): string {
   const harness = toSingleLine(runtime.harness);
   const model = toSingleLine(runtime.model ?? "");
@@ -40,7 +47,7 @@ export function buildRuntimeInstructions(runtime: {
   return appendLiveAppCheckout(
     runtime.pullRequestLinking === false
       ? runtimeInfo
-      : `${runtimeInfo}\n\n${PULL_REQUEST_LINKING_INSTRUCTIONS}\n\n${QUESTION_CARD_INSTRUCTIONS}${runtime.replyMarkers === false ? "" : `\n\n${REPLY_MARKER_INSTRUCTIONS}`}`,
+      : `${runtimeInfo}\n\n${PULL_REQUEST_LINKING_INSTRUCTIONS}\n\n${QUESTION_CARD_INSTRUCTIONS}${runtime.replyMarkers === false ? "" : `\n\n${REPLY_MARKER_INSTRUCTIONS}`}${runtime.backReferences === false ? "" : `\n\n${BACK_REFERENCE_INSTRUCTIONS}`}`,
     runtime.liveAppCheckout,
   );
 }

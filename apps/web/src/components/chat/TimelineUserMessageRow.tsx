@@ -98,10 +98,12 @@ import {
 import { UserMessageContextReferenceChip } from "./UserMessageContextChips";
 import {
   resolvePreviewAnnotationImage,
+  userMessageAttachmentsOnly,
   userMessageFileLabel,
 } from "./TimelineUserMessageRow.logic";
 import { ExchangeReplyLink, ExchangeThreadButton, useExchangeBubble } from "./ExchangeThread";
 import { useMessageContextMenu, type MessageCopy } from "./MessageContextMenu";
+import { BackReferenceUserSource, useUnfoldForBackReference } from "./BackReferenceLink";
 
 // Drawn inside the media so dark screenshots keep an edge on the dark background.
 const MEDIA_EDGE_CLASS_NAME =
@@ -477,6 +479,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
   const folded = userMessage.attribution === "agent";
   const [expanded, setExpanded] = useState(folded && AGENT_MESSAGE_STARTS_OPEN);
   const revealFoldRef = findRevealRef(() => setExpanded(true));
+  useUnfoldForBackReference(ctx.citationRequest, row.message.id, () => setExpanded(true));
   const senderShell = useQuietThreadShell(folded ? senderRef : null);
   const senderLabel =
     senderShell?.title.trim() || row.message.linkedSender?.title.trim() || "Agent";
@@ -537,35 +540,13 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
     (mediaAboveText || row.groupedWithNext) && "rounded-br-md",
   );
   // Files sent without words show as cards, not as a bubble around a name chip.
-  const fileCardsOnly =
-    !folded &&
-    userMessage.attribution !== "guest" &&
-    otherUserFiles.length > 0 &&
-    regularImages.length + userVideos.length + userAudio.length + unknownAttachments.length === 0 &&
-    replaceComposerContextReferences(resolvedContext.text, (reference) =>
-      attachmentReferences.some(
-        (attached) =>
-          attached.contextId === reference.contextId &&
-          otherUserFiles.some((file) => file.id === attached.attachmentId),
-      )
-        ? ""
-        : reference.label,
-    ).trim() === "";
-  const audioOnly =
-    !folded &&
-    userMessage.attribution !== "guest" &&
-    userAudio.length > 0 &&
-    regularImages.length + userVideos.length + otherUserFiles.length + unknownAttachments.length ===
-      0 &&
-    replaceComposerContextReferences(resolvedContext.text, (reference) =>
-      attachmentReferences.some(
-        (attached) =>
-          attached.contextId === reference.contextId &&
-          userAudio.some((file) => file.id === attached.attachmentId),
-      )
-        ? ""
-        : reference.label,
-    ).trim() === "";
+  const attachmentsOnly = userMessageAttachmentsOnly({
+    attachments: row.message.attachments ?? [],
+    context: resolvedContext,
+    attribution: userMessage.attribution,
+  });
+  const fileCardsOnly = attachmentsOnly === "file-cards";
+  const audioOnly = attachmentsOnly === "audio";
   const annotationRecordIds = resolvedContext.records
     .filter((record) => record.kind === "preview-annotation")
     .map((record) => record.contextId);
@@ -1046,13 +1027,20 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             ) : null}
             {fileCardsOnly || audioOnly ? null : (
               <div onCopyCapture={onBodyCopyCapture}>
-                <CollapsibleUserMessageBody
-                  text={resolvedContext.text}
-                  renderContextReference={renderContextReference}
-                  skills={ctx.skills}
-                  markdownCwd={ctx.markdownCwd}
-                  collapsible={!folded}
-                />
+                <BackReferenceUserSource
+                  messageId={row.message.id}
+                  itemKey={row.id}
+                  request={ctx.citationRequest}
+                  listRef={ctx.listRef}
+                >
+                  <CollapsibleUserMessageBody
+                    text={resolvedContext.text}
+                    renderContextReference={renderContextReference}
+                    skills={ctx.skills}
+                    markdownCwd={ctx.markdownCwd}
+                    collapsible={!folded}
+                  />
+                </BackReferenceUserSource>
               </div>
             )}
           </div>

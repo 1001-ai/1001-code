@@ -20,6 +20,7 @@ import {
   PULL_REQUEST_LINKING_INSTRUCTIONS,
   QUESTION_CARD_INSTRUCTIONS,
   REPLY_MARKER_INSTRUCTIONS,
+  BACK_REFERENCE_INSTRUCTIONS,
 } from "@t3tools/provider-core/server/runtimeInstructions";
 import type { AntigravityAuth } from "../../provider/AntigravityAuth.ts";
 import type * as AcpSessionRuntime from "@t3tools/provider-acp/server/AcpSessionRuntime";
@@ -149,7 +150,7 @@ export function makeAntigravityAcpAdapterFlavor(
           options.makeRuntime({
             ...input,
             clientFileReads: true,
-            sessionSystemPromptAppend: `${PULL_REQUEST_LINKING_INSTRUCTIONS}\n\n${QUESTION_CARD_INSTRUCTIONS}\n\n${REPLY_MARKER_INSTRUCTIONS}`,
+            sessionSystemPromptAppend: `${PULL_REQUEST_LINKING_INSTRUCTIONS}\n\n${QUESTION_CARD_INSTRUCTIONS}\n\n${REPLY_MARKER_INSTRUCTIONS}\n\n${BACK_REFERENCE_INSTRUCTIONS}`,
             additionalDirectories: [options.host.paths.attachmentsDir],
           }),
         )

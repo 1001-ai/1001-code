@@ -6,6 +6,7 @@ import {
   liveAppCheckoutCodexContext,
   QUESTION_CARD_INSTRUCTIONS,
   replyMarkerCodexContext,
+  backReferenceCodexContext,
 } from "@t3tools/provider-core/server/runtimeInstructions";
 import { makeProviderTextDeltaCoalescer } from "./ProviderTextDeltaCoalescer.ts";
 import {
@@ -832,6 +833,7 @@ export const buildCodexTurnStartParams = Effect.fn("CodexAdapterV2.buildCodexTur
               value: QUESTION_CARD_INSTRUCTIONS,
             },
             ...replyMarkerCodexContext(),
+            ...backReferenceCodexContext(),
             ...liveAppCheckoutCodexContext(),
           };
     const teamContext = codexMemoryContext(input.memory);

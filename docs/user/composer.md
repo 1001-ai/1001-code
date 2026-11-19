@@ -105,6 +105,15 @@ response**. Messages you send while it is open reply to that exchange and join i
 Turn the quotes off under **Settings → Chat → Reply markers**. To open the exchange by
 clicking a message itself, turn on **Settings → Chat → Open thread on message click**.
 
+## Jump to something said earlier
+
+When the agent points back to something said earlier in the chat, by you or by it, it adds
+a short quote after an up arrow, such as (↑ "the token expires after one hour"). On web and
+desktop the quote is a link: click it to scroll to the earlier message and highlight those
+words for a moment, unfolding the message if it is folded and loading older history if it
+is not loaded yet. A slightly misquoted quote links to the closest passage. A quote whose
+words no earlier message holds stays plain text, and other clients show it as written.
+
 ## Queue messages offline on mobile
 
 Mobile keeps local copies of draft attachments, so you can preview them and queue

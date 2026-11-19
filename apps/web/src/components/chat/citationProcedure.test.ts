@@ -57,12 +57,9 @@ describe("loadCitedHistory", () => {
     });
   });
 
-  it("rejects a citation that names a user message", async () => {
+  it("finds a user message, which back-references open", async () => {
     const history = scriptedHistory([{ message: "other", hasMoreHistory: false }]);
-    await expect(history.run()).resolves.toMatchObject({
-      _tag: "failed",
-      title: "The citation does not refer to an assistant response",
-    });
+    await expect(history.run()).resolves.toEqual({ _tag: "found" });
   });
 
   it("stops on a failed page", async () => {
@@ -181,12 +178,15 @@ describe("resolveCitationPhase", () => {
     });
   });
 
-  it("fails for a citation that names a user message", () => {
+  it("is ready for a user message, which back-references open", () => {
     const userEntry: TimelineEntry = {
       ...entry,
       message: { ...entry.message, role: "user" },
     } as TimelineEntry;
-    expect(phase({ entries: [userEntry] })).toEqual({ _tag: "failed" });
+    expect(phase({ entries: [userEntry], rows: [row] })).toEqual({
+      _tag: "ready",
+      rowId: "cited-row",
+    });
   });
 
   it("fails when the history procedure failed", () => {

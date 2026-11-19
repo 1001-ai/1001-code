@@ -49,6 +49,7 @@ import { remarkThoughtPreview, THOUGHT_PREVIEW_MAX_LENGTH } from "./TimelineWork
 import { TimelineRowCtx } from "./timelineRowContext";
 import { parseMarkdownWithMath } from "@t3tools/shared/markdownMath";
 import { collectThreadFindRanges } from "./threadFindHighlights";
+import { backReferenceCitation } from "~/lib/backReferenceCitation";
 import { toastManager } from "../ui/toast";
 import type { CitedHistory } from "./citationProcedure";
 import type { TimelineNavigation } from "./timelineViewport";
@@ -1360,6 +1361,117 @@ describe("MessagesTimeline agent messages", () => {
     expect(range.getBoundingClientRect().height).toBeGreaterThan(0);
     expect(range.getBoundingClientRect().bottom).toBeLessThanOrEqual(
       body.getBoundingClientRect().bottom,
+    );
+  });
+});
+
+function citationHighlightRanges() {
+  const highlight = CSS.highlights.get("t3-assistant-citation");
+  return [...(highlight ?? [])].filter((range) => range instanceof Range);
+}
+
+function citationHighlightText() {
+  const ranges = citationHighlightRanges();
+  return ranges.length === 0 ? null : ranges.map((range) => range.toString()).join("");
+}
+
+describe("MessagesTimeline back-references", () => {
+  const backReference = (messageId: string, excerpt: string) => ({
+    key: `back-reference-${messageId}`,
+    citation: backReferenceCitation(
+      { environmentId: ENVIRONMENT_ID, threadId: ThreadId.make("thread-cited") },
+      MessageId.make(messageId),
+      excerpt,
+    ),
+  });
+  const QUOTED = "Keep the **old table** until the freeze ends. Later we keep the old table too.";
+
+  it.each([
+    {
+      name: "a folded agent message",
+      overrides: { createdBy: "agent" as const, senderThreadId: SENDER_THREAD_ID },
+    },
+    { name: "a long message under its fold", overrides: {} },
+  ])("unfolds $name and highlights the first occurrence", async ({ overrides }) => {
+    setup();
+    const text = `${"Checked the next file.\n\n".repeat(24)}${QUOTED}`;
+    await using screen = await renderTimeline(
+      [message(text, overrides, "quoted"), message("Answer", { role: "assistant" }, "answer")],
+      {
+        citationRequest: backReference("quoted", "keep the old table until the freeze"),
+        citationHistory: { _tag: "found" },
+      },
+    );
+    await vi.waitFor(() =>
+      expect(citationHighlightText()).toBe("Keep the old table until the freeze"),
+    );
+    const rect = citationHighlightRanges()[0]!.getBoundingClientRect();
+    const body = screen.container.querySelector("[data-user-message-body]")!;
+    expect(rect.height).toBeGreaterThan(0);
+    expect(rect.bottom).toBeLessThanOrEqual(
+      Math.min(
+        body.getBoundingClientRect().bottom,
+        body.parentElement!.getBoundingClientRect().bottom,
+      ),
+    );
+  });
+
+  it("highlights the closest passage for a misquote", async () => {
+    setup();
+    await using _screen = await renderTimeline(
+      [message(QUOTED, {}, "quoted"), message("Answer", { role: "assistant" }, "answer")],
+      {
+        citationRequest: backReference("quoted", "keep the old table until freeze ends"),
+        citationHistory: { _tag: "found" },
+      },
+    );
+    await vi.waitFor(() =>
+      expect(citationHighlightText()).toBe("Keep the old table until the freeze ends"),
+    );
+  });
+
+  it("highlights words inside a mention chip", async () => {
+    setup();
+    const mention = {
+      version: 1 as const,
+      kind: "mention" as const,
+      contextId: ComposerContextId.make("mention_table"),
+      label: "@the old table",
+      path: "src/oldTable.ts",
+    };
+    await using _screen = await renderTimeline(
+      [
+        message(
+          "Keep [@the old table](t3-context://v1/mention/mention_table) until the freeze ends.",
+          { context: { version: 1, records: [mention] } },
+          "quoted",
+        ),
+        message("Answer", { role: "assistant" }, "answer"),
+      ],
+      {
+        citationRequest: backReference("quoted", "keep the old table until the freeze"),
+        citationHistory: { _tag: "found" },
+      },
+    );
+    await vi.waitFor(() =>
+      expect(citationHighlightText()).toBe("Keep @the old table until the freeze"),
+    );
+  });
+
+  it("says the earlier text is gone instead of that the quote changed", async () => {
+    setup();
+    using toast = vi.spyOn(toastManager, "add");
+    await using _screen = await renderTimeline(
+      [message(QUOTED, {}, "quoted"), message("Answer", { role: "assistant" }, "answer")],
+      {
+        citationRequest: backReference("quoted", "words nobody ever wrote here"),
+        citationHistory: { _tag: "found" },
+      },
+    );
+    await vi.waitFor(() =>
+      expect(toast).toHaveBeenCalledWith(
+        expect.objectContaining({ title: "Earlier text not found" }),
+      ),
     );
   });
 });

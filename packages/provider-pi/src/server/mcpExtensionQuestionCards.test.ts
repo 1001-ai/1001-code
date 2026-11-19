@@ -5,6 +5,7 @@ import { assert, describe, it } from "@effect/vitest";
 import {
   QUESTION_CARD_INSTRUCTIONS,
   REPLY_MARKER_INSTRUCTIONS,
+  BACK_REFERENCE_INSTRUCTIONS,
 } from "@t3tools/provider-core/server/runtimeInstructions";
 
 import { PI_T3_MCP_EXTENSION_SOURCE } from "./mcpExtensionSource.ts";
@@ -46,12 +47,13 @@ describe("Pi question card and reply marker instructions", () => {
     const appended = hook!({ systemPrompt: "base" }, {});
     assert.strictEqual(
       appended?.systemPrompt,
-      `base\n\n${QUESTION_CARD_INSTRUCTIONS}\n\n${REPLY_MARKER_INSTRUCTIONS}`,
+      `base\n\n${QUESTION_CARD_INSTRUCTIONS}\n\n${REPLY_MARKER_INSTRUCTIONS}\n\n${BACK_REFERENCE_INSTRUCTIONS}`,
     );
 
     const sections: Record<string, string> = {};
     assert.isUndefined(hook!({ systemPrompt: "base", systemPromptOptions: { sections } }, {}));
     assert.strictEqual(sections.t3_code_question_cards, QUESTION_CARD_INSTRUCTIONS);
     assert.strictEqual(sections.t3_code_reply_markers, REPLY_MARKER_INSTRUCTIONS);
+    assert.strictEqual(sections.t3_code_back_references, BACK_REFERENCE_INSTRUCTIONS);
   });
 });

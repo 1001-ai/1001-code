@@ -3,6 +3,7 @@ import { T3_CODE_ORCHESTRATION_INSTRUCTIONS } from "@t3tools/provider-core/serve
 import {
   QUESTION_CARD_INSTRUCTIONS,
   REPLY_MARKER_INSTRUCTIONS,
+  BACK_REFERENCE_INSTRUCTIONS,
 } from "@t3tools/provider-core/server/runtimeInstructions";
 
 export const PI_T3_MCP_EXTENSION_FILENAME = "pi-t3-mcp-extension.ts";
@@ -30,6 +31,7 @@ const EXTENSION_PATH_ENV = ${JSON.stringify(T3_PI_MCP_EXTENSION_PATH_ENV)};
 const ORCHESTRATION_INSTRUCTIONS = ${JSON.stringify(T3_CODE_ORCHESTRATION_INSTRUCTIONS.trim())};
 const QUESTION_CARD_INSTRUCTIONS = ${JSON.stringify(QUESTION_CARD_INSTRUCTIONS)};
 const REPLY_MARKER_INSTRUCTIONS = ${JSON.stringify(REPLY_MARKER_INSTRUCTIONS)};
+const BACK_REFERENCE_INSTRUCTIONS = ${JSON.stringify(BACK_REFERENCE_INSTRUCTIONS)};
 const SERVICE_TIER_COMMAND = ${JSON.stringify(PI_T3_SERVICE_TIER_COMMAND)};
 const PROTOCOL = "2025-06-18";
 const READ_ONLY_TOOLS = new Set(["read", "grep", "find", "ls"]);
@@ -263,9 +265,10 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
     if (sections && typeof sections === "object" && event.systemPromptOptions?.forceSystemPrompt === undefined) {
       sections.t3_code_question_cards = QUESTION_CARD_INSTRUCTIONS;
       sections.t3_code_reply_markers = REPLY_MARKER_INSTRUCTIONS;
+      sections.t3_code_back_references = BACK_REFERENCE_INSTRUCTIONS;
       return undefined;
     }
-    return { systemPrompt: event.systemPrompt + "\\n\\n" + QUESTION_CARD_INSTRUCTIONS + "\\n\\n" + REPLY_MARKER_INSTRUCTIONS };
+    return { systemPrompt: event.systemPrompt + "\\n\\n" + QUESTION_CARD_INSTRUCTIONS + "\\n\\n" + REPLY_MARKER_INSTRUCTIONS + "\\n\\n" + BACK_REFERENCE_INSTRUCTIONS };
   });
 
   // RPC has no trust prompt, so Pi skips an untrusted folder's protected resources. Session
