@@ -1,10 +1,11 @@
 import type { ScopedThreadRef } from "@t3tools/contracts";
-import { useState, type ComponentProps, type ReactElement } from "react";
+import { use, useState, type ComponentProps, type ReactElement } from "react";
 
 import { observeResize } from "~/lib/observeResize";
 
 import { useQuietThreadShell } from "~/state/entities";
 import { useProjectMoments } from "~/state/projectMoments";
+import { PaneStripContext } from "../paneStrip/paneStripMode";
 import type { MessagesTimelineRow } from "./MessagesTimeline.logic";
 import type { TimelineMinimap } from "./TimelineMinimap";
 import { TimelineMomentCards } from "./TimelineMomentCards";
@@ -51,6 +52,7 @@ export function TimelineMomentsGutter({
       for (const stop of stops) stop?.();
     };
   };
+  const inPaneStrip = use(PaneStripContext) !== null;
   const [showCards, setShowCards] = useState(false);
   const nextShowCards = resolveMomentCardsVisible(gutterWidth, showCards);
   if (nextShowCards !== showCards) setShowCards(nextShowCards);
@@ -60,7 +62,8 @@ export function TimelineMomentsGutter({
 
   // Until the server answers, and on servers without moments, the minimap keeps the gutter.
   const anchor = <span ref={observeViewport} hidden />;
-  if (!nextShowCards || threadRef === null || moments === null) {
+  // The pane strip shows the timeline as its own column, so the margin keeps the minimap.
+  if (inPaneStrip || !nextShowCards || threadRef === null || moments === null) {
     return (
       <>
         {anchor}

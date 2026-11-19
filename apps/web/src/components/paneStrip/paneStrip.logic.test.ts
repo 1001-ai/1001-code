@@ -1,21 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import {
-  paneStripColumnsOnScreen,
-  paneStripInboxThreadId,
-  shouldRevealActivePane,
-} from "./paneStrip.logic";
-
-describe("paneStripInboxThreadId", () => {
-  it.each([
-    { name: "another thread is open", route: "thread-1", inbox: "inbox", expected: "inbox" },
-    { name: "the Inbox itself is open", route: "inbox", inbox: "inbox", expected: null },
-    { name: "the project has no Inbox yet", route: "thread-1", inbox: null, expected: null },
-    { name: "no thread is open", route: null, inbox: "inbox", expected: null },
-  ])("$name", ({ route, inbox, expected }) => {
-    expect(paneStripInboxThreadId({ routeThreadId: route, inboxThreadId: inbox })).toBe(expected);
-  });
-});
+import { paneStripColumnsOnScreen, shouldRevealActivePane } from "./paneStrip.logic";
 
 describe("shouldRevealActivePane", () => {
   const at = (threadKey: string, activeSurfaceId: string | null) => ({

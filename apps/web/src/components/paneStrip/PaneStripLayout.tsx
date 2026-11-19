@@ -1,25 +1,19 @@
-import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
-import type { ScopedThreadRef, ThreadId } from "@t3tools/contracts";
-import { InboxIcon } from "lucide-react";
-import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
+import type { ProjectId, ScopedThreadRef } from "@t3tools/contracts";
+import { HistoryIcon } from "lucide-react";
+import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 
-import { ComposerHandleContext } from "../../composerHandleContext";
 import { isElectron } from "../../env";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
-import type { SideChatParentPanel } from "../../lib/sideChatPane";
+import { observeResize } from "../../lib/observeResize";
 import { cn } from "../../lib/utils";
 import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "../../rightPanelLayout";
-import {
-  hostRightPanel,
-  selectThreadRightPanelState,
-  useRightPanelStore,
-} from "../../rightPanelStore";
+import { selectThreadRightPanelState, useRightPanelStore } from "../../rightPanelStore";
 import { useQuietThreadShell } from "../../state/entities";
-import { useInboxAgent } from "../../state/inboxAgent";
+import { useProjectMoments } from "../../state/projectMoments";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "../../workspaceTitlebar";
-import ChatView from "../ChatView";
-import { BackgroundThreadContext } from "../chat/backgroundThread";
-import { PANE_STRIP_ATTRIBUTE, paneStripInboxThreadId } from "./paneStrip.logic";
+import { TimelineMomentCards } from "../chat/TimelineMomentCards";
+import { PANE_STRIP_ATTRIBUTE } from "./paneStrip.logic";
 import { PaneStripIndicator } from "./PaneStripIndicator";
 import {
   PANE_STRIP_COLUMN_CLASS,
@@ -28,15 +22,14 @@ import {
   usePaneStripSetting,
 } from "./paneStripMode";
 
-// The Inbox agent edits no files and has no terminal, so there is nothing to hand the thread.
-const INBOX_PARENT_PANEL: SideChatParentPanel = {
-  openToolDiff: () => {},
-  runShellCommand: () => {},
-};
+// The cards were written for a chat's margin: these stand in for the open chat's rows and minimap.
+const NO_ROWS: [] = [];
+const NO_STRIPS = new Map<string, HTMLSpanElement>();
+const ignore = () => {};
 
 /**
  * With the Labs switch on, lays the open thread out as one column of a sideways-scrolling strip:
- * the project's Inbox to its left, the thread's panes to its right.
+ * the project's timeline to its left, the thread's panes to its right.
  */
 export function PaneStripLayout(props: {
   readonly threadRef: ScopedThreadRef | null;
@@ -56,18 +49,7 @@ function PaneStrip(props: {
   const [panesHost, setPanesHost] = useState<HTMLDivElement | null>(null);
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
   const threadColumnRef = useRef<HTMLDivElement | null>(null);
-  const shell = useQuietThreadShell(threadRef);
-  const inbox = useInboxAgent(
-    threadRef === null || shell === null
-      ? null
-      : { environmentId: threadRef.environmentId, projectId: shell.projectId },
-  );
-  const inboxThreadId = narrow
-    ? null
-    : paneStripInboxThreadId({
-        routeThreadId: threadRef?.threadId ?? null,
-        inboxThreadId: inbox.threadId,
-      });
+  const projectId = useQuietThreadShell(threadRef)?.projectId ?? null;
   const panesOpen = useRightPanelStore(
     (state) =>
       !narrow &&
@@ -75,14 +57,35 @@ function PaneStrip(props: {
       selectThreadRightPanelState(state.byThreadKey, threadRef).isOpen,
   );
   const threadKey = threadRef === null ? null : scopedThreadKey(threadRef);
-  const inboxShown = inboxThreadId !== null;
+  const timelineShown = !narrow && threadRef !== null && projectId !== null;
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- rests the scroller on the thread column when a thread opens or the Inbox column appears beside it
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- rests the DOM scroller on the thread column when a thread opens or the timeline column appears beside it
   useLayoutEffect(() => {
     const threadColumn = threadColumnRef.current;
-    if (threadKey === null || threadColumn === null) return;
-    threadColumn.parentElement?.scrollTo({ left: inboxShown ? threadColumn.offsetLeft : 0 });
-  }, [threadKey, inboxShown]);
+    if (threadKey === null || scroller === null || panesHost === null || threadColumn === null) {
+      return;
+    }
+    // The panes arrive after the thread column, and until they do the strip may be too short to
+    // scroll that far, so the rest is retried as they mount until it holds or the reader moves.
+    const rest = () => {
+      const left = timelineShown ? threadColumn.offsetLeft : 0;
+      scroller.scrollTo({ left });
+      if (Math.abs(scroller.scrollLeft - left) <= 1) stop();
+    };
+    const panes = new MutationObserver(rest);
+    const stop = () => {
+      panes.disconnect();
+      for (const type of ["wheel", "pointerdown", "keydown"] as const) {
+        scroller.removeEventListener(type, stop);
+      }
+    };
+    panes.observe(panesHost, { childList: true });
+    for (const type of ["wheel", "pointerdown", "keydown"] as const) {
+      scroller.addEventListener(type, stop, { passive: true });
+    }
+    rest();
+    return stop;
+  }, [threadKey, timelineShown, scroller, panesHost]);
 
   return (
     <div className="relative flex min-h-0 min-w-0 flex-1">
@@ -91,11 +94,11 @@ function PaneStrip(props: {
         {...{ [PANE_STRIP_ATTRIBUTE]: "" }}
         className="relative flex min-h-0 min-w-0 flex-1 snap-x snap-mandatory overflow-x-auto overflow-y-hidden overscroll-x-contain [scrollbar-width:none]"
       >
-        {threadRef !== null && inboxThreadId !== null ? (
-          <InboxPane
-            key={`${threadRef.environmentId}:${inboxThreadId}`}
-            hostRef={threadRef}
-            threadId={inboxThreadId}
+        {timelineShown ? (
+          <TimelinePane
+            key={`${threadRef.environmentId}:${projectId}`}
+            threadRef={threadRef}
+            projectId={projectId}
           />
         ) : null}
         <div
@@ -119,27 +122,22 @@ function PaneStrip(props: {
   );
 }
 
-function InboxPane(props: { readonly hostRef: ScopedThreadRef; readonly threadId: ThreadId }) {
-  const { hostRef, threadId } = props;
+function TimelinePane(props: {
+  readonly threadRef: ScopedThreadRef;
+  readonly projectId: ProjectId;
+}) {
+  const { threadRef, projectId } = props;
   const [observe, onScreen] = usePaneOnScreen();
-  // The Inbox's chat mounts the first time its column shows, so a strip resting on the thread
-  // carries one chat, not two.
+  // The timeline subscribes the first time its column shows, not while the strip rests beside it.
   const [seen, setSeen] = useState(false);
   if (onScreen && !seen) setSeen(true);
-
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- registers the open thread as host in the panel store, so links in the Inbox open as that thread's panes
-  useEffect(
-    () => hostRightPanel(scopeThreadRef(hostRef.environmentId, threadId), hostRef),
-    [hostRef, threadId],
-  );
 
   return (
     <section
       ref={observe}
-      data-side-chat-pane
-      data-pane-strip-label="Inbox"
-      aria-label="Inbox"
-      className={cn(PANE_STRIP_COLUMN_CLASS, "border-r border-border bg-background")}
+      data-pane-strip-label="Timeline"
+      aria-label="Timeline"
+      className="flex min-h-0 min-w-0 shrink-0 grow-0 basis-[min(100%,22rem)] snap-start flex-col border-r border-border bg-background"
     >
       <header
         className={cn(
@@ -148,23 +146,39 @@ function InboxPane(props: { readonly hostRef: ScopedThreadRef; readonly threadId
           COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
         )}
       >
-        <InboxIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-        Inbox
+        <HistoryIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+        Timeline
       </header>
-      <div className="flex min-h-0 flex-1 flex-col">
-        {seen ? (
-          <BackgroundThreadContext value>
-            <ComposerHandleContext value={null}>
-              <ChatView
-                environmentId={hostRef.environmentId}
-                threadId={threadId}
-                routeKind="server"
-                embedded={INBOX_PARENT_PANEL}
-              />
-            </ComposerHandleContext>
-          </BackgroundThreadContext>
-        ) : null}
-      </div>
+      {seen ? <TimelineCards threadRef={threadRef} projectId={projectId} /> : null}
     </section>
+  );
+}
+
+function TimelineCards(props: {
+  readonly threadRef: ScopedThreadRef;
+  readonly projectId: ProjectId;
+}) {
+  const moments = useProjectMoments(props.threadRef.environmentId, props.projectId);
+  const [width, setWidth] = useState(0);
+  const [measure] = useState(() => (node: HTMLDivElement | null) => {
+    if (node === null) return undefined;
+    setWidth(node.clientWidth);
+    return observeResize(node, () => setWidth(node.clientWidth));
+  });
+  return (
+    <div ref={measure} className="relative min-h-0 flex-1">
+      {moments !== null && width > 0 ? (
+        <TimelineMomentCards
+          threadRef={props.threadRef}
+          projectId={props.projectId}
+          moments={moments.moments}
+          gutterWidth={width}
+          rows={NO_ROWS}
+          stripMap={NO_STRIPS}
+          onWheel={ignore}
+          onJump={ignore}
+        />
+      ) : null}
+    </div>
   );
 }
