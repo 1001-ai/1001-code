@@ -18,6 +18,7 @@ import {
   momentStackEntries,
   newestMomentArrival,
   resolveMomentCardMaxWidth,
+  singleThreadBranches,
 } from "./timelineMoments.logic";
 
 const threadId = ThreadId.make("thread:exports");
@@ -44,6 +45,7 @@ const agentMessage = (
   agentId: string,
   status: "started" | "working" | "blocked" | "question" | "done",
   when: string,
+  branch: string | null = null,
 ) =>
   ({
     _tag: "agent",
@@ -52,7 +54,7 @@ const agentMessage = (
     at: when,
     status,
     text: `${agentId} ${status}`,
-    branch: null,
+    branch,
     pr: status === "done" ? "https://github.com/acme/app/pull/7" : null,
     next: null,
     needs: null,
@@ -187,6 +189,46 @@ describe("agentsBoardMomentCards", () => {
       "board:m1",
       "board:m6",
       "board:m8",
+    ]);
+  });
+
+  it("leaves out the viewer's own cards that repeat this environment's moments", () => {
+    const local = {
+      branches: singleThreadBranches([
+        { branch: "feat/export" },
+        { branch: "main" },
+        { branch: "main" },
+        { branch: null },
+      ]),
+      moments: [moment("local-done", at(17, 10), { kind: "done" })],
+    };
+    const cards = agentsBoardMomentCards(
+      board([
+        // On a branch one local thread is on: that thread reporting, so every card goes.
+        agentMessage("b1", "ada-1", "started", at(17, 8), "feat/export"),
+        agentMessage("b2", "ada-1", "done", at(17, 9), "feat/export"),
+        // On a branch no single local thread is on: another machine, or the shared main.
+        agentMessage("b3", "ada-7", "done", at(17, 10), "main"),
+        // No branch: only a card a local moment of its kind sits next to goes.
+        agentMessage("b4", "ada-power-9", "done", at(17, 10), null),
+        agentMessage(
+          "b5",
+          "adalove-4",
+          "done",
+          new Date(Date.parse(at(17, 10)) + 90_000).toISOString(),
+        ),
+        agentMessage("b6", "adalove-4", "done", at(17, 13)),
+        // A teammate on the same branch is never hidden.
+        agentMessage("b7", "sam-2", "done", at(17, 9), "feat/export"),
+      ]),
+      { login: "ada", name: "Ada" },
+      local,
+    );
+    expect(cards.map((card) => [card.id, card.personal])).toEqual([
+      ["board:b3", true],
+      ["board:b4", false],
+      ["board:b6", true],
+      ["board:b7", false],
     ]);
   });
 

@@ -263,7 +263,8 @@ back to the newest.
 In a [team project](./team-projects.md), the list also shows when teammates' agents on the
 [Agents board](./team-projects.md#agents-board) start, ask a question, or finish, under the
 teammate's name. Their cards sit a little further left than yours; your own agents on the board
-show under **You** with the rest of your cards. The **Teammates** switch at the top of the list hides them; the
+show under **You** with the rest of your cards, once: when an agent on this machine also
+reports to the board, only its card from the thread shows. The **Teammates** switch at the top of the list hides them; the
 choice is kept in this browser.
 
 ## Inspect agent work
