@@ -1,11 +1,14 @@
 import {
   TeamCatalogProject,
   type TeamCatalogInvalidFile,
+  type TeamCatalogViewer,
   teamCatalogRepositoryKey,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
+
+import { inboxSignerName } from "../agentsBoard/agentsBoardFiles.ts";
 
 export interface TeamCatalogFile {
   /** Path inside the catalog, such as `projects/web.json`. */
@@ -128,4 +131,19 @@ export function teamCatalogCloneUrl(repo: string, source: string): string {
     return `${https[1]!.toLowerCase()}://${hostPart}${sourcePort}/${repository}`;
   }
   return `https://${hostPart}/${repository}`;
+}
+
+const GITHUB_LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
+
+/**
+ * The viewer from `gh api user --jq '[.login, (.name // "")] | @tsv'`: the login, and the profile's
+ * first name the way the agents board signs this person's messages (`inboxSignerName`).
+ */
+export function teamCatalogViewerFromGh(code: number | null, stdout: string): TeamCatalogViewer {
+  const [login = "", profileName = ""] = stdout.trim().split("\t");
+  if (code !== 0 || !GITHUB_LOGIN.test(login)) {
+    return { login: null, problem: "The GitHub CLI is not signed in. Run gh auth login." };
+  }
+  const name = profileName.trim() === "" ? "" : inboxSignerName(profileName, login);
+  return name === "" ? { login, problem: null } : { login, name, problem: null };
 }

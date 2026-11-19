@@ -113,29 +113,45 @@ function projectMomentCard(moment: ProjectMoment): MomentCard {
   };
 }
 
-/** An agent id is `<owner>-<number>`, so the viewer's own agents match either way. */
+/**
+ * Whether a board agent is the viewer's. Agents write their person's name as `owner`, which is
+ * neither the GitHub login nor always one word, so it matches the login or the name the board
+ * signs the viewer's messages with, whole or by its first word. An agent id is `<owner>-<number>`.
+ */
 function isViewersBoardAgent(
   agentId: string,
   owner: string | null,
-  viewerLogin: string | null,
+  viewer: AgentsBoardViewer | null,
 ): boolean {
-  if (viewerLogin === null || viewerLogin.length === 0) return false;
-  const login = viewerLogin.toLowerCase();
-  const id = agentId.toLowerCase();
+  const names = [viewer?.login, viewer?.name]
+    .filter((name): name is string => typeof name === "string" && name.length > 0)
+    .map((name) => name.toLowerCase());
+  if (names.length === 0) return false;
   // The id prefix is only a fallback: `ada-power-9` belongs to ada-power, not ada.
-  if (owner !== null) return owner.toLowerCase() === login;
-  return id === login || id.startsWith(`${login}-`);
+  if (owner !== null) {
+    const whole = owner.trim().toLowerCase();
+    const first = whole.split(/\s+/)[0] ?? whole;
+    return names.includes(whole) || names.includes(first);
+  }
+  const id = agentId.toLowerCase();
+  return names.some((name) => id === name || id.startsWith(`${name}-`));
 }
 
 const PR_URL = /^https?:\/\/\S+$/;
 
+/** Who is looking: the team catalog's viewer, by GitHub login and board name. */
+export interface AgentsBoardViewer {
+  readonly login: string | null;
+  readonly name?: string;
+}
+
 /**
- * Teammates' agents from the agents board: questions and blocks, finished work and starts.
- * Working updates and the viewer's own agents (already shown from this environment) are left out.
+ * Agents board cards: questions and blocks, finished work and starts; working updates are left
+ * out. The viewer's own agents are personal cards under "You", like this environment's moments.
  */
-export function teammateMomentCards(
+export function agentsBoardMomentCards(
   board: AgentsBoardData | null,
-  viewerLogin: string | null,
+  viewer: AgentsBoardViewer | null,
 ): ReadonlyArray<MomentCard> {
   if (board === null) return [];
   const owners = new Map(board.agents.map((agent) => [agent.id, agent.owner]));
@@ -143,13 +159,13 @@ export function teammateMomentCards(
   for (const message of board.messages) {
     if (message._tag !== "agent") continue;
     const owner = owners.get(message.agentId) ?? null;
-    if (isViewersBoardAgent(message.agentId, owner, viewerLogin)) continue;
+    const mine = isViewersBoardAgent(message.agentId, owner, viewer);
     const base = {
       id: `board:${message.id}`,
       at: message.at,
       detail: message.text,
-      personal: false,
-      person: owner ?? "A teammate",
+      personal: mine,
+      person: mine ? "You" : (owner ?? "A teammate"),
       threadId: null,
       threadTitle: message.agentId,
       messageId: null,
@@ -187,18 +203,19 @@ export function teammateMomentCards(
   return cards;
 }
 
-/** This project's moments and teammates' cards in one list, oldest first. */
+/** This project's moments and the agents board's cards in one list, oldest first. */
 export function mergeMomentCards(input: {
   readonly moments: ReadonlyArray<ProjectMoment>;
-  readonly teammates: ReadonlyArray<MomentCard>;
+  readonly board: ReadonlyArray<MomentCard>;
+  /** The Teammates switch: the viewer's own board cards show either way. */
   readonly showTeammates: boolean;
   readonly sinceMillis: number;
 }): ReadonlyArray<MomentCard> {
   const recent = (card: MomentCard) => Date.parse(card.at) >= input.sinceMillis;
-  const teammates = input.showTeammates ? input.teammates.filter(recent) : [];
-  return [...input.moments.map(projectMomentCard).filter(recent), ...teammates].toSorted(
-    compareByTime,
+  const board = input.board.filter(
+    (card) => recent(card) && (card.personal || input.showTeammates),
   );
+  return [...input.moments.map(projectMomentCard).filter(recent), ...board].toSorted(compareByTime);
 }
 
 export type MomentStackEntry =
