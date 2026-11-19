@@ -255,6 +255,19 @@ export function momentStackEntries(
   return entries;
 }
 
+/**
+ * Whether the stack's newest card is newer than any it showed before. A newest card that leaves,
+ * or the Teammates switch hiding and showing cards, changes the newest without anything arriving.
+ */
+export function newestMomentArrival(
+  newestSeen: number | null,
+  newest: number | null,
+): { readonly arrived: boolean; readonly newestSeen: number | null } {
+  if (newest === null) return { arrived: false, newestSeen };
+  if (newestSeen !== null && newest <= newestSeen) return { arrived: false, newestSeen };
+  return { arrived: true, newestSeen: newest };
+}
+
 const MOMENT_CARDS_MIN_GUTTER = 200;
 const MOMENT_CARDS_HYSTERESIS = 8;
 
@@ -266,11 +279,15 @@ export function resolveMomentCardsVisible(sideGutter: number, visible: boolean):
 }
 
 // The stack's side padding, the time column and the gap after it.
-const MOMENT_CARD_CHROME = 88;
+const MOMENT_CARD_CHROME = 96;
 const MOMENT_CARD_MAX_WIDTH = 300;
 
-export function resolveMomentCardMaxWidth(sideGutter: number): number {
-  return Math.max(80, Math.min(MOMENT_CARD_MAX_WIDTH, Math.floor(sideGutter) - MOMENT_CARD_CHROME));
+// Your own cards sit this much further right than teammates' (`ms-3`).
+const PERSONAL_CARD_INDENT = 12;
+
+export function resolveMomentCardMaxWidth(sideGutter: number, personal: boolean): number {
+  const room = Math.floor(sideGutter) - MOMENT_CARD_CHROME - (personal ? PERSONAL_CARD_INDENT : 0);
+  return Math.max(80, Math.min(MOMENT_CARD_MAX_WIDTH, room));
 }
 
 /** The loaded timeline row that shows a message, keyed the way the minimap keys its strips. */

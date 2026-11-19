@@ -16,6 +16,8 @@ import {
   resolveMomentCardsVisible,
   teammateMomentCards,
   momentStackEntries,
+  newestMomentArrival,
+  resolveMomentCardMaxWidth,
 } from "./timelineMoments.logic";
 
 const threadId = ThreadId.make("thread:exports");
@@ -236,6 +238,26 @@ describe("momentStackEntries", () => {
       ["d", "You"],
       ["e", null],
     ]);
+  });
+});
+
+describe("newestMomentArrival", () => {
+  it.each([
+    ["the first newest card", null, 100, { arrived: true, newestSeen: 100 }],
+    ["a newer card", 100, 200, { arrived: true, newestSeen: 200 }],
+    ["the newest card leaving or hidden", 200, 100, { arrived: false, newestSeen: 200 }],
+    ["an older card shown again", 200, 200, { arrived: false, newestSeen: 200 }],
+    ["an empty stack", 200, null, { arrived: false, newestSeen: 200 }],
+  ] as const)("%s", (_name, seen, newest, expected) => {
+    expect(newestMomentArrival(seen, newest)).toEqual(expected);
+  });
+});
+
+describe("resolveMomentCardMaxWidth", () => {
+  it("leaves room for the time column, and for the indent of your own cards", () => {
+    expect(resolveMomentCardMaxWidth(300, false)).toBe(204);
+    expect(resolveMomentCardMaxWidth(300, true)).toBe(192);
+    expect(resolveMomentCardMaxWidth(120, true)).toBe(80);
   });
 });
 

@@ -31,6 +31,7 @@ import {
   type MomentTone,
   mergeMomentCards,
   momentStackEntries,
+  newestMomentArrival,
   resolveMomentCardMaxWidth,
   teammateMomentCards,
 } from "./timelineMoments.logic";
@@ -136,7 +137,6 @@ export function TimelineMomentCards({
     sinceMillis: nowMillis - WINDOW_MILLIS,
   });
   const entries = momentStackEntries(cards, nowMillis);
-  const cardMaxWidth = resolveMomentCardMaxWidth(gutterWidth);
   const [arrivalDelays] = useState(
     () =>
       new Map(
@@ -146,15 +146,18 @@ export function TimelineMomentCards({
       ),
   );
 
-  // Every new card brings the stack back to the newest, wherever it was scrolled.
-  const newestId = cards.at(-1)?.id ?? null;
+  // Every newer card brings the stack back to the newest, wherever it was scrolled.
+  const newestAt = cards.length === 0 ? null : Date.parse(cards[cards.length - 1]!.at);
+  const newestSeenRef = useRef<number | null>(null);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- scrolls the stack, a DOM node, to the card that just arrived before it paints
   useLayoutEffect(() => {
+    const arrival = newestMomentArrival(newestSeenRef.current, newestAt);
+    newestSeenRef.current = arrival.newestSeen;
     const node = stackRef.current;
-    if (node === null || newestId === null) return;
+    if (!arrival.arrived || node === null) return;
     atBottomRef.current = true;
     node.scrollTop = node.scrollHeight;
-  }, [newestId]);
+  }, [newestAt]);
 
   const cancelOpen = () => {
     if (openTimerRef.current !== null) window.clearTimeout(openTimerRef.current);
@@ -264,7 +267,7 @@ export function TimelineMomentCards({
                   <div
                     key={entry.id}
                     className={cn(
-                      "ps-16 text-3xs text-muted-foreground uppercase tracking-wider",
+                      "ps-18 text-3xs text-muted-foreground uppercase tracking-wider",
                       !first && "mt-3",
                     )}
                   >
@@ -276,6 +279,7 @@ export function TimelineMomentCards({
               const row = card.tone === "prompt" || card.tone === "agent" ? rowFor(card) : null;
               const afterDay = entries[index - 1]?.kind === "day";
               const isOpen = expanded.open === card.id;
+              const cardWidth = resolveMomentCardMaxWidth(gutterWidth, card.personal);
               return (
                 <div
                   key={card.id}
@@ -289,7 +293,7 @@ export function TimelineMomentCards({
                     <div
                       className={cn(
                         "mb-1 truncate text-2xs text-muted-foreground",
-                        card.personal ? "ps-19" : "ps-16",
+                        card.personal ? "ps-21" : "ps-18",
                       )}
                     >
                       {entry.groupName}
@@ -297,7 +301,7 @@ export function TimelineMomentCards({
                   ) : null}
                   <div className="flex items-start gap-2">
                     <span
-                      className="w-14 shrink-0 whitespace-nowrap text-2xs text-muted-foreground leading-7.5 tabular-nums transition-colors duration-150 motion-reduce:transition-none data-[in-view=true]:text-foreground"
+                      className="w-16 shrink-0 truncate text-2xs text-muted-foreground leading-7.5 tabular-nums transition-colors duration-150 motion-reduce:transition-none data-[in-view=true]:text-foreground"
                       data-in-view="false"
                       ref={(node) => {
                         if (row === null) return;
@@ -316,8 +320,8 @@ export function TimelineMomentCards({
                         card.personal && "ms-3",
                       )}
                       style={{
-                        maxWidth: cardMaxWidth,
-                        width: isOpen ? cardMaxWidth : "fit-content",
+                        maxWidth: cardWidth,
+                        width: isOpen ? cardWidth : "fit-content",
                       }}
                       onPointerEnter={() => openCardSoon(card.id)}
                       onPointerLeave={() => closeCard(card.id)}
