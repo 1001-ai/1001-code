@@ -22,6 +22,7 @@ const web = {
     { project: "docs", access: "write" },
   ],
   linear: { team: "WEB", project: "Web app" },
+  agents: { repo: "github.com/acme/web-notes" },
 };
 
 describe("decodeTeamCatalogFiles", () => {
@@ -53,6 +54,13 @@ describe("decodeTeamCatalogFiles", () => {
     ["a lowercase Linear team key", { ...web, linear: { team: "web" } }, /team/],
     ["an unknown Linear field", { ...web, linear: { team: "WEB", board: "x" } }, /board/],
     ["a blank Linear project", { ...web, linear: { team: "WEB", project: " " } }, /project/],
+    ["a scheme in the agents repo", { ...web, agents: { repo: "https://github.com/a/b" } }, /repo/],
+    ["agents without a repo", { ...web, agents: {} }, /repo/],
+    [
+      "an unknown agents field",
+      { ...web, agents: { repo: "github.com/a/b", branch: "x" } },
+      /branch/,
+    ],
     ["a link to itself", { ...web, links: [{ project: "web", access: "read" }] }, /itself/],
     [
       "a project linked twice",

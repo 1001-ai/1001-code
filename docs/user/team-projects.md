@@ -48,7 +48,8 @@ The catalog holds one file per project, `projects/<key>.json`:
   "owners": ["github-login"],
   "parent": "suite",
   "links": [{ "project": "api", "access": "read" }],
-  "linear": { "team": "WEB", "project": "Web app" }
+  "linear": { "team": "WEB", "project": "Web app" },
+  "agents": { "repo": "github.com/your-team/web-notes" }
 }
 ```
 
@@ -61,6 +62,8 @@ The catalog holds one file per project, `projects/<key>.json`:
 - `linear` (optional) gives the project a [board](#board): `team` is the Linear team's key, as in
   its issue identifiers, and `project` (optional) narrows the board to one Linear project in that
   team, by its name or the id at the end of its URL.
+- `agents` (optional) keeps the project's [agents board](#agents-board) in another repository:
+  `repo` names it, in the same form as the project's own `repo`.
 
 Files are checked strictly. A file with a mistake, an unknown field, or a repository another
 file already lists is skipped, and Settings says which file and why. The rest of the catalog
@@ -270,7 +273,16 @@ reads the branch's instructions:
 git fetch origin agent-reports && git show origin/agent-reports:README.md
 ```
 
-A project whose repository has no such branch yet shows that, with the same line. The branch
+A project whose catalog file has an `agents` field keeps its board in the repository named
+there, for example when the project's own repository is public. The board is then fetched from
+and written to that repository, and the line names it by URL, because `origin` is the project's
+own repository:
+
+```sh
+git fetch https://github.com/your-team/web-notes.git agent-reports && git show FETCH_HEAD:README.md
+```
+
+A repository that has no such branch yet shows that, with the same line. The branch
 holds no product code: `README.md` with the instructions for agents, `reports/<agent>.md` with
 each agent's messages, `inbox/<agent>.md` and `inbox/all.md` with messages to agents, and
 `media/<agent>/` with screenshots of at most 500 KB.

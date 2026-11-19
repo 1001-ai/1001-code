@@ -48,8 +48,9 @@ const MAINTAIN_SCROLL_AT_END = {
 } as const;
 
 /**
- * The messages the agents working in a team project write to the project's agents branch, oldest
- * at the top. Read-only: the text is other agents' words, shown as plain text and never followed.
+ * The messages the agents working in a team project write to the project's agents branch, in its
+ * own repository or the one the catalog names, oldest at the top. Read-only: the text is other
+ * agents' words, shown as plain text and never followed.
  */
 export default function AgentsBoardPanel(props: {
   readonly threadRef: ScopedThreadRef;
@@ -119,14 +120,22 @@ export default function AgentsBoardPanel(props: {
           title="No agent messages yet"
           description={
             <>
-              The repository of {snapshot.project.name} has no branch named{" "}
+              {snapshot.repository === undefined ? (
+                `The repository of ${snapshot.project.name} has no branch named`
+              ) : (
+                <>
+                  The agents board of {snapshot.project.name} is kept in another repository,{" "}
+                  <code className="font-mono text-xs">{snapshot.repository}</code>, which has no
+                  branch named
+                </>
+              )}{" "}
               <code className="font-mono text-xs">{snapshot.branch}</code> yet. Agents write their
               messages there. To have an agent start, give it this line:
             </>
           }
         >
           <div className="w-full max-w-md">
-            <AgentsBoardAgentCommand branch={snapshot.branch} />
+            <AgentsBoardAgentCommand branch={snapshot.branch} repository={snapshot.repository} />
           </div>
           {refreshButton}
         </BoardMessage>
@@ -135,7 +144,18 @@ export default function AgentsBoardPanel(props: {
       return (
         <BoardMessage
           title="Could not fetch the agents branch"
-          description={snapshot.failure}
+          description={
+            snapshot.repository === undefined ? (
+              snapshot.failure
+            ) : (
+              <>
+                The agents board of {snapshot.project.name} is kept in another repository,{" "}
+                <code className="font-mono text-xs">{snapshot.repository}</code>. Fetching{" "}
+                <code className="font-mono text-xs">{snapshot.branch}</code> from it failed:{" "}
+                {snapshot.failure}
+              </>
+            )
+          }
           alert
         >
           {refreshButton}
