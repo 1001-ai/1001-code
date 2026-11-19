@@ -50,7 +50,12 @@ import {
   withInboxTaskCompletion,
   withInboxWake,
 } from "./inboxAgentWake.ts";
-import { STABLE_CHECK_INTERVAL_MS, readStableCommit, readStablePullRequests } from "./stableTag.ts";
+import {
+  STABLE_CHECK_INTERVAL_MS,
+  readStableCommit,
+  readStablePullRequests,
+  stableRepositoryWebUrl,
+} from "./stableTag.ts";
 
 const TICK = Duration.seconds(30);
 
@@ -272,8 +277,7 @@ const watch = Effect.gen(function* () {
       to: commit,
     }).pipe(Effect.orElseSucceed(() => []));
     const identity = yield* identities.resolve(cwd);
-    const webUrl =
-      identity?.provider === "github" && identity.webUrl !== undefined ? identity.webUrl : null;
+    const webUrl = stableRepositoryWebUrl(identity);
     const atMs = yield* Clock.currentTimeMillis;
     return { projectId, commit, move: { pullRequests, webUrl, atMs } } satisfies StableCheck;
   });

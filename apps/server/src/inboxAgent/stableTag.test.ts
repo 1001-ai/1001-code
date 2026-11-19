@@ -1,6 +1,6 @@
 import { expect, it } from "@effect/vitest";
 
-import { stableCommitOf, stablePullRequestsOf } from "./stableTag.ts";
+import { stableCommitOf, stablePullRequestsOf, stableRepositoryWebUrl } from "./stableTag.ts";
 
 const TAG = "481ef0835ecc3349fc6b9f7a72924739a9391d64";
 const COMMIT = "1e161211f7b27f3498eda4948fdc041edc7b271b";
@@ -25,4 +25,17 @@ it("lists the squash-merged pull requests of a range, oldest first, once each", 
     { number: 106, title: "the Inbox starts a thread with a brief when you ask" },
     { number: 107, title: "Inboxes made by older builds can message threads" },
   ]);
+});
+
+it("links pull requests only for a GitHub repository, keeping its name's case", () => {
+  const github = (provider: string, displayName?: string) =>
+    stableRepositoryWebUrl({
+      canonicalKey: "github.com/acme/app",
+      provider: provider as never,
+      ...(displayName === undefined ? {} : { displayName }),
+    });
+  expect(github("github", "Acme/App")).toBe("https://github.com/Acme/App");
+  expect(github("github")).toBe("https://github.com/acme/app");
+  expect(github("gitlab", "acme/app")).toBeNull();
+  expect(stableRepositoryWebUrl(null)).toBeNull();
 });

@@ -1,3 +1,4 @@
+import type { RepositoryIdentity } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
@@ -45,6 +46,16 @@ export function stablePullRequestsOf(subjects: string): ReadonlyArray<StablePull
     .toSorted(([left], [right]) => left - right)
     .slice(-MAX_PULL_REQUESTS)
     .map(([number, title]) => ({ number, title }));
+}
+
+/** Where a GitHub repository's pull requests live, or null for another host. */
+export function stableRepositoryWebUrl(
+  identity: Pick<RepositoryIdentity, "canonicalKey" | "provider" | "displayName"> | null,
+): string | null {
+  if (identity?.provider !== "github") return null;
+  const [host, ...path] = identity.canonicalKey.split("/");
+  const repository = identity.displayName ?? path.join("/");
+  return host === undefined || repository === "" ? null : `https://${host}/${repository}`;
 }
 
 export class StableTagReadError extends Schema.TaggedError<StableTagReadError>()(
