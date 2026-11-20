@@ -242,8 +242,6 @@ import {
   Combobox,
   ComboboxEmpty,
   ComboboxSearchInput,
-  ComboboxItem,
-  ComboboxList,
   ComboboxPopup,
   ComboboxTrigger,
   useComboboxFilter,
@@ -278,6 +276,11 @@ import {
   SidebarProjectFolderHeader,
   sidebarFolderRowId,
 } from "./sidebar/SidebarProjectFolderHeader";
+import {
+  ProjectScopeReorderList,
+  ProjectScopeSortableItem,
+  useProjectScopeDropOrder,
+} from "./sidebar/ProjectScopeReorder";
 import {
   SidebarDragBoundary,
   SidebarSectionHeader,
@@ -1175,11 +1178,11 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     return environmentLabelById.get(thread.environmentId) ?? null;
   };
   // Pinning from a row keeps rows in place while the menu is open.
-  const projectScopeItems = useOrderWhileOpen(
-    lookupProjectScopeItems,
-    (item) => item.value,
+  const projectScopeDropOrder = useProjectScopeDropOrder(
+    useOrderWhileOpen(lookupProjectScopeItems, (item) => item.value, projectScopeMenuState.open),
     projectScopeMenuState.open,
   );
+  const projectScopeItems = projectScopeDropOrder.items;
   const selectedProjectScopeItem =
     projectScopeKeys.length > 1
       ? null
@@ -3105,14 +3108,21 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                       }
                     />
                     <ComboboxEmpty>No matching projects.</ComboboxEmpty>
-                    <ComboboxList aria-multiselectable>
+                    <ProjectScopeReorderList
+                      items={projectScopeItems}
+                      groupByKey={projectGroupByScopeKey}
+                      disabled={projectScopeMenuState.query !== ""}
+                      onReordered={projectScopeDropOrder.showOrder}
+                      aria-multiselectable
+                    >
                       {(item: (typeof projectScopeItems)[number]) => {
                         const project = projectGroupByScopeKey.get(item.value) ?? null;
                         const isSelected = project
                           ? projectScopeKeys.includes(item.value)
                           : projectScopeKeys.length === 0;
                         return (
-                          <ComboboxItem
+                          <ProjectScopeSortableItem
+                            sortKey={project ? item.value : null}
                             key={item.value}
                             hideIndicator
                             value={item}
@@ -3173,10 +3183,10 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                               // Keeps "All projects" as tall as the project rows.
                               <span className="ml-auto size-7 shrink-0 sm:size-6" />
                             )}
-                          </ComboboxItem>
+                          </ProjectScopeSortableItem>
                         );
                       }}
-                    </ComboboxList>
+                    </ProjectScopeReorderList>
                   </ComboboxPopup>
                 </Combobox>
               }
