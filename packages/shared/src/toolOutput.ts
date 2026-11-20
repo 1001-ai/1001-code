@@ -287,7 +287,7 @@ export function toolOutputIndicatesFailure(text: string): boolean {
       (/cannot find path/i.test(text) && /because it does not exist/i.test(text)) ||
       (/is not recognized/i.test(text) && /the term '/i.test(text)) ||
       /exit(?:ed)? with exit code\s+[1-9]\d*/i.test(text) ||
-      /exit code\s*[:\s]\s*[1-9]\d*\b/i.test(text))
+      /exit code(?:\s*:\s*|\s+)[1-9]\d*\b/i.test(text))
   );
 }
 
