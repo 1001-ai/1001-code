@@ -269,7 +269,7 @@ export function TimelineMomentCards({
       <div className="relative min-h-0 flex-1">
         <div
           ref={attachStack}
-          className="pointer-events-auto flex h-full flex-col overflow-y-auto overscroll-contain [scrollbar-width:none]"
+          className="pointer-events-auto flex h-full flex-col overflow-y-auto overscroll-y-contain [scrollbar-width:none]"
         >
           <div className="mt-auto flex flex-col px-3 pt-24 pb-6">
             {entries.map((entry, index) => {
