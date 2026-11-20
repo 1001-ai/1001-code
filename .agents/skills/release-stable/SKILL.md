@@ -69,7 +69,7 @@ git push --force origin stable
 ## 6. Verify
 
 ```sh
-git ls-remote --tags origin stable    # the `stable^{}` line must be $target
+git ls-remote --tags origin 'stable*'    # the `stable^{}` line must be $target
 ```
 
 Then tell the user: installs pick it up on their next hourly check, build it, and offer "Restart to update"; the Inbox announces it within 10 minutes. A build already staged for an older `stable` is discarded on restart.
