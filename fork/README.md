@@ -16,6 +16,10 @@ This repository is [pingdotgg/t3code](https://github.com/pingdotgg/t3code) plus 
 
 The newest fetched upstream stays at `refs/sync-upstream/upstream` after any `status` or `merge`, and each sync's step-by-step merges at `refs/sync-upstream/detail/<commit>` in the checkout that ran it.
 
+## How a release gets out
+
+A release is the `stable` tag: team installs build the commit it names and offer it as an update, so moving it ships to everyone. Only the people the tag's ruleset lets bypass can move it. To release or roll back, ask an agent to "release"; it follows the [release-stable skill](../.agents/skills/release-stable/SKILL.md).
+
 ## Rules for our changes
 
 A textual conflict costs an agent minutes. A fork change that nobody can explain costs far more, at every sync, forever.
