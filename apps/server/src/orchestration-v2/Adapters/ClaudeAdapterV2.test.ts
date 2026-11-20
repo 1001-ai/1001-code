@@ -9061,6 +9061,13 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     { autoCompactWindow: "650000", model: "claude-sonnet-4-6", threshold: undefined },
     { autoCompactWindow: "650000", model: "uncatalogued-model", threshold: 617_000 },
     {
+      autoCompactWindow: "300000",
+      model: "claude-opus-5-5",
+      threadWindow: "150000",
+      threshold: 117_000,
+    },
+    { autoCompactWindow: "", model: "claude-opus-5-5", threadWindow: "150000", threshold: 117_000 },
+    {
       autoCompactWindow: "",
       model: "claude-opus-5-5",
       userSettings: '{"autoCompactWindow":500000}',
@@ -9147,7 +9154,15 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     },
   ])(
     "ignores stale snapshots after compaction and reports threshold $autoCompactWindow for $model",
-    ({ autoCompactWindow, model, threshold, userSettings, projectSettings, launchArgs }) =>
+    ({
+      autoCompactWindow,
+      model,
+      threshold,
+      userSettings,
+      projectSettings,
+      launchArgs,
+      threadWindow,
+    }) =>
       Effect.gen(function* () {
         const fileSystem = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
@@ -9179,7 +9194,13 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             attemptId: RunAttemptId.make("attempt-snapshot-usage-compaction"),
             text: "Continue.",
             attachments: [],
-            modelSelection: { ...CLAUDE_TEST_MODEL_SELECTION, model },
+            modelSelection: {
+              ...CLAUDE_TEST_MODEL_SELECTION,
+              model,
+              ...(threadWindow === undefined
+                ? {}
+                : { options: [{ id: "autoCompactWindow", value: threadWindow }] }),
+            },
             runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
               ...CLAUDE_TEST_RUNTIME_POLICY,
               cwd: project,

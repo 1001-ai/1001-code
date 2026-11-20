@@ -14,6 +14,7 @@ import {
   resolveClaudeCatalogEffort,
   type ClaudeModelCatalog,
 } from "./provider/ClaudeModelCatalog.ts";
+import { threadAutoCompactWindow } from "./provider/claudeThreadAutoCompact.ts";
 
 export interface CompiledClaudeModelSelection {
   readonly apiModelId: string;
@@ -21,6 +22,7 @@ export interface CompiledClaudeModelSelection {
   readonly promptEffort: string | undefined;
   readonly settings: Readonly<Record<string, boolean>>;
   readonly queryIdentity: string;
+  readonly autoCompactWindow: string;
 }
 
 export function compileClaudeModelSelection(
@@ -51,11 +53,19 @@ export function compileClaudeModelSelection(
   };
   const apiModelId = resolveClaudeCatalogApiModelId(catalog, selection);
   const promptEffort = resolvePromptInjectedEffort(capabilities, rawEffort) ?? undefined;
+  const autoCompactWindow = threadAutoCompactWindow(selection);
   return {
     apiModelId,
     effort,
     promptEffort,
     settings,
-    queryIdentity: JSON.stringify({ apiModelId, effort: effort ?? null, settings }),
+    // A changed window is part of the identity, so the next turn reopens the query with it.
+    queryIdentity: JSON.stringify({
+      apiModelId,
+      effort: effort ?? null,
+      settings,
+      ...(autoCompactWindow === "" ? {} : { autoCompactWindow }),
+    }),
+    autoCompactWindow,
   };
 }

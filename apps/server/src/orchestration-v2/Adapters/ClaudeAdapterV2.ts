@@ -1852,6 +1852,7 @@ function canApplyClaudeSelectionLive(
   next: CompiledClaudeModelSelection,
 ): boolean {
   return (
+    live.autoCompactWindow === next.autoCompactWindow &&
     live.settings.alwaysThinkingEnabled === next.settings.alwaysThinkingEnabled &&
     (next.effort !== undefined || live.effort === undefined)
   );
@@ -2012,12 +2013,14 @@ export function makeClaudeQueryOptions(input: {
       : typeof input.sdkSettings === "object" && input.sdkSettings !== null
         ? ({ ...input.sdkSettings, ...selectionSettings } as ClaudeSdkSettings)
         : selectionSettings;
+  const queryAutoCompactWindow =
+    compiledSelection.autoCompactWindow || input.settings?.autoCompactWindow;
   const compactQuerySettings =
-    input.settings?.autoCompactWindow === undefined || input.settings.autoCompactWindow.length === 0
+    queryAutoCompactWindow === undefined || queryAutoCompactWindow.length === 0
       ? querySettings
       : ({
           ...(typeof querySettings === "object" && querySettings !== null ? querySettings : {}),
-          autoCompactWindow: Number(input.settings.autoCompactWindow),
+          autoCompactWindow: Number(queryAutoCompactWindow),
         } as ClaudeSdkSettings);
   // Claude Code expands a bare alias to its own model, so a custom model with an alias's name
   // pins the alias to itself.
@@ -5402,6 +5405,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
     modelSelection: ModelSelection,
     launchArgSettings: ClaudeSdkSettings | undefined,
   ) {
+    const threadWindow = compileClaudeModelSelection(modelSelection).autoCompactWindow;
+    if (threadWindow !== "") return threadWindow;
     if (adapterOptions.settings.autoCompactWindow !== "")
       return adapterOptions.settings.autoCompactWindow;
     const model = compileClaudeModelSelection(modelSelection).apiModelId.replace(/\[1m\]$/i, "");
