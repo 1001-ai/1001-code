@@ -22,6 +22,7 @@ import { PANE_STRIP_ATTRIBUTE, shouldRevealActivePane } from "./paneStrip.logic"
 import { revealColumn } from "./PaneStripMoves";
 import { PANE_STRIP_COLUMN_CLASS, type PaneStripHandle, usePaneOnScreen } from "./paneStripMode";
 import { usePaneStripOrder } from "./paneStripPlacement";
+import { usePaneStripReplace } from "./PaneStripReplace";
 import { PaneStripWidthButton, usePaneStripWidth } from "./PaneStripWidth";
 
 type PanelProps = ComponentProps<typeof ChatRightPanel>;
@@ -58,6 +59,14 @@ function PaneStripPanes(
   const shown = useRef<{ threadKey: string; activeSurfaceId: string | null } | null>(null);
   const browserProfiles = useBrowserDefaults().profiles;
   const surfaces = usePaneStripOrder(props.surfaces);
+  usePaneStripReplace({
+    host,
+    threadKey,
+    surfaces: props.surfaces,
+    titleOf: (surface) => surfaceTitle(surface, props.previewSessions, props.terminalLabelsById),
+    onMove: props.onMoveSurface,
+    onClose: props.onCloseSurface,
+  });
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- scrolls the strip's DOM scroller to the pane that just became active
   useEffect(() => {
