@@ -54,14 +54,25 @@ export const INBOX_QUERY = `query LinearInbox(
 }`;
 
 /**
- * Whether any catalog team has a comment newer than `since` (the oldest team cursor): one cheap
- * request per poll, so the full query above runs only when there is something to read.
+ * Whether any catalog team has a comment newer than its own cursor: one cheap request per poll, so
+ * the full query above runs only when there is something to read. Checked against Linear's public
+ * schema.
  */
-export const INBOX_PROBE_QUERY = `query LinearInboxProbe($keys: [String!]!, $since: DateTimeOrDuration!) {
-  comments(first: 1, filter: { createdAt: { gt: $since }, issue: { team: { key: { in: $keys } } } }) {
+export const INBOX_PROBE_QUERY = `query LinearInboxProbe($filter: CommentFilter!) {
+  comments(first: 1, filter: $filter) {
     nodes { id }
   }
 }`;
+
+/** One branch per team, so a quiet team's old cursor cannot make other teams' read comments new. */
+export const inboxProbeFilter = (
+  cursors: ReadonlyArray<readonly [team: string, since: string]>,
+) => ({
+  or: cursors.map(([team, since]) => ({
+    createdAt: { gt: since },
+    issue: { team: { key: { eq: team } } },
+  })),
+});
 
 export const InboxProbeData = Schema.Struct({
   comments: Schema.Struct({ nodes: Schema.Array(Schema.Struct({ id: Schema.String })) }),

@@ -29,7 +29,7 @@ import * as TeamCatalog from "../teamCatalog/TeamCatalog.ts";
 import * as Board from "./Board.ts";
 import * as LinearInbox from "./LinearInbox.ts";
 import { linearInboxLog } from "./linearInboxLog.ts";
-import type { InboxData, LinearComment } from "./linearInboxRouting.ts";
+import type { InboxData, inboxProbeFilter, LinearComment } from "./linearInboxRouting.ts";
 
 const ME = "user-me";
 
@@ -104,8 +104,12 @@ const PROJECT_OF: Record<string, string> = {
   "thread-away": "project-api",
 };
 
+const teamOf = (comment: LinearComment) => comment.issue?.identifier.split("-")[0];
+
 /** A server with one Linear team and local Claude threads; the issue's thread's mode can change. */
 const makeInbox = (baseDir: string, comments: Array<LinearComment>) => {
+  /** The catalog's projects, which a test may add to. */
+  const projects = [...catalog.projects];
   const sent: Array<ThreadManagement.ThreadManagementSendInput> = [];
   /** The Linear queries made, by kind. */
   const queries: Array<"probe" | "full"> = [];
@@ -126,13 +130,22 @@ const makeInbox = (baseDir: string, comments: Array<LinearComment>) => {
               Effect.sync((): unknown => {
                 if (query.includes("LinearInboxProbe")) {
                   queries.push("probe");
-                  const fresh = comments.filter((c) => c.createdAt > String(variables["since"]));
+                  const { or } = variables["filter"] as ReturnType<typeof inboxProbeFilter>;
+                  const fresh = comments.filter((c) =>
+                    or.some(
+                      (branch) =>
+                        teamOf(c) === branch.issue.team.key.eq && c.createdAt > branch.createdAt.gt,
+                    ),
+                  );
                   return { comments: { nodes: fresh.slice(0, 1).map(({ id }) => ({ id })) } };
                 }
                 queries.push("full");
                 // Like Linear: newest first, here one comment per page.
                 const fresh = comments
-                  .filter((c) => c.createdAt > String(variables["since"]))
+                  .filter(
+                    (c) =>
+                      teamOf(c) === variables["key"] && c.createdAt > String(variables["since"]),
+                  )
                   .toSorted((a, b) => b.createdAt.localeCompare(a.createdAt));
                 const page = variables["after"] === null ? 0 : Number(variables["after"]);
                 return {
@@ -151,7 +164,9 @@ const makeInbox = (baseDir: string, comments: Array<LinearComment>) => {
               return { task: input.issue, commentId: "comment-reply" };
             }),
         }),
-        Layer.mock(TeamCatalog.TeamCatalog)({ snapshot: Effect.succeed(catalog) }),
+        Layer.mock(TeamCatalog.TeamCatalog)({
+          snapshot: Effect.sync(() => ({ ...catalog, projects })),
+        }),
         Layer.mock(ThreadManagement.ThreadManagementService)({
           getThreadShell: (threadId) =>
             failures.shellReads-- > 0
@@ -213,7 +228,7 @@ const makeInbox = (baseDir: string, comments: Array<LinearComment>) => {
   const use = <A, E>(f: (inbox: LinearInbox.LinearInbox["Service"]) => Effect.Effect<A, E>) =>
     LinearInbox.LinearInbox.pipe(Effect.flatMap(f), Effect.provide(layer));
   const poll = use((inbox) => inbox.poll);
-  return { poll, use, sent, queries, replies, thread, failures };
+  return { poll, use, sent, queries, replies, thread, failures, projects };
 };
 
 const tempBaseDir = FileSystem.FileSystem.pipe(
@@ -307,6 +322,12 @@ it.effect("reads comments in full only when the probe finds a new one", () =>
     yield* inbox.poll;
     expect(inbox.queries).toEqual(["probe", "probe", "full"]);
     expect(inbox.sent).toHaveLength(1);
+
+    // A team with no comments keeps its old cursor; the others' read comments are not new.
+    inbox.projects.push(entry("ops", "OPS"));
+    yield* inbox.poll;
+    yield* inbox.poll;
+    expect(inbox.queries).toEqual(["probe", "probe", "full", "probe", "probe"]);
   }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
