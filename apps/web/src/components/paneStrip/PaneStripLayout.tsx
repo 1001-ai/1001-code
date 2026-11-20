@@ -3,6 +3,7 @@ import type { ScopedThreadRef } from "@t3tools/contracts";
 import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 
 import { useMediaQuery } from "../../hooks/useMediaQuery";
+import { observeResize } from "../../lib/observeResize";
 import { cn } from "../../lib/utils";
 import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "../../rightPanelLayout";
 import { selectThreadRightPanelState, useRightPanelStore } from "../../rightPanelStore";
@@ -56,15 +57,19 @@ function PaneStrip(props: {
       return;
     }
     // The panes arrive after the thread column, and until they do the strip may be too short to
-    // scroll that far, so the rest is retried as they mount until it holds or the reader moves.
+    // scroll that far, so the rest is retried as they mount until it holds. The project pane
+    // widens when its Inbox loads, which moves the thread; that is followed until the reader acts.
     const rest = () => {
       const left = projectPaneShown ? threadColumn.offsetLeft : 0;
       scroller.scrollTo({ left });
-      if (Math.abs(scroller.scrollLeft - left) <= 1) stop();
+      if (Math.abs(scroller.scrollLeft - left) <= 1) panes.disconnect();
     };
     const panes = new MutationObserver(rest);
+    const projectPane = threadColumn.previousElementSibling;
+    const stopResize = projectPane instanceof HTMLElement ? observeResize(projectPane, rest) : null;
     const stop = () => {
       panes.disconnect();
+      stopResize?.();
       for (const type of ["wheel", "pointerdown", "keydown"] as const) {
         scroller.removeEventListener(type, stop);
       }

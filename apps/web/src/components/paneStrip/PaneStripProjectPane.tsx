@@ -68,7 +68,8 @@ export function PaneStripProjectPane(props: {
           <PaneHeader first icon={<InboxIcon aria-hidden className={ICON_CLASS} />}>
             Inbox
           </PaneHeader>
-          {seen ? (
+          {/* Only while on screen: a mounted chat counts as reading the Inbox, which clears its unread mark. */}
+          {onScreen ? (
             <InboxChat
               hostThreadId={threadRef.threadId}
               environmentId={threadRef.environmentId}
