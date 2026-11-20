@@ -170,6 +170,9 @@ describe("toolOutputIndicatesFailure", () => {
       "<exited with exit code 2>",
       "Exited with exit code 1",
       "exit code: 127",
+      "exit code 2",
+      "exit code\t:\t5",
+      "exit code :4",
       "clean exit first, then ExIt CoDe: 3",
     ])
       expect(toolOutputIndicatesFailure(text)).toBe(true);
@@ -179,6 +182,10 @@ describe("toolOutputIndicatesFailure", () => {
     for (const text of [
       "Done",
       "exit code: 0",
+      "exit code1",
+      "exit code:: 1",
+      // Worst case for quadratic backtracking; must stay fast.
+      `exit code${"\t".repeat(200_000)}x`,
       "Exited with exit code 0",
       "cannot find path",
       "is not recognized",
