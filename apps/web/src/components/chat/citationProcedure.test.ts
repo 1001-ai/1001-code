@@ -178,6 +178,23 @@ describe("resolveCitationPhase", () => {
     });
   });
 
+  it("finds text an agent sent with send_to_user by its item id", () => {
+    const sent: TimelineEntry = {
+      kind: "sent-message",
+      id: messageId,
+      createdAt: at,
+      runId,
+      text: "Draft",
+    };
+    expect(phase({ entries: [sent] })).toEqual({ _tag: "expanding" });
+    expect(
+      phase({
+        entries: [sent],
+        rows: [{ kind: "sent-message", id: messageId, createdAt: at, text: "Draft" }],
+      }),
+    ).toEqual({ _tag: "ready", rowId: messageId });
+  });
+
   it("is ready for a user message, which back-references open", () => {
     const userEntry: TimelineEntry = {
       ...entry,

@@ -256,6 +256,13 @@ describe("estimateThreadCost", () => {
     });
     expect(aliased.costUsd).toBeCloseTo(6, 6);
 
+    // An alias the rate table does not list prices under its provider's own naming.
+    const piAliased = estimateThreadCost(
+      [thread([turn(usage(), "anthropic/preview-model", { driver: "pi" })])],
+      { ...pricing(), aliases: new Map([["anthropic/preview-model", "anthropic/small-model"]]) },
+    );
+    expect(piAliased.costUsd).toBeCloseTo(6, 6);
+
     const custom = estimateThreadCost(
       [thread([turn(usage(), "main-model")])],
       pricing(

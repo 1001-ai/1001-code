@@ -9,7 +9,7 @@ import {
   OrchestratorMcpFailure,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
-import { Tool, Toolkit } from "effect/ai";
+import { McpSchema, Tool, Toolkit } from "effect/ai";
 
 import * as Board from "../../../board/Board.ts";
 import * as LinearInbox from "../../../board/LinearInbox.ts";
@@ -61,7 +61,8 @@ const BoardAddTool = Tool.make(BOARD_ADD_TOOL_NAME, {
   .annotate(Tool.Readonly, false)
   .annotate(Tool.Destructive, false)
   .annotate(Tool.Idempotent, false)
-  .annotate(Tool.OpenWorld, true);
+  .annotate(Tool.OpenWorld, true)
+  .annotate(McpSchema.EnabledWhen, McpInvocationContext.hiddenFromOutsideClients);
 
 const BoardUpdateTool = Tool.make(BOARD_UPDATE_TOOL_NAME, {
   description:
@@ -82,7 +83,8 @@ const BoardUpdateTool = Tool.make(BOARD_UPDATE_TOOL_NAME, {
   .annotate(Tool.Readonly, false)
   .annotate(Tool.Destructive, false)
   .annotate(Tool.Idempotent, true)
-  .annotate(Tool.OpenWorld, true);
+  .annotate(Tool.OpenWorld, true)
+  .annotate(McpSchema.EnabledWhen, McpInvocationContext.hiddenFromOutsideClients);
 
 const BoardListTool = Tool.make(BOARD_LIST_TOOL_NAME, {
   description:
@@ -97,7 +99,8 @@ const BoardListTool = Tool.make(BOARD_LIST_TOOL_NAME, {
   .annotate(Tool.Readonly, true)
   .annotate(Tool.Destructive, false)
   .annotate(Tool.Idempotent, true)
-  .annotate(Tool.OpenWorld, true);
+  .annotate(Tool.OpenWorld, true)
+  .annotate(McpSchema.EnabledWhen, McpInvocationContext.hiddenFromOutsideClients);
 
 const BoardMessageTool = Tool.make(BOARD_MESSAGE_TOOL_NAME, {
   description:
@@ -118,7 +121,8 @@ const BoardMessageTool = Tool.make(BOARD_MESSAGE_TOOL_NAME, {
   .annotate(Tool.Readonly, false)
   .annotate(Tool.Destructive, false)
   .annotate(Tool.Idempotent, false)
-  .annotate(Tool.OpenWorld, true);
+  .annotate(Tool.OpenWorld, true)
+  .annotate(McpSchema.EnabledWhen, McpInvocationContext.hiddenFromOutsideClients);
 
 const BoardReplyTool = Tool.make(BOARD_REPLY_TOOL_NAME, {
   description:
@@ -136,7 +140,8 @@ const BoardReplyTool = Tool.make(BOARD_REPLY_TOOL_NAME, {
   .annotate(Tool.Readonly, false)
   .annotate(Tool.Destructive, false)
   .annotate(Tool.Idempotent, false)
-  .annotate(Tool.OpenWorld, true);
+  .annotate(Tool.OpenWorld, true)
+  .annotate(McpSchema.EnabledWhen, McpInvocationContext.hiddenFromOutsideClients);
 
 export const BoardToolkit = Toolkit.make(
   BoardAddTool,

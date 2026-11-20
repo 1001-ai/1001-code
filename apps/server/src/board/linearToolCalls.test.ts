@@ -150,10 +150,10 @@ describe("boardTaskChange", () => {
 
   it("reads each provider's result shape and tolerates missing optional fields", () => {
     const { statusType: _type, assignee: _assignee, project: _project, ...bare } = createdResult;
-    // Codex keeps `structuredContent`, Grok wraps the text as `OkayOutput`.
+    // Codex keeps `structuredContent`; ACP agents, Grok included, send `{ content }` blocks.
     for (const output of [
       { structuredContent: bare },
-      { type: "MCP", output: { OkayOutput: JSON.stringify(bare) } },
+      { content: textBlocks(bare) },
       JSON.stringify(bare),
     ]) {
       expect(

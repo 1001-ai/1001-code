@@ -6,7 +6,7 @@ import {
   VOICE_AGENT_SHOW_MEDIA_TOOL_NAME,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
-import { Tool, Toolkit } from "effect/ai";
+import { McpSchema, Tool, Toolkit } from "effect/ai";
 
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as VoiceAgent from "../../../voiceAgent/VoiceAgent.ts";
@@ -46,7 +46,8 @@ const VoiceBoardTool = Tool.make(VOICE_AGENT_BOARD_TOOL_NAME, {
   .annotate(Tool.Readonly, true)
   .annotate(Tool.Destructive, false)
   .annotate(Tool.Idempotent, true)
-  .annotate(Tool.OpenWorld, true);
+  .annotate(Tool.OpenWorld, true)
+  .annotate(McpSchema.EnabledWhen, McpInvocationContext.hiddenFromOutsideClients);
 
 const VoiceSendMessageTool = Tool.make(VOICE_AGENT_SEND_MESSAGE_TOOL_NAME, {
   description:
@@ -77,7 +78,8 @@ const VoiceSendMessageTool = Tool.make(VOICE_AGENT_SEND_MESSAGE_TOOL_NAME, {
   .annotate(Tool.Readonly, false)
   .annotate(Tool.Destructive, false)
   .annotate(Tool.Idempotent, false)
-  .annotate(Tool.OpenWorld, true);
+  .annotate(Tool.OpenWorld, true)
+  .annotate(McpSchema.EnabledWhen, McpInvocationContext.hiddenFromOutsideClients);
 
 const VoiceShowMediaTool = Tool.make(VOICE_AGENT_SHOW_MEDIA_TOOL_NAME, {
   description:
@@ -97,7 +99,8 @@ const VoiceShowMediaTool = Tool.make(VOICE_AGENT_SHOW_MEDIA_TOOL_NAME, {
   .annotate(Tool.Readonly, true)
   .annotate(Tool.Destructive, false)
   .annotate(Tool.Idempotent, false)
-  .annotate(Tool.OpenWorld, false);
+  .annotate(Tool.OpenWorld, false)
+  .annotate(McpSchema.EnabledWhen, McpInvocationContext.hiddenFromOutsideClients);
 
 export const VoiceAgentToolkit = Toolkit.make(
   VoiceBoardTool,
