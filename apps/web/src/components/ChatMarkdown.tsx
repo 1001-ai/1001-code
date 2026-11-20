@@ -199,6 +199,7 @@ import {
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { useOpenChangeRequestLink } from "~/lib/openPullRequestLink";
 import { boardIssueLinksFirst, useOpenBoardIssueLink } from "./board/boardIssueLinks";
+import { PullRequestLinkChip, pullRequestLinkChip } from "./chat/PullRequestLinkChip";
 import { textDirection } from "~/textDirection";
 import { useOpenLink } from "../browser/useOpenLink";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
@@ -1324,6 +1325,13 @@ const CHAT_MARKDOWN_COMPONENTS = {
         issueTarget === null || environmentId === null
           ? null
           : { environmentId, input: issueTarget.ref };
+      const pullRequestChip = pullRequestLinkChip({
+        target: pullRequestPreviewTarget,
+        text: plainHastText(node),
+        isAutolink: isPullRequestAutolink,
+        projects,
+        threadRef,
+      });
       const isSameDocumentLink = href?.startsWith("#") ?? false;
       const onClick = props.onClick;
       const canOpenInPreview =
@@ -1467,7 +1475,9 @@ const CHAT_MARKDOWN_COMPONENTS = {
             });
           }}
         >
-          {faviconHost && hasText && !isPullRequestAutolink ? (
+          {pullRequestChip ? (
+            <PullRequestLinkChip {...pullRequestChip} />
+          ) : faviconHost && hasText && !isPullRequestAutolink ? (
             <MarkdownExternalLinkContent host={faviconHost} plainText={plainHastText(node)}>
               {linkChildren}
             </MarkdownExternalLinkContent>
