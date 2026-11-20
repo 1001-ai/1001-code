@@ -5,6 +5,17 @@ export const PANE_STRIP_STORAGE_KEY = "t3code:pane-strip-enabled:v1";
 export const PANE_STRIP_ATTRIBUTE = "data-pane-strip";
 
 /**
+ * The Inbox thread the project pane shows beside its activity feed, or null for the feed alone:
+ * the project has no Inbox yet, or the open thread is the Inbox itself.
+ */
+export function paneStripInboxThreadId<ThreadId extends string>(input: {
+  readonly routeThreadId: ThreadId;
+  readonly inboxThreadId: ThreadId | null;
+}): ThreadId | null {
+  return input.inboxThreadId === input.routeThreadId ? null : input.inboxThreadId;
+}
+
+/**
  * Whether a newly active pane should scroll into view. Opening a thread never does: the strip
  * rests on the thread, whichever pane was active when the thread was last open.
  */

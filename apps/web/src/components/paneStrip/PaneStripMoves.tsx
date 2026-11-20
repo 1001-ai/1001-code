@@ -67,7 +67,7 @@ function focusColumn(column: HTMLElement) {
     const active = document.activeElement;
     if (active === candidate || (active !== null && candidate.contains(active))) return;
   }
-  // The timeline has no control of its own until its cards load.
+  // The project pane has no control of its own until it loads.
   if (!column.hasAttribute("tabindex")) column.tabIndex = -1;
   column.focus({ preventScroll: true });
 }
