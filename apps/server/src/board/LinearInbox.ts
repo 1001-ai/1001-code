@@ -42,6 +42,7 @@ import {
   INBOX_QUERY,
   InboxData,
   InboxProbeData,
+  inboxProbeFilter,
   type LinearComment,
   type LinearMappedProject,
   MAX_INBOX_PAGES,
@@ -535,12 +536,10 @@ const make = Effect.gen(function* () {
     }
   });
 
-  /** Whether any of the teams has a comment after the oldest of their cursors. */
+  /** Whether any of the teams has a comment after its own cursor. */
   const anythingNew = (session: Board.BoardLinearSession, teams: ReadonlyArray<string>) => {
-    const since = teams
-      .map((team) => state.cursors[team]!)
-      .toSorted((a, b) => a.localeCompare(b))[0];
-    return session.query(INBOX_PROBE_QUERY, { keys: teams, since }, InboxProbeData).pipe(
+    const filter = inboxProbeFilter(teams.map((team) => [team, state.cursors[team]!] as const));
+    return session.query(INBOX_PROBE_QUERY, { filter }, InboxProbeData).pipe(
       Effect.map((data) => data.comments.nodes.length > 0),
       Effect.catch((error) =>
         Effect.logWarning("Linear inbox could not check for new comments.", { error }).pipe(
