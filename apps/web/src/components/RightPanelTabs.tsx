@@ -346,6 +346,7 @@ export function RightPanelEmptyState(props: {
   deviceAvailable: boolean;
   sideChatAvailable: boolean;
   sideChatDisabledReason: string | null;
+  shortcutsWithin?: string;
 }) {
   const [highlight, setHighlight] = useState(-1);
 
@@ -435,6 +436,11 @@ export function RightPanelEmptyState(props: {
     if (document.querySelector(LAUNCHER_SHORTCUT_BLOCKING_LAYERS)) return;
     const target = event.composedPath()[0] ?? event.target;
     if (target instanceof Element && surfaceShortcutTargetsTypingContext(target)) return;
+    if (
+      props.shortcutsWithin &&
+      !(target instanceof Element && target.closest(props.shortcutsWithin))
+    )
+      return;
     event.preventDefault();
     event.stopPropagation();
     action.onClick();

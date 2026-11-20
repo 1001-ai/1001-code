@@ -5,6 +5,7 @@ import { observeResize } from "../../lib/observeResize";
 import { cn } from "../../lib/utils";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { type PaneStripColumn, paneStripColumnsOnScreen } from "./paneStrip.logic";
+import { observePaneStripColumns } from "./paneStripColumns";
 
 interface IndicatorState {
   readonly columns: ReadonlyArray<PaneStripColumn>;
@@ -59,13 +60,22 @@ export function PaneStripIndicator(props: { readonly scroller: HTMLElement | nul
     };
     update();
     scroller.addEventListener("scroll", update, { passive: true });
-    const stopObservingSize = observeResize(scroller, update);
-    const mutation = new MutationObserver(update);
-    mutation.observe(scroller, { childList: true, subtree: true, attributeFilter: ["class"] });
+    // A column's width changes with its preset, which resizes neither the scroller nor its lists.
+    let stopObservingColumns = () => {};
+    const observeColumns = () => {
+      stopObservingColumns();
+      stopObservingColumns = observeResize(
+        [scroller, ...scroller.querySelectorAll("[data-pane-strip-label]")],
+        update,
+      );
+      update();
+    };
+    observeColumns();
+    const stopObservingLists = observePaneStripColumns(scroller, observeColumns);
     return () => {
       scroller.removeEventListener("scroll", update);
-      stopObservingSize();
-      mutation.disconnect();
+      stopObservingColumns();
+      stopObservingLists();
     };
   }, [scroller]);
 

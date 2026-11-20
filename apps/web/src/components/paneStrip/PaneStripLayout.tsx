@@ -59,10 +59,14 @@ function PaneStrip(props: {
     // The panes arrive after the thread column, and until they do the strip may be too short to
     // scroll that far, so the rest is retried as they mount until it holds. The project pane
     // widens when its Inbox loads, which moves the thread; that is followed until the reader acts.
+    let rested: number | null = null;
     const rest = () => {
+      // Somewhere else than it was left: the reader moved the strip, by a mark, a key or the palette.
+      if (rested !== null && Math.abs(scroller.scrollLeft - rested) > 1) return stop();
       const left = projectPaneShown ? threadColumn.offsetLeft : 0;
       scroller.scrollTo({ left });
-      if (Math.abs(scroller.scrollLeft - left) <= 1) panes.disconnect();
+      rested = scroller.scrollLeft;
+      if (Math.abs(rested - left) <= 1) panes.disconnect();
     };
     const panes = new MutationObserver(rest);
     const projectPane = threadColumn.previousElementSibling;
@@ -111,7 +115,8 @@ function PaneStrip(props: {
             "flex-row [&_[data-workspace-titlebar-controls]]:absolute",
           )}
         >
-          <PaneStripContext value={narrow ? null : { panesHost }}>
+          {/* A draft has no thread to size the strip around, so it keeps the tabbed panel. */}
+          <PaneStripContext value={narrow || threadRef === null ? null : { panesHost }}>
             {props.children}
           </PaneStripContext>
           {panesOpen ? <Width.PaneStripThreadWidthControl preset={threadWidth.preset} /> : null}

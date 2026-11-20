@@ -32,7 +32,7 @@ const WIDTH_CLASS: Record<PaneStripWidthPreset, string> = {
   fit: "basis-[min(100%,max(50%,64rem))]",
   third: "basis-[max(33.3333%,min(100%,20rem))]",
   half: "basis-[max(50%,min(100%,30rem))]",
-  "two-thirds": "basis-[66.6667%]",
+  "two-thirds": "basis-[max(66.6667%,min(100%,30rem))]",
   full: "basis-full",
 };
 

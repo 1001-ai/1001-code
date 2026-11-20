@@ -31,6 +31,9 @@ interface PaneStripProps {
   readonly threadKey: string;
 }
 
+// The launcher's one-letter shortcuts are for an empty panel; beside open panes they apply only here.
+const NEW_PANE_SELECTOR = '[data-pane-strip-label="New pane"]';
+
 const PANE_HEADER_CLASS =
   "flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center gap-1 pr-2 pl-3 text-sm font-medium";
 
@@ -38,7 +41,8 @@ const PANE_HEADER_CLASS =
 export function PaneStripOrPanel(props: PanelProps & PaneStripProps) {
   const { paneStrip, threadKey, ...panel } = props;
   if (paneStrip === null) return <ChatRightPanel {...panel} />;
-  if (paneStrip.panesHost === null || panel.open !== true) return null;
+  if (paneStrip.panesHost === null) return null;
+  // Mounted while the panel is closed too, so it knows the first pane opened after that is new.
   return createPortal(
     <PaneStripPanes {...panel} host={paneStrip.panesHost} threadKey={threadKey} />,
     paneStrip.panesHost,
@@ -48,10 +52,12 @@ export function PaneStripOrPanel(props: PanelProps & PaneStripProps) {
 function PaneStripPanes(
   props: PanelProps & Omit<PaneStripProps, "paneStrip"> & { readonly host: HTMLElement },
 ) {
-  const { host, threadKey, activeSurfaceId } = props;
+  const { host, threadKey } = props;
+  const open = props.open === true;
+  const activeSurfaceId = open ? props.activeSurfaceId : null;
+  const shown = useRef<{ threadKey: string; activeSurfaceId: string | null } | null>(null);
   const browserProfiles = useBrowserDefaults().profiles;
   const surfaces = usePaneStripOrder(props.surfaces);
-  const shown = useRef<{ threadKey: string; activeSurfaceId: string | null } | null>(null);
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- scrolls the strip's DOM scroller to the pane that just became active
   useEffect(() => {
@@ -72,6 +78,7 @@ function PaneStripPanes(
     }
   }, [activeSurfaceId, host, threadKey]);
 
+  if (!open) return null;
   return (
     <>
       {surfaces.map((surface) => (
@@ -93,6 +100,7 @@ function PaneStripPanes(
         <header className={cn(PANE_HEADER_CLASS, isElectron && "drag-region")}>New pane</header>
         <div className="flex min-h-0 flex-1 flex-col">
           <RightPanelEmptyState
+            shortcutsWithin={NEW_PANE_SELECTOR}
             onAddBrowser={props.onAddBrowser}
             onAddBrowserInProfile={props.onAddBrowserInProfile}
             browserProfiles={browserProfiles}

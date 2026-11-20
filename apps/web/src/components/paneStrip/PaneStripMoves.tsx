@@ -4,6 +4,7 @@ import { useEffect, useSyncExternalStore } from "react";
 import { registerCommands } from "../../shortcuts/dispatcher";
 import { type CommandPaletteActionItem, ITEM_ICON_CLASS } from "../CommandPalette.logic";
 import { PANE_STRIP_ATTRIBUTE, type PaneStripColumn } from "./paneStrip.logic";
+import { observePaneStripColumns } from "./paneStripColumns";
 import {
   paneStripRevealLeft,
   paneStripStepLeft,
@@ -219,12 +220,7 @@ export function PaneStripMoves(props: { readonly scroller: HTMLElement | null })
       publishStrip({ scroller, labels });
     };
     publish();
-    const columnsChanged = new MutationObserver(publish);
-    columnsChanged.observe(scroller, {
-      childList: true,
-      subtree: true,
-      attributeFilter: [LABEL_ATTRIBUTE],
-    });
+    const stopObservingColumns = observePaneStripColumns(scroller, publish);
 
     scroller.addEventListener("focusin", remember);
     scroller.addEventListener("click", onClick);
@@ -232,7 +228,7 @@ export function PaneStripMoves(props: { readonly scroller: HTMLElement | null })
     scroller.addEventListener("scrollend", arrived);
     return () => {
       stopCommands();
-      columnsChanged.disconnect();
+      stopObservingColumns();
       if (shownStrip?.scroller === scroller) publishStrip(null);
       scroller.removeEventListener("focusin", remember);
       scroller.removeEventListener("click", onClick);
