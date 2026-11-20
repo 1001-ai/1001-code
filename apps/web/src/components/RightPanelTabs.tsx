@@ -323,7 +323,7 @@ function SurfaceMenuItem(props: {
   return <DisabledReasonTooltip reason={props.disabledReason} trigger={item} />;
 }
 
-function RightPanelEmptyState(props: {
+export function RightPanelEmptyState(props: {
   onAddBrowser: () => void;
   onAddBrowserInProfile: (profileId: string) => void;
   browserProfiles: ReadonlyArray<{ readonly id: string; readonly name: string }>;
@@ -346,6 +346,7 @@ function RightPanelEmptyState(props: {
   deviceAvailable: boolean;
   sideChatAvailable: boolean;
   sideChatDisabledReason: string | null;
+  shortcutsWithin?: string;
 }) {
   const [highlight, setHighlight] = useState(-1);
 
@@ -435,6 +436,11 @@ function RightPanelEmptyState(props: {
     if (document.querySelector(LAUNCHER_SHORTCUT_BLOCKING_LAYERS)) return;
     const target = event.composedPath()[0] ?? event.target;
     if (target instanceof Element && surfaceShortcutTargetsTypingContext(target)) return;
+    if (
+      props.shortcutsWithin &&
+      !(target instanceof Element && target.closest(props.shortcutsWithin))
+    )
+      return;
     event.preventDefault();
     event.stopPropagation();
     action.onClick();
@@ -581,7 +587,7 @@ function RightPanelEmptyState(props: {
   );
 }
 
-function surfaceTitle(
+export function surfaceTitle(
   surface: RightPanelSurface,
   sessions: Readonly<Record<string, PreviewSessionSnapshot>>,
   terminalLabelsById: ReadonlyMap<string, string>,

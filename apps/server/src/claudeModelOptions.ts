@@ -16,6 +16,7 @@ import {
   resolveClaudeModelSlug,
   type ClaudeModelCatalog,
 } from "./provider/ClaudeModelCatalog.ts";
+import { threadAutoCompactWindow } from "./provider/claudeThreadAutoCompact.ts";
 
 const CLAUDE_CODE_MODEL_ALIASES = new Set(["opus", "sonnet", "haiku", "fable"]);
 
@@ -27,6 +28,7 @@ export interface CompiledClaudeModelSelection {
   /** The alias of a custom model named like one, which Claude Code would otherwise expand. */
   readonly pinnedAlias: string | undefined;
   readonly queryIdentity: string;
+  readonly autoCompactWindow: string;
 }
 
 export function compileClaudeModelSelection(
@@ -65,17 +67,21 @@ export function compileClaudeModelSelection(
     resolveClaudeModelSlug(catalog, selection.model) === apiModelId
       ? apiModelId
       : undefined;
+  const autoCompactWindow = threadAutoCompactWindow(selection);
   return {
     apiModelId,
     effort,
     promptEffort,
     settings,
     pinnedAlias,
+    // A changed window is part of the identity, so the next turn reopens the query with it.
     queryIdentity: JSON.stringify({
       apiModelId,
       effort: effort ?? null,
       settings,
       pinnedAlias: pinnedAlias ?? null,
+      ...(autoCompactWindow === "" ? {} : { autoCompactWindow }),
     }),
+    autoCompactWindow,
   };
 }

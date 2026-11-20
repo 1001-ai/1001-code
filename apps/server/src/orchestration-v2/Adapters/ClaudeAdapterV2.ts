@@ -2038,6 +2038,7 @@ function canApplyClaudeSelectionLive(
   next: CompiledClaudeModelSelection,
 ): boolean {
   return (
+    live.autoCompactWindow === next.autoCompactWindow &&
     live.settings.alwaysThinkingEnabled === next.settings.alwaysThinkingEnabled &&
     (next.effort !== undefined || live.effort === undefined) &&
     live.pinnedAlias === next.pinnedAlias
@@ -2208,10 +2209,11 @@ export function makeClaudeQueryOptions(input: {
       : typeof input.sdkSettings === "object" && input.sdkSettings !== null
         ? ({ ...input.sdkSettings, ...selectionSettings } as ClaudeSdkSettings)
         : selectionSettings;
-  const autoCompactWindow =
+  const providerAutoCompactWindow =
     input.settings?.autoCompactWindow === undefined || input.settings.autoCompactWindow.length === 0
       ? undefined
       : input.settings.autoCompactWindow;
+  const autoCompactWindow = compiledSelection.autoCompactWindow || providerAutoCompactWindow;
   const compactQuerySettings =
     autoCompactWindow === undefined
       ? querySettings
@@ -5686,6 +5688,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
       }
     }
     if (autoCompactEnabled === false) return "";
+    const threadWindow = compileClaudeModelSelection(modelSelection).autoCompactWindow;
+    if (threadWindow !== "") return threadWindow;
     if (adapterOptions.settings.autoCompactWindow !== "")
       return adapterOptions.settings.autoCompactWindow;
     const validWindow = (value: unknown) => {

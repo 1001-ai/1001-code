@@ -77,7 +77,7 @@ export interface MomentCard {
   readonly pullRequestUrl: string | null;
 }
 
-function momentLabel(moment: ProjectMoment): string {
+export function momentLabel(moment: ProjectMoment): string {
   switch (moment.kind) {
     case "question":
     case "input-request":

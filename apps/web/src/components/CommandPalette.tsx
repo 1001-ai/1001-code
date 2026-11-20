@@ -258,6 +258,10 @@ import { memoryPaletteAction } from "./memory/memorySurface";
 import { agentsBoardPaletteAction } from "./agentsBoard/agentsBoardSurface";
 import { questionsPaletteAction } from "./questions/questionsEntryPoints";
 import { useLampPaletteAction } from "./lamp/lampEntryPoints";
+import {
+  restorePaneStripFocusFromPalette,
+  usePaneStripPaletteActions,
+} from "./paneStrip/PaneStripMoves";
 import { useInboxPaletteAction } from "./inboxAgent/inboxEntryPoints";
 import { useTeammateMessagesPaletteItem } from "./teammateMessages/teammateMessagesEntryPoints";
 import { useCommandPaletteThreadItems } from "./CommandPaletteThreadItems";
@@ -386,7 +390,7 @@ function CommandPaletteDialog(props: {
       data-palette-mode={props.mode}
       data-testid="command-palette"
       finalFocus={() => {
-        if (restoreWorkspaceFocusFromPalette()) return false;
+        if (restoreWorkspaceFocusFromPalette() || restorePaneStripFocusFromPalette()) return false;
         const returnFocus = getCommandPaletteReturnFocus();
         if (returnFocus === false) return false;
         const composer = composerHandleRef?.current;
@@ -1263,6 +1267,7 @@ function OpenCommandPaletteDialog(props: {
   });
   const teamProjectsDrawer = useTeamProjectsDrawerToggle();
   const lampPaletteAction = useLampPaletteAction();
+  const paneStripPaletteActions = usePaneStripPaletteActions();
   const inboxPaletteAction = useInboxPaletteAction(currentProjectEnvironmentId, currentProjectId);
   const teammateMessagesPaletteItem = useTeammateMessagesPaletteItem();
 
@@ -1764,6 +1769,7 @@ function OpenCommandPaletteDialog(props: {
       },
     });
   }
+  actionItems.push(...paneStripPaletteActions);
 
   actionItems.push({
     kind: "action",

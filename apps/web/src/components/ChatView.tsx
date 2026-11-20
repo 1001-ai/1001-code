@@ -384,7 +384,8 @@ import { observeResize } from "~/lib/observeResize";
 import { ThreadVisitWatermark } from "./chat/ThreadVisitWatermark";
 import { ChatTerminalDrawers } from "./chat/ChatTerminalDrawers";
 import { TeamProjectsDrawer } from "./teamProjects/TeamProjectsDrawer";
-import { ChatRightPanel } from "./chat/ChatRightPanel";
+import { PaneStripOrPanel } from "./paneStrip/PaneStripPanes";
+import { usePaneStrip } from "./paneStrip/paneStripMode";
 import { useDraftEnvironmentRouting } from "./chat/useDraftEnvironmentRouting";
 import { branchMismatchBannerItem, extensionStatusBannerItem } from "./chat/ThreadActivityBanners";
 import { ThreadNow } from "./chat/ThreadNow";
@@ -457,6 +458,7 @@ export default function ChatView(props: ChatViewProps) {
     embedded: parentPanel,
   } = props;
   const embedded = parentPanel !== undefined;
+  const paneStrip = usePaneStrip(embedded);
   const canOperateThread = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
   const canOperateTerminal = useEnvironmentScope(environmentId, AuthTerminalOperateScope);
   const draftId = routeKind === "draft" ? props.draftId : null;
@@ -1126,11 +1128,12 @@ export default function ChatView(props: ChatViewProps) {
     activePreviewMiniPlayer?.source ?? null,
     renderedRightPanelSurface,
   );
-  const canMaximizeRightPanel = rightPanelOpen;
+  const canMaximizeRightPanel = rightPanelOpen && paneStrip === null;
   // An embedded side chat has no panel; a stale maximized flag would hide its own column.
   const rightPanelMaximized =
     !embedded && canMaximizeRightPanel && rightPanelState.maximized === true;
-  const inlineRightPanelOwnsTitleBar = rightPanelOpen && !shouldUsePlanSidebarSheet;
+  const inlineRightPanelOwnsTitleBar =
+    rightPanelOpen && !shouldUsePlanSidebarSheet && paneStrip === null;
   const [threadPanelPopoverHandle] = useState(PopoverCreateHandle);
   const [chatCanvasStore] = useState(createChatCanvasStore);
 
@@ -3329,7 +3332,7 @@ export default function ChatView(props: ChatViewProps) {
   const threadPanelHeaderControl = <ThreadPanelHeaderControl {...panelToggleControlProps} />;
   const panelLayoutControls = (
     <WorkspaceTitlebarControls
-      showMaximizeControl={!shouldUsePlanSidebarSheet}
+      showMaximizeControl={!shouldUsePlanSidebarSheet && paneStrip === null}
       rightPanelOpen={rightPanelOpen}
       animationsActive={panelAnimationsActive}
       maximized={rightPanelMaximized}
@@ -4040,7 +4043,9 @@ export default function ChatView(props: ChatViewProps) {
       </div>
 
       {rightPanelPresent && activeThreadRef && !embedded ? (
-        <ChatRightPanel
+        <PaneStripOrPanel
+          paneStrip={paneStrip}
+          threadKey={activeThreadKey ?? ""}
           sheet={shouldUsePlanSidebarSheet}
           workspaceLayoutElement={workspaceLayoutElement}
           widthStorageKey={`t3code:preview-panel-width:${activeThreadKey}`}
@@ -4105,7 +4110,7 @@ export default function ChatView(props: ChatViewProps) {
           sideChatDisabledReason={sideChatDisabledReason}
         >
           {rightPanelContent}
-        </ChatRightPanel>
+        </PaneStripOrPanel>
       ) : null}
 
       <RevertConfirmHost

@@ -71,7 +71,11 @@ function lockSwipeAxis(
   if (Math.abs(sumX) <= Math.abs(sumY) || isVerticalScroll(Math.abs(sumX), Math.abs(sumY))) {
     return { kind: "ignored" };
   }
-  if (path.some((node) => node instanceof Element && node.matches('[role="dialog"]'))) {
+  if (
+    path.some(
+      (node) => node instanceof Element && node.matches('[role="dialog"], [data-pane-strip]'),
+    )
+  ) {
     return { kind: "ignored" };
   }
   if (canScrollHorizontally(path, sumX)) return { kind: "ignored" };
