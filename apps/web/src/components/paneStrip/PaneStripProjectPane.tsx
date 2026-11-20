@@ -17,6 +17,7 @@ import { BackgroundThreadContext } from "../chat/backgroundThread";
 import { TimelineMomentCards } from "../chat/TimelineMomentCards";
 import { paneStripInboxThreadId } from "./paneStrip.logic";
 import { usePaneOnScreen } from "./paneStripMode";
+import { PANE_STRIP_PROJECT_ATTRIBUTE, PaneStripNudge } from "./PaneStripNudge";
 
 // The Inbox agent edits no files and has no terminal, so there is nothing to hand the thread.
 const INBOX_PARENT_PANEL: SideChatParentPanel = {
@@ -36,6 +37,7 @@ const ignore = () => {};
 export function PaneStripProjectPane(props: {
   readonly threadRef: ScopedThreadRef;
   readonly projectId: ProjectId;
+  readonly nudgeHost: HTMLElement | null;
 }) {
   const { threadRef, projectId } = props;
   const inbox = useInboxAgent({ environmentId: threadRef.environmentId, projectId });
@@ -50,6 +52,7 @@ export function PaneStripProjectPane(props: {
   return (
     <section
       ref={observe}
+      {...{ [PANE_STRIP_PROJECT_ATTRIBUTE]: "" }}
       data-pane-strip-label={inboxThreadId === null ? "Activity" : "Inbox"}
       aria-label="Project"
       className={cn(
@@ -88,6 +91,15 @@ export function PaneStripProjectPane(props: {
         </PaneHeader>
         {seen ? <ActivityCards threadRef={threadRef} projectId={projectId} /> : null}
       </div>
+      <PaneStripNudge
+        key={threadRef.threadId}
+        host={props.nudgeHost}
+        environmentId={threadRef.environmentId}
+        projectId={projectId}
+        openThreadId={threadRef.threadId}
+        inboxThreadId={inboxThreadId}
+        paneOnScreen={onScreen}
+      />
     </section>
   );
 }

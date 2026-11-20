@@ -35,6 +35,7 @@ function PaneStrip(props: {
   const narrow = useMediaQuery(RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY);
   const [panesHost, setPanesHost] = useState<HTMLDivElement | null>(null);
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
+  const [nudgeHost, setNudgeHost] = useState<HTMLDivElement | null>(null);
   const threadColumnRef = useRef<HTMLDivElement | null>(null);
   const projectId = useQuietThreadShell(threadRef)?.projectId ?? null;
   const panesOpen = useRightPanelStore(
@@ -88,6 +89,7 @@ function PaneStrip(props: {
             key={`${threadRef.environmentId}:${projectId}`}
             threadRef={threadRef}
             projectId={projectId}
+            nudgeHost={nudgeHost}
           />
         ) : null}
         <div
@@ -111,6 +113,7 @@ function PaneStrip(props: {
         </div>
         <div ref={setPanesHost} className="contents" />
       </div>
+      <div ref={setNudgeHost} className="contents" />
       <PaneStripIndicator scroller={scroller} />
       <PaneStripMoves scroller={scroller} />
     </div>
