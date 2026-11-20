@@ -5,6 +5,7 @@ import {
   getProviderOptionCurrentValue,
   isClaudeUltrathinkPrompt,
 } from "@t3tools/shared/model";
+import { autoCompactTraitLabel } from "./autoCompactTrait.ts";
 import { REASONING_EFFORT_OPTION_IDS } from "./state/threadExecution.ts";
 
 const REASONING_DESCRIPTOR_IDS: ReadonlySet<string> = new Set([
@@ -154,6 +155,14 @@ export function buildTraitsTriggerDisplay(input: {
           descriptor.options.find(({ id }) => id === currentValue)?.label ?? "Normal";
         continue;
       }
+    }
+    const autoCompactLabel = autoCompactTraitLabel(
+      descriptor,
+      getProviderOptionCurrentValue(descriptor, input.modelSelection, input.reportedModelSelection),
+    );
+    if (autoCompactLabel !== undefined) {
+      if (autoCompactLabel !== null) labels.push(autoCompactLabel);
+      continue;
     }
     const label =
       input.ultrathinkPromptControlled && descriptor.id === input.primarySelectDescriptorId

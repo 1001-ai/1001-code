@@ -24,6 +24,7 @@ import {
 } from "./ClaudeModelManifest.ts";
 import * as ModelCatalog from "@t3tools/provider-core/server/ModelCatalog";
 import { BUNDLED_MODEL_MANIFEST, resolveProviderCatalog } from "./ModelManifest.ts";
+import { withThreadAutoCompactOption } from "./claudeThreadAutoCompact.ts";
 
 const CLAUDE = ProviderDriverKind.make("claudeAgent");
 const EMPTY_CAPABILITIES: ModelCapabilities = { optionDescriptors: [] };
@@ -50,7 +51,13 @@ function tryResolveClaudeModelCatalog(
     if (Option.isNone(profile) || Option.isNone(adapter)) return null;
     const model = ModelCatalog.catalogServerModel(resolved, entry);
     models.push({
-      model: { ...model, capabilities: withUltracodeToggle(model.capabilities) },
+      model: {
+        ...model,
+        capabilities: withThreadAutoCompactOption(
+          withUltracodeToggle(model.capabilities),
+          profile.value.claudeCode ?? {},
+        ),
+      },
       runtime: profile.value.claudeCode ?? {},
       compatibility: adapter.value.claudeCode ?? {},
     });
