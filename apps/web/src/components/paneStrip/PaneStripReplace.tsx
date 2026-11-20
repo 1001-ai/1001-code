@@ -1,7 +1,10 @@
 import { useEffect, useRef } from "react";
 
 import { readLocalApi } from "../../localApi";
+import { previewStateAtom } from "../../previewStateStore";
 import { type RightPanelSurface, useRightPanelStore } from "../../rightPanelStore";
+import { appAtomRegistry } from "../../rpc/atomRegistry";
+import { agentControlledBrowserCloseConfirmation } from "../ChatView.logic";
 import { PANE_STRIP_ATTRIBUTE } from "./paneStrip.logic";
 import { revealColumn } from "./PaneStripMoves";
 import { usePaneStripPlacement } from "./paneStripPlacement";
@@ -118,9 +121,15 @@ export function usePaneStripReplace(input: {
     // A pane the user keeps is already right of the new one, so it ends up at the far right.
     void (async () => {
       for (const surface of replacement.ask) {
-        // Closing a terminal asks on its own; a browser page would go without a word.
-        const close =
+        // A terminal, and a browser an agent is using, ask on their own when closed.
+        const asksOnClose =
           surface.kind === "terminal" ||
+          agentControlledBrowserCloseConfirmation(
+            [surface],
+            appAtomRegistry.get(previewStateAtom(threadKey)).desktopByTabId,
+          ) !== null;
+        const close =
+          asksOnClose ||
           (await readLocalApi()?.dialogs.confirm(
             `Close "${titleOf(surface)}" to make room for the pane you opened? Its page closes. Cancel keeps it open at the far right.`,
             { variant: "destructive" },

@@ -101,5 +101,7 @@ describe("paneStripOpenerFromEvent", () => {
     expect(paneStripOpenerFromEvent({ key: "a", modified: false, column: "thread" })).toBe(
       undefined,
     );
+    // A launcher letter in the "New pane" column must not count as an open from the last column.
+    expect(paneStripOpenerFromEvent({ key: "f", modified: false, column: null })).toBeNull();
   });
 });

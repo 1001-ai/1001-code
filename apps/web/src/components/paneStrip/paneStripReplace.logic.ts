@@ -67,9 +67,9 @@ export function paneStripOpenerFromEvent(input: {
   /** The pressed column: a pane's surface id, "thread", or null for any other place. */
   readonly column: string | null;
 }): PaneStripOpener | undefined {
-  // A shortcut opens from nowhere in particular; other typing is not an open at all.
+  // A shortcut opens from nowhere in particular; other typing in a column is not an open at all.
   if (input.key !== null && input.modified) return null;
-  if (input.key !== null && input.key !== "Enter" && input.key !== " ") return undefined;
   if (input.column === null) return null;
+  if (input.key !== null && input.key !== "Enter" && input.key !== " ") return undefined;
   return input.column === "thread" ? { kind: "thread" } : { kind: "pane", surfaceId: input.column };
 }
