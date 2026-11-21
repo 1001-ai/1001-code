@@ -379,6 +379,14 @@ it("starts the digest at the user's previous Inbox message, or a day back for th
   expect(inboxAgentDigestSinceMs(inboxShell({ latestUserMessageAt: null }), UNTIL, 13 * HOUR)).toBe(
     13 * HOUR,
   );
+  // A wake from before this Inbox thread was created belongs to a deleted thread before a reset.
+  expect(
+    inboxAgentDigestSinceMs(
+      inboxShell({ createdAt: at(15 * HOUR), latestUserMessageAt: null }),
+      UNTIL,
+      13 * HOUR,
+    ),
+  ).toBe(UNTIL - 24 * HOUR);
 });
 
 type MessageDispatch = Extract<OrchestrationV2Command, { readonly type: "message.dispatch" }>;

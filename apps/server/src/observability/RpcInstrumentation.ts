@@ -130,6 +130,7 @@ const RPC_AGGREGATES = {
   [WS_METHODS.voiceAgentClose]: "orchestration",
   [WS_METHODS.voiceAgentMediaStep]: "orchestration",
   [WS_METHODS.voiceAgentTranscript]: "orchestration",
+  [WS_METHODS.inboxAgentReset]: "orchestration",
   [WS_METHODS.serverSignalProcess]: "server",
   [WS_METHODS.serverReportClientActivity]: "server",
   [WS_METHODS.scheduledTasksSubscribe]: "scheduledTasks",

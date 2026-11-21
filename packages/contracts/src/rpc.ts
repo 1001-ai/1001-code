@@ -442,6 +442,7 @@ import {
   AgentsBoardSnapshot,
 } from "./agentsBoard.ts";
 import { ProjectMomentsStreamItem, ProjectMomentsSubscribeInput } from "./projectMoments.ts";
+import { InboxAgentError, InboxAgentProjectInput, InboxAgentResetResult } from "./inboxAgent.ts";
 import {
   VoiceAgentError,
   VoiceAgentMediaStepInput,
@@ -682,6 +683,7 @@ export const WS_METHODS = {
   voiceAgentClose: "voiceAgent.close",
   voiceAgentMediaStep: "voiceAgent.mediaStep",
   voiceAgentTranscript: "voiceAgent.transcript",
+  inboxAgentReset: "inboxAgent.reset",
 
   scheduledTasksSubscribe: "scheduledTasks.subscribe",
   scheduledTasksUpsert: "scheduledTasks.upsert",
@@ -1386,6 +1388,12 @@ const WsVoiceAgentTranscriptRpc = Rpc.make(WS_METHODS.voiceAgentTranscript, {
   payload: VoiceAgentSessionInput,
   success: VoiceAgentTranscript,
   error: Schema.Union([VoiceAgentError, EnvironmentAuthorizationError]),
+});
+
+const WsInboxAgentResetRpc = Rpc.make(WS_METHODS.inboxAgentReset, {
+  payload: InboxAgentProjectInput,
+  success: InboxAgentResetResult,
+  error: Schema.Union([InboxAgentError, EnvironmentAuthorizationError]),
 });
 
 const WsServerSignalProcessRpc = Rpc.make(WS_METHODS.serverSignalProcess, {
@@ -2686,6 +2694,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsVoiceAgentCloseRpc,
   WsVoiceAgentMediaStepRpc,
   WsVoiceAgentTranscriptRpc,
+  WsInboxAgentResetRpc,
   WsServerSignalProcessRpc,
   WsScheduledTasksSubscribeRpc,
   WsScheduledTasksUpsertRpc,

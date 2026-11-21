@@ -265,7 +265,7 @@ import {
   restorePaneStripFocusFromPalette,
   usePaneStripPaletteActions,
 } from "./paneStrip/PaneStripMoves";
-import { useInboxPaletteAction } from "./inboxAgent/inboxEntryPoints";
+import { useInboxPaletteActions } from "./inboxAgent/inboxEntryPoints";
 import { useTeammateMessagesPaletteItem } from "./teammateMessages/teammateMessagesEntryPoints";
 import { useCommandPaletteThreadItems } from "./CommandPaletteThreadItems";
 import { useCommandPaletteThemeItems } from "./CommandPaletteThemeItems";
@@ -1303,7 +1303,7 @@ function OpenCommandPaletteDialog(props: {
   const teamProjectsDrawer = useTeamProjectsDrawerToggle();
   const lampPaletteAction = useLampPaletteAction();
   const paneStripPaletteActions = usePaneStripPaletteActions();
-  const inboxPaletteAction = useInboxPaletteAction(currentProjectEnvironmentId, currentProjectId);
+  const inboxPaletteActions = useInboxPaletteActions(currentProjectEnvironmentId, currentProjectId);
   const teammateMessagesPaletteItem = useTeammateMessagesPaletteItem();
 
   const openAddProjectFlow = () => {
@@ -1746,7 +1746,7 @@ function OpenCommandPaletteDialog(props: {
   }
   actionItems.push(questionsPaletteAction(() => navigate({ to: "/questions" })));
   if (lampPaletteAction) actionItems.push(lampPaletteAction);
-  if (inboxPaletteAction) actionItems.push(inboxPaletteAction);
+  actionItems.push(...inboxPaletteActions);
   if (teammateMessagesPaletteItem) actionItems.push(teammateMessagesPaletteItem);
 
   if (

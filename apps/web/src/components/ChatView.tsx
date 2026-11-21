@@ -220,6 +220,7 @@ import {
   type SideChatParentPanel,
 } from "~/lib/sideChatPane";
 import { inboxAgentAllowedProviders, isInboxClientThread } from "~/state/inboxAgent.logic";
+import { ChatInboxResetButton } from "./inboxAgent/InboxResetButton";
 import {
   NO_PROVIDER_MODEL_SELECTION,
   providerInstanceEntriesFor,
@@ -3433,6 +3434,7 @@ export default function ChatView(props: ChatViewProps) {
       maximized={rightPanelMaximized}
       onToggleMaximized={toggleRightPanelMaximizedStable}
     >
+      <ChatInboxResetButton thread={activeThread} projectDisplayName={activeProject?.title} />
       {panelToggleControls}
       <LampButton threadKey={displayedTimelineKey} covered={rightPanelMaximized} />
     </WorkspaceTitlebarControls>

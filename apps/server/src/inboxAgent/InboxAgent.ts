@@ -2,6 +2,8 @@ import {
   CommandId,
   INBOX_AGENT_DEFAULT_EFFORT,
   INBOX_AGENT_THREAD_TITLE,
+  InboxAgentError,
+  type InboxAgentResetResult,
   type ApplicationProjectCreatedEvent,
   type ApplicationStoredEvent,
   type OrchestrationV2ThreadShell,
@@ -17,6 +19,7 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
@@ -60,6 +63,8 @@ export class InboxAgent extends Context.Service<
     readonly ensureAll: Effect.Effect<void>;
     /** `ensureAll` again when a project waits for a provider and one is now ready. */
     readonly retryWaiting: (providers: ReadonlyArray<ServerProvider>) => Effect.Effect<void>;
+    /** Replaces the project's Inbox thread with a brand-new empty one, deleting the old thread. */
+    readonly reset: (projectId: ProjectId) => Effect.Effect<InboxAgentResetResult, InboxAgentError>;
   }
 >()("t3/inboxAgent/InboxAgent") {}
 
@@ -162,7 +167,7 @@ const make = Effect.gen(function* () {
         ),
       );
 
-  const findExisting = (projectId: ProjectId) =>
+  const findAllExisting = (projectId: ProjectId) =>
     Effect.all(
       [
         threads.getShellSnapshot({ projectId }),
@@ -171,9 +176,14 @@ const make = Effect.gen(function* () {
       { concurrency: 2 },
     ).pipe(
       Effect.map(([active, archived]) =>
-        oldestInboxShell([...active.threads, ...archived.threads], projectId),
+        [...active.threads, ...archived.threads].filter(
+          (shell) => shell.projectId === projectId && isInboxThreadShell(shell),
+        ),
       ),
     );
+
+  const findExisting = (projectId: ProjectId) =>
+    findAllExisting(projectId).pipe(Effect.map((shells) => oldestInboxShell(shells, projectId)));
 
   const create = Effect.fn("InboxAgent.create")(function* (projectId: ProjectId) {
     let provider: ServerProvider | undefined;
@@ -293,7 +303,99 @@ const make = Effect.gen(function* () {
       ? ensureAll
       : Effect.void;
 
-  return InboxAgent.of({ isInboxThread, ensure, ensureAll, retryWaiting });
+  const isInboxAgentError = Schema.is(InboxAgentError);
+
+  const resetUnlocked = Effect.fn("InboxAgent.reset")(function* (projectId: ProjectId) {
+    if (yield* managedFolders.isScratchProject(projectId)) {
+      return yield* new InboxAgentError({ reason: "unsupported" });
+    }
+    const project = yield* projects.get(projectId);
+    if (Option.isNone(project)) {
+      return yield* new InboxAgentError({ reason: "project-not-found" });
+    }
+    const recorded = inboxThreadOf(projectId);
+    const recordedShell = recorded === undefined ? null : yield* liveThread(recorded, projectId);
+    const existingShells = yield* findAllExisting(projectId);
+    const previousThreadId =
+      recordedShell?.id ?? oldestInboxShell(existingShells, projectId)?.id ?? null;
+    const oldThreadIds = Array.from(
+      new Set([
+        ...existingShells.map((shell) => shell.id),
+        ...(recordedShell ? [recordedShell.id] : []),
+      ]),
+    );
+    // Delete duplicates before the primary Inbox thread so a failed delete never drops the live Inbox.
+    const orderedOldIds =
+      previousThreadId === null
+        ? oldThreadIds
+        : [...oldThreadIds.filter((id) => id !== previousThreadId), previousThreadId];
+    // Make the replacement before deleting the old thread, so an unavailable provider loses nothing.
+    const nextThreadId = yield* create(projectId);
+    if (nextThreadId === null) {
+      waitingForProvider = true;
+      return yield* new InboxAgentError({ reason: "unavailable" });
+    }
+    // Delete old Inbox threads while they are still marked as Inbox threads, so a running turn stays locked until deleted.
+    for (const oldId of orderedOldIds) {
+      if (oldId === nextThreadId) continue;
+      const deleted = yield* threads
+        .dispatch({
+          type: "thread.delete",
+          commandId: CommandId.make(`inbox-agent:reset-delete:${oldId}:${nextThreadId}`),
+          threadId: oldId,
+        })
+        .pipe(
+          Effect.as(true),
+          Effect.catchCause((cause) =>
+            Effect.gen(function* () {
+              if ((yield* liveThread(oldId, projectId)) === null) return true;
+              yield* Effect.logWarning("The old Inbox thread could not be deleted during reset.", {
+                projectId,
+                oldId,
+                nextThreadId,
+                cause,
+              });
+              return false;
+            }),
+          ),
+        );
+      if (!deleted) {
+        yield* threads
+          .dispatch({
+            type: "thread.delete",
+            commandId: CommandId.make(`inbox-agent:reset-rollback:${nextThreadId}`),
+            threadId: nextThreadId,
+          })
+          .pipe(Effect.ignore);
+        return yield* new InboxAgentError({ reason: "failed" });
+      }
+    }
+    recordInboxThread(projectId, nextThreadId);
+    yield* writeState;
+    return { threadId: nextThreadId, previousThreadId } satisfies InboxAgentResetResult;
+  });
+
+  const reset: InboxAgent["Service"]["reset"] = (projectId) =>
+    lock
+      .withPermits(1)(resetUnlocked(projectId))
+      .pipe(
+        Effect.catchIf(
+          (error) => !isInboxAgentError(error),
+          (error) =>
+            Effect.logWarning("The project's Inbox could not be reset.", {
+              projectId,
+              error,
+            }).pipe(Effect.andThen(Effect.fail(new InboxAgentError({ reason: "failed" })))),
+        ),
+        Effect.catchDefect((defect) =>
+          Effect.logWarning("The project's Inbox could not be reset.", {
+            projectId,
+            defect,
+          }).pipe(Effect.andThen(Effect.fail(new InboxAgentError({ reason: "failed" })))),
+        ),
+      );
+
+  return InboxAgent.of({ isInboxThread, ensure, ensureAll, retryWaiting, reset });
 });
 
 /** The service alone, without its triggers. */

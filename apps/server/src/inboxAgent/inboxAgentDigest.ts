@@ -237,12 +237,20 @@ export function inboxAgentDigest(input: {
  * (so a wake's news is not repeated), or a day back for the first.
  */
 export function inboxAgentDigestSinceMs(
-  inbox: Pick<OrchestrationV2ThreadShell, "latestUserAuthoredMessageAt" | "latestUserMessageAt">,
+  inbox: Pick<
+    OrchestrationV2ThreadShell,
+    "createdAt" | "latestUserAuthoredMessageAt" | "latestUserMessageAt"
+  >,
   untilMs: number,
   lastWakeMs: number | null = null,
 ): number {
   const previous = inbox.latestUserAuthoredMessageAt ?? inbox.latestUserMessageAt ?? null;
-  const times = [previous === null ? null : DateTime.toEpochMillis(previous), lastWakeMs].filter(
+  // A wake from before this Inbox thread existed belongs to a deleted thread before a reset.
+  const wakeMs =
+    lastWakeMs !== null && lastWakeMs >= DateTime.toEpochMillis(inbox.createdAt)
+      ? lastWakeMs
+      : null;
+  const times = [previous === null ? null : DateTime.toEpochMillis(previous), wakeMs].filter(
     (ms): ms is number => ms !== null,
   );
   return times.length === 0 ? untilMs - FIRST_DIGEST_LOOKBACK_MS : Math.max(...times);
