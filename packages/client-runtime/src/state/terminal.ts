@@ -33,7 +33,7 @@ import {
 } from "./terminalSession.ts";
 import { terminalOutputText } from "./terminalOutput.ts";
 
-interface TerminalMetadataFeed {
+export interface TerminalMetadataFeed {
   readonly terminals: ReadonlyArray<TerminalSummary>;
   readonly snapshotId: string | symbol;
 }
