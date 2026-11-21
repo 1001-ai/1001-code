@@ -1,5 +1,6 @@
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import type { UnifiedSettings } from "@t3tools/contracts";
+import { useMessages } from "gt-react";
 import type { Dispatch } from "react";
 import type { ComposerThreadTarget, DraftSessionState } from "../../composerDraftStore";
 import { useStableCallback } from "../../hooks/useStableCallback";
@@ -86,6 +87,7 @@ export function useComposerSelection(input: ComposerSelectionInput) {
     setPendingServerThreadStartFromOriginByThreadId,
     scheduleComposerFocus,
   } = input;
+  const messages = useMessages();
   const navigate = useNavigate();
   const setStickyComposerModelSelection = useComposerDraftStore(
     (store) => store.setStickyModelSelection,
@@ -127,6 +129,7 @@ export function useComposerSelection(input: ComposerSelectionInput) {
           currentProviderInstanceId: runtimeProviderInstanceId,
         }
       : null,
+    messages,
   );
 
   const onProviderModelSelect = (

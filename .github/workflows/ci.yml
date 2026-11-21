@@ -110,6 +110,12 @@ jobs:
       - name: Check generated Expo GraphQL operations
         run: vp run --filter t3 generate --check
 
+      - name: Check generated Linear GraphQL operations
+        run: vp run --filter @t3tools/issue-tracker-linear generate --check
+
+      - name: Check i18n catalogs
+        run: vp run i18n:check
+
       - name: Check
         run: vp check
 
@@ -276,7 +282,8 @@ jobs:
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.test != 'false' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    # Fork: GitHub's 4-vCPU ubuntu-24.04 runners need >10m for the full non-server/web test sweep.
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -326,7 +333,7 @@ jobs:
         run: python3 -B .github/scripts/stage-preview-bundle.test.py
 
       - name: Test release checks
-        run: node --test .github/scripts/check-nightly-release.test.cjs .github/scripts/vercel-deployment-output.test.cjs .github/scripts/mobile-preview-comment.test.cjs .github/scripts/test-delta.test.cjs
+        run: node --test .github/scripts/check-nightly-release.test.cjs .github/scripts/vercel-deployment-output.test.cjs .github/scripts/mobile-preview-comment.test.cjs .github/scripts/mobile-ios-preview-record.test.cjs .github/scripts/test-delta.test.cjs
 
       - name: Finish installing browser secret helper build libraries
         timeout-minutes: 5

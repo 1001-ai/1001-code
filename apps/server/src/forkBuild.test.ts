@@ -76,6 +76,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("fork build defau
       const error = yield* runUpdate({
         baseDir: "/unused",
         logsDir: "/unused",
+        databasePath: "/unused",
         serverRuntimeStatePath: "/unused",
         channel: undefined,
         requestedVersion: undefined,
