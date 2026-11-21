@@ -1,23 +1,36 @@
 import type { ClientSettings } from "@t3tools/contracts";
+import { msg } from "gt-react";
 
 // Ids are stored in client settings, so never rename one.
 export const THREAD_DETAILS_ITEMS = [
-  { id: "environment", label: "Environment and worktree", defaultVisible: true },
-  { id: "openIn", label: "Open in editor", defaultVisible: true },
-  { id: "scripts", label: "Project scripts", defaultVisible: true },
-  { id: "branch", label: "Branch and pull request", defaultVisible: true },
-  { id: "gitActions", label: "Git actions", defaultVisible: true },
-  { id: "changes", label: "Changes", defaultVisible: true },
-  { id: "servers", label: "Servers", defaultVisible: true },
-  { id: "automations", label: "Automations", defaultVisible: true },
-  { id: "lineage", label: "Lineage", defaultVisible: true },
-  { id: "tasks", label: "Tasks", defaultVisible: true },
-  { id: "sideChats", label: "Side chats", defaultVisible: true },
-  { id: "usage", label: "Usage limits", defaultVisible: true },
-  { id: "context", label: "Context window", defaultVisible: true },
-  { id: "subagents", label: "Running subagents", defaultVisible: true },
-  { id: "cost", label: "Estimated cost", defaultVisible: true },
-  { id: "composerStatus", label: "Status line under composer", defaultVisible: true },
+  { id: "environment", label: msg("Environment and worktree"), defaultVisible: true },
+  { id: "openIn", label: msg("Open in editor"), defaultVisible: true },
+  { id: "scripts", label: msg("Project scripts"), defaultVisible: true },
+  { id: "branch", label: msg("Branch and pull request"), defaultVisible: true },
+  { id: "gitActions", label: msg("Git actions"), defaultVisible: true },
+  {
+    id: "changes",
+    label: msg("Changes", { $context: "thread details item: version control changes" }),
+    defaultVisible: true,
+  },
+  {
+    id: "servers",
+    label: msg("Servers", { $context: "thread details item: running dev servers" }),
+    defaultVisible: true,
+  },
+  { id: "automations", label: msg("Automations"), defaultVisible: true },
+  {
+    id: "lineage",
+    label: msg("Lineage", { $context: "thread details item: parent and child agents" }),
+    defaultVisible: true,
+  },
+  { id: "tasks", label: msg("Tasks"), defaultVisible: true },
+  { id: "sideChats", label: msg("Side chats"), defaultVisible: true },
+  { id: "usage", label: msg("Usage limits"), defaultVisible: true },
+  { id: "context", label: msg("Context window"), defaultVisible: true },
+  { id: "subagents", label: msg("Running subagents"), defaultVisible: true },
+  { id: "cost", label: msg("Estimated cost"), defaultVisible: true },
+  { id: "composerStatus", label: msg("Status line under composer"), defaultVisible: true },
 ] as const;
 
 export type ThreadDetailsItemId = (typeof THREAD_DETAILS_ITEMS)[number]["id"];

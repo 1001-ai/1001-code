@@ -36,8 +36,9 @@ for (const file of positionals) {
     const row = JSON.parse(line);
     const testCase = cases.get(row.id);
     if (testCase === undefined || row.error !== undefined) continue;
+    const expect = row.arm === "raw" ? (testCase.expectRaw ?? testCase.expect) : testCase.expect;
     const failed = gradeSample(
-      testCase.expect,
+      expect,
       row,
       pastedText(testCase),
       worldFilePaths(testCase),
