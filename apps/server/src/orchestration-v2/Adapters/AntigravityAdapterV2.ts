@@ -55,6 +55,14 @@ import {
   type AcpAdapterV2Flavor,
   type AcpAdapterV2RuntimeInput,
 } from "@t3tools/provider-acp/server/adapter";
+import { acpPermissionDisposition } from "@t3tools/provider-acp/server/clientPolicy";
+import {
+  isLockedAntigravityThread,
+  lockAntigravityPromptForLockedAgent,
+  lockAntigravityRuntimeForLockedAgent,
+  lockAntigravityRuntimeInputForLockedAgent,
+  lockedAgentAntigravityPermissionDisposition,
+} from "../../lockedAgents/lockedAgentAntigravityLock.ts";
 
 const ANTIGRAVITY_PROVIDER = ProviderDriverKind.make("antigravity");
 
@@ -145,62 +153,68 @@ export function makeAntigravityAcpAdapterFlavor(
   const makeRuntime = Effect.fn("AntigravityAdapterV2.makeRuntime")(
     function* (input: AcpAdapterV2RuntimeInput) {
       const scope = yield* Scope.fork(yield* Effect.scope);
+      const unlockedRuntimeInput = {
+        ...input,
+        clientFileReads: true,
+        sessionSystemPromptAppend: `${PULL_REQUEST_LINKING_INSTRUCTIONS}\n\n${QUESTION_CARD_INSTRUCTIONS}\n\n${REPLY_MARKER_INSTRUCTIONS}\n\n${BACK_REFERENCE_INSTRUCTIONS}`,
+        additionalDirectories: [options.host.paths.attachmentsDir],
+      };
+      // Fork: a locked agent thread gets only its own tools; see fork/README.md.
+      const runtimeInput = lockAntigravityRuntimeInputForLockedAgent(
+        unlockedRuntimeInput,
+        input.threadId,
+      );
       const runtime = yield* options
-        .withProcess(
-          Scope.close(scope, Exit.void),
-          options.makeRuntime({
-            ...input,
-            clientFileReads: true,
-            sessionSystemPromptAppend: `${PULL_REQUEST_LINKING_INSTRUCTIONS}\n\n${QUESTION_CARD_INSTRUCTIONS}\n\n${REPLY_MARKER_INSTRUCTIONS}\n\n${BACK_REFERENCE_INSTRUCTIONS}`,
-            additionalDirectories: [options.host.paths.attachmentsDir],
-          }),
-        )
+        .withProcess(Scope.close(scope, Exit.void), options.makeRuntime(runtimeInput))
         .pipe(Effect.provideService(Scope.Scope, scope));
       // Repair keeps state across updates, so each runtime must have one session-update handler.
       const reads = makeAntigravityReadRepair();
       // Served reads are reported from the read handler, so they take turns with agent updates.
       const updates = yield* Semaphore.make(1);
       let projectUpdate: Parameters<typeof runtime.handleSessionUpdate>[0] | undefined;
-      return {
-        ...runtime,
-        handleReadTextFile: (handler) =>
-          runtime.handleReadTextFile((request, context) =>
-            handler(request, context).pipe(
-              Effect.onExit((exit) => {
-                const served = reads.attempted(request.path, Exit.isSuccess(exit));
-                if (served === undefined || projectUpdate === undefined) return Effect.void;
-                return updates
-                  .withPermit(
-                    projectUpdate({
-                      sessionId: served.sessionId,
-                      update: {
-                        sessionUpdate: "tool_call_update",
-                        toolCallId: served.toolCallId,
-                        status: "completed",
-                      },
-                    }),
-                  )
-                  .pipe(Effect.ignore);
-              }),
-            ),
-          ),
-        prompt: (payload, promptOptions) =>
-          Effect.sync(reads.reset).pipe(Effect.andThen(runtime.prompt(payload, promptOptions))),
-        handleSessionUpdate: (handler) => {
-          projectUpdate = handler;
-          return runtime.handleSessionUpdate((notification) =>
-            updates.withPermit(handler(reads.repair(notification))),
-          );
-        },
-        start: () =>
-          runtime
-            .start()
-            .pipe(
-              Effect.tap(
-                (started) => options.onSessionStarted?.(started, input.cwd) ?? Effect.void,
+      return lockAntigravityRuntimeForLockedAgent(
+        {
+          ...runtime,
+          handleReadTextFile: (handler) =>
+            runtime.handleReadTextFile((request, context) =>
+              handler(request, context).pipe(
+                Effect.onExit((exit) => {
+                  const served = reads.attempted(request.path, Exit.isSuccess(exit));
+                  if (served === undefined || projectUpdate === undefined) return Effect.void;
+                  return updates
+                    .withPermit(
+                      projectUpdate({
+                        sessionId: served.sessionId,
+                        update: {
+                          sessionUpdate: "tool_call_update",
+                          toolCallId: served.toolCallId,
+                          status: "completed",
+                        },
+                      }),
+                    )
+                    .pipe(Effect.ignore);
+                }),
               ),
             ),
-      } satisfies typeof runtime;
+          prompt: (payload, promptOptions) =>
+            Effect.sync(reads.reset).pipe(Effect.andThen(runtime.prompt(payload, promptOptions))),
+          handleSessionUpdate: (handler) => {
+            projectUpdate = handler;
+            return runtime.handleSessionUpdate((notification) =>
+              updates.withPermit(handler(reads.repair(notification))),
+            );
+          },
+          start: () =>
+            runtime
+              .start()
+              .pipe(
+                Effect.tap(
+                  (started) => options.onSessionStarted?.(started, input.cwd) ?? Effect.void,
+                ),
+              ),
+        } satisfies typeof runtime,
+        input.threadId,
+      );
     },
     Effect.provideService(SecureRandom.SecureRandom, options.random),
     Effect.mapError((cause): EffectAcpErrors.AcpError =>
@@ -267,7 +281,11 @@ export function makeAntigravityAcpAdapterFlavor(
         }),
     },
     approvalOptions: antigravityApprovalOptions,
-    extractPermissionQuestion: (request) => {
+    permissionDisposition: (policy, request, threadId) =>
+      lockedAgentAntigravityPermissionDisposition(request, threadId) ??
+      acpPermissionDisposition(policy, request),
+    extractPermissionQuestion: (request, threadId) => {
+      if (isLockedAntigravityThread(threadId)) return undefined;
       const question = extractAntigravityUserInputQuestion(request);
       if (question === undefined) return undefined;
       return {
@@ -275,6 +293,13 @@ export function makeAntigravityAcpAdapterFlavor(
         respond: (answers) => makeAntigravityUserInputResponse(request, answers),
       };
     },
+    formatLockedPrompt: ({ text, turnInput, sessionSetup }) =>
+      lockAntigravityPromptForLockedAgent({
+        text,
+        thread: turnInput.appThread,
+        memory: turnInput.memory,
+        initializeResult: sessionSetup?.initializeResult,
+      }),
     normalizeToolCall: normalizeAntigravityToolCall,
     extractSubagentUpdate: extractAntigravitySubagentUpdate,
     supportsImagePrompts: true,

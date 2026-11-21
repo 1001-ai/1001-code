@@ -416,6 +416,7 @@ export interface ChatComposerProps {
   defaultRuntimeMode?: RuntimeMode;
 
   lockedProvider: ProviderDriverKind | null;
+  allowedProviders?: ReadonlyArray<ProviderDriverKind> | null;
   providerStatuses: ServerProvider[];
   providerCatalogKnown: boolean;
   activeProjectDefaultModelSelection: ModelSelection | null | undefined;
@@ -534,6 +535,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     respondingRequestIds,
     runtimeMode,
     lockedProvider,
+    allowedProviders,
     providerStatuses,
     providerCatalogKnown,
     activeProjectDefaultModelSelection,
@@ -903,6 +905,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       activeProjectDefaultModelSelection?.instanceId,
     ],
     lockedProvider,
+    ...(allowedProviders !== undefined ? { allowedProviders } : {}),
     lockedInstanceId:
       activeThread?.runtime?.providerInstanceId ?? activeThreadModelSelection?.instanceId,
   });
@@ -2493,6 +2496,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       activeThreadModelSelection={activeThreadModelSelection}
       selectedModelForPickerWithCustomFallback={selectedModelForPickerWithCustomFallback}
       lockedProvider={lockedProvider}
+      {...(allowedProviders !== undefined ? { allowedProviders } : {})}
       lockedContinuationGroupKey={lockedContinuationGroupKey}
       providerInstanceEntries={providerInstanceEntries}
       keybindings={keybindings}

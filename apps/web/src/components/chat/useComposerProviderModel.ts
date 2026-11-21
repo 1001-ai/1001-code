@@ -49,6 +49,7 @@ export function useComposerProviderModel(
     promptInjectionState,
     candidateInstanceIds,
     lockedProvider,
+    allowedProviders,
     lockedInstanceId,
     threadStarted,
   } = input;
@@ -67,6 +68,7 @@ export function useComposerProviderModel(
       ...candidateInstanceIds,
     ],
     lockedProvider,
+    ...(allowedProviders !== undefined ? { allowedProviders } : {}),
     lockedInstanceId,
   });
   const selectedInstanceId =

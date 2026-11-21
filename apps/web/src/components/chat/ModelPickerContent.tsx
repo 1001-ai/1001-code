@@ -333,6 +333,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   selectedModels?: ReadonlyArray<{ instanceId: ProviderInstanceId; model: string }>;
   onToggleModel?: (instanceId: ProviderInstanceId, model: string) => void;
   lockedProvider: ProviderDriverKind | null;
+  allowedProviders?: ReadonlyArray<ProviderDriverKind> | null;
   lockedContinuationGroupKey?: string | null;
   instanceEntries: ReadonlyArray<ProviderInstanceEntry>;
   keybindings?: ResolvedKeybindingsConfig;
@@ -425,6 +426,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
         const entry = instanceEntries.find((entry) => entry.instanceId === favorite.provider);
         return (
           entry !== undefined &&
+          (props.allowedProviders == null || props.allowedProviders.includes(entry.driverKind)) &&
           (modelOptionsByInstance.get(favorite.provider) ?? []).some(
             (option) =>
               option.slug === favorite.model &&
@@ -517,6 +519,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     modelPickerOpen: true,
   } as const;
   const lockedProvider = props.lockedProvider;
+  const allowedProviders = props.allowedProviders ?? null;
   const lockedContinuationGroupKey = props.lockedContinuationGroupKey;
   const canOpenProviderSetup = onOpenProviderSetup !== undefined;
 
@@ -524,6 +527,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   const matchesLockedProvider = (
     entry: Pick<ProviderInstanceEntry, "driverKind" | "continuationGroupKey">,
   ): boolean => {
+    if (allowedProviders !== null && !allowedProviders.includes(entry.driverKind)) return false;
     if (lockedProvider === null) return true;
     if (entry.driverKind !== lockedProvider) return false;
     if (!lockedContinuationGroupKey) return true;
@@ -588,7 +592,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     return out;
   })();
 
-  const isLocked = lockedProvider !== null;
+  const isLocked = lockedProvider !== null || allowedProviders !== null;
   const isSearching = searchQuery.trim().length > 0;
   // Fit the tallest tab so switching tabs never resizes the popup and moves the rail under the cursor.
   const tallestTabUnits = (() => {
@@ -649,8 +653,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     let result = flatModels;
 
     if (searchQuery.trim()) {
-      const candidates =
-        lockedProvider !== null ? result.filter((m) => matchesLockedProvider(m)) : result;
+      const candidates = isLocked ? result.filter((m) => matchesLockedProvider(m)) : result;
       return rankModelPickerSearch(candidates, searchQuery, (model) => ({
         name: model.name,
         ...(model.shortName ? { shortName: model.shortName } : {}),
@@ -661,7 +664,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       }));
     }
 
-    if (lockedProvider !== null) {
+    if (isLocked) {
       result = result.filter((m) => matchesLockedProvider(m));
       if (selectedInstanceId === "favorites") {
         result = result.filter((m) => favoritesSet.has(providerModelKey(m.instanceId, m.slug)));
@@ -871,7 +874,9 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
               ? {
                   disabledInstanceIds: lockedDisabledInstanceIds,
                   getDisabledInstanceTooltip: (entry: ProviderInstanceEntry) =>
-                    `${entry.displayName} is unavailable in this thread. Start a new thread to switch providers.`,
+                    allowedProviders !== null && !allowedProviders.includes(entry.driverKind)
+                      ? `${entry.displayName} is not supported in this thread.`
+                      : `${entry.displayName} is unavailable in this thread. Start a new thread to switch providers.`,
                 }
               : {})}
           />

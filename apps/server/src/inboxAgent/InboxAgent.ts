@@ -1,7 +1,6 @@
 import {
   CommandId,
   INBOX_AGENT_DEFAULT_EFFORT,
-  INBOX_AGENT_DEFAULT_MODEL,
   INBOX_AGENT_THREAD_TITLE,
   type ApplicationProjectCreatedEvent,
   type ApplicationStoredEvent,
@@ -9,6 +8,7 @@ import {
   ProjectId,
   type ServerProvider,
   ThreadId,
+  inboxAgentDefaultModel,
   isInboxThreadShell,
 } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
@@ -23,7 +23,7 @@ import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 
 import * as ServerConfig from "../config.ts";
-import { lockedAgentProvider } from "../lockedAgents/lockedAgentProvider.ts";
+import { lockedAgentProvider, lockedAgentProviders } from "../lockedAgents/lockedAgentProvider.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as OrchestrationEventStore from "../persistence/OrchestrationEventStore.ts";
@@ -42,8 +42,8 @@ import {
 /** What ensuring a project's Inbox did. */
 export type InboxAgentEnsureResult =
   | { readonly status: "ready"; readonly threadId: ThreadId; readonly created: boolean }
-  /** No usable Claude here, or Claude is off for the project: retried when providers change. */
-  | { readonly status: "waiting-for-claude" }
+  /** No usable Inbox provider here, or all are off for the project: retried when providers change. */
+  | { readonly status: "waiting-for-provider" }
   | { readonly status: "skipped" };
 
 export class InboxAgent extends Context.Service<
@@ -58,7 +58,7 @@ export class InboxAgent extends Context.Service<
     readonly ensure: (projectId: ProjectId) => Effect.Effect<InboxAgentEnsureResult>;
     /** `ensure` for every project that is not deleted. */
     readonly ensureAll: Effect.Effect<void>;
-    /** `ensureAll` again when a project waits for Claude and Claude is now ready. */
+    /** `ensureAll` again when a project waits for a provider and one is now ready. */
     readonly retryWaiting: (providers: ReadonlyArray<ServerProvider>) => Effect.Effect<void>;
   }
 >()("t3/inboxAgent/InboxAgent") {}
@@ -143,8 +143,8 @@ const make = Effect.gen(function* () {
 
   // One ensure at a time, so two triggers never make two threads for a project.
   const lock = yield* Semaphore.make(1);
-  // Set when a project was skipped for want of Claude; a provider change then retries.
-  let waitingForClaude = false;
+  // Set when a project was skipped for want of a supported provider; a provider change then retries.
+  let waitingForProvider = false;
   let created = 0;
 
   /** The recorded thread's shell while it is still the project's Inbox, else null. */
@@ -176,13 +176,18 @@ const make = Effect.gen(function* () {
     );
 
   const create = Effect.fn("InboxAgent.create")(function* (projectId: ProjectId) {
-    const provider = lockedAgentProvider(yield* registry.getProviders);
+    let provider: ServerProvider | undefined;
+    for (const candidate of lockedAgentProviders(yield* registry.getProviders, "inbox")) {
+      const enabled = yield* threads.isProviderInstanceEnabledForProject({
+        projectId,
+        instanceId: candidate.instanceId,
+      });
+      if (enabled) {
+        provider = candidate;
+        break;
+      }
+    }
     if (provider === undefined) return null;
-    const enabled = yield* threads.isProviderInstanceEnabledForProject({
-      projectId,
-      instanceId: provider.instanceId,
-    });
-    if (!enabled) return null;
     // The time and a counter: a deleted thread's id stays taken, so a new Inbox never reuses it.
     created += 1;
     const threadId = ThreadId.make(
@@ -196,8 +201,10 @@ const make = Effect.gen(function* () {
       title: INBOX_AGENT_THREAD_TITLE,
       modelSelection: {
         instanceId: provider.instanceId,
-        model: INBOX_AGENT_DEFAULT_MODEL,
-        options: [{ id: "effort", value: INBOX_AGENT_DEFAULT_EFFORT }],
+        model: inboxAgentDefaultModel(provider.driver),
+        ...(provider.driver === "claudeAgent"
+          ? { options: [{ id: "effort", value: INBOX_AGENT_DEFAULT_EFFORT }] }
+          : {}),
       },
       // `t3_thread_send` refuses targets in broader modes than the caller's. The tool lock still
       // gives the Inbox no shell or file tools. `upgradeRuntimeMode` raises an older Inbox.
@@ -256,8 +263,8 @@ const make = Effect.gen(function* () {
     const existing = existingShell?.id ?? null;
     const threadId = existing ?? (yield* create(projectId));
     if (threadId === null) {
-      waitingForClaude = true;
-      return { status: "waiting-for-claude" } as const;
+      waitingForProvider = true;
+      return { status: "waiting-for-provider" } as const;
     }
     recordInboxThread(projectId, threadId);
     yield* writeState;
@@ -276,13 +283,15 @@ const make = Effect.gen(function* () {
       );
 
   const ensureAll: InboxAgent["Service"]["ensureAll"] = Effect.gen(function* () {
-    waitingForClaude = false;
+    waitingForProvider = false;
     const rows = yield* projects.list().pipe(Effect.orElseSucceed(() => []));
     yield* Effect.forEach(rows, (row) => ensure(row.projectId), { discard: true });
   }).pipe(Effect.withSpan("InboxAgent.ensureAll"));
 
   const retryWaiting: InboxAgent["Service"]["retryWaiting"] = (providers) =>
-    waitingForClaude && lockedAgentProvider(providers) !== undefined ? ensureAll : Effect.void;
+    waitingForProvider && lockedAgentProvider(providers, "inbox") !== undefined
+      ? ensureAll
+      : Effect.void;
 
   return InboxAgent.of({ isInboxThread, ensure, ensureAll, retryWaiting });
 });
