@@ -6,12 +6,13 @@ import {
   setReplyMarkersEnabled,
 } from "../chat/exchangeThread.logic";
 import { SettingResetButton, SettingsRow } from "./settingsLayout";
-import { searchableSetting } from "./settingsSearch";
+import { useSearchableSetting } from "./settingsSearch";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
 
 export function ReplyMarkersSettingsRow() {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
+  const searchableSetting = useSearchableSetting();
   const enabled = replyMarkersEnabled(settings);
   const setEnabled = (next: boolean) =>
     updateSettings({ threadDetailsItems: setReplyMarkersEnabled(settings, next) });
@@ -21,7 +22,7 @@ export function ReplyMarkersSettingsRow() {
       description="When a reply lands below a later message, quote the message it answers above it, and show “1 reply” under that message. Select either to see the exchange on its own."
       resetAction={
         enabled ? null : (
-          <SettingResetButton label="reply markers" onClick={() => setEnabled(true)} />
+          <SettingResetButton ariaLabel="Reset reply markers" onClick={() => setEnabled(true)} />
         )
       }
       control={
@@ -38,6 +39,7 @@ export function ReplyMarkersSettingsRow() {
 export function MessageClickThreadSettingsRow() {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
+  const searchableSetting = useSearchableSetting();
   const enabled = messageClickOpensThread(settings);
   const setEnabled = (next: boolean) =>
     updateSettings({ threadDetailsItems: setMessageClickOpensThread(settings, next) });
@@ -48,7 +50,7 @@ export function MessageClickThreadSettingsRow() {
       resetAction={
         enabled ? (
           <SettingResetButton
-            label="open thread on message click"
+            ariaLabel="Reset open thread on message click"
             onClick={() => setEnabled(false)}
           />
         ) : null

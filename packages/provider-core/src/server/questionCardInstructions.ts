@@ -45,3 +45,10 @@ Format, exactly; any other shape shows as a plain quote:
 - At most one option ends " _(recommended)_".
 - A blank line between questions and before any text after them.
 </asking_the_user>`;
+
+export function questionCardCodexContext(): Record<
+  string,
+  { readonly kind: "application"; readonly value: string }
+> {
+  return { t3_code_questions: { kind: "application", value: QUESTION_CARD_INSTRUCTIONS } };
+}
