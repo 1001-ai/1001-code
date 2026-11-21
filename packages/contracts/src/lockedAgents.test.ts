@@ -1,7 +1,19 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { inboxAgentDigestOf, isInboxThreadShell } from "./inboxAgent.ts";
-import { LOCKED_AGENT_TOOL_NAMES, lockedAgentToolAllowed } from "./lockedAgents.ts";
+import {
+  INBOX_AGENT_DEFAULT_MODEL,
+  inboxAgentDefaultModel,
+  inboxAgentDigestOf,
+  isInboxThreadShell,
+} from "./inboxAgent.ts";
+import {
+  LOCKED_AGENT_DRIVERS,
+  LOCKED_AGENT_TOOL_NAMES,
+  lockedAgentDriverAllowed,
+  lockedAgentToolAllowed,
+} from "./lockedAgents.ts";
+import { ANTIGRAVITY_DEFAULT_MODEL } from "./model.ts";
+import { ProviderDriverKind } from "./providerInstance.ts";
 
 describe("lockedAgents", () => {
   it("knows a project's Inbox only by the server's name for it, made by the server", () => {
@@ -68,6 +80,22 @@ describe("lockedAgents", () => {
       "memory_withdraw",
       "inbox_forward",
     ]);
+  });
+
+  it("allows Claude and Antigravity for the Inbox, and Claude only for the voice agent", () => {
+    expect(LOCKED_AGENT_DRIVERS.inbox).toEqual(["claudeAgent", "antigravity"]);
+    expect(LOCKED_AGENT_DRIVERS.voice).toEqual(["claudeAgent"]);
+    expect(lockedAgentDriverAllowed(ProviderDriverKind.make("claudeAgent"), "inbox")).toBe(true);
+    expect(lockedAgentDriverAllowed(ProviderDriverKind.make("antigravity"), "inbox")).toBe(true);
+    expect(lockedAgentDriverAllowed(ProviderDriverKind.make("codex"), "inbox")).toBe(false);
+    expect(lockedAgentDriverAllowed(ProviderDriverKind.make("claudeAgent"), "voice")).toBe(true);
+    expect(lockedAgentDriverAllowed(ProviderDriverKind.make("antigravity"), "voice")).toBe(false);
+    expect(inboxAgentDefaultModel(ProviderDriverKind.make("claudeAgent"))).toBe(
+      INBOX_AGENT_DEFAULT_MODEL,
+    );
+    expect(inboxAgentDefaultModel(ProviderDriverKind.make("antigravity"))).toBe(
+      ANTIGRAVITY_DEFAULT_MODEL,
+    );
   });
 
   it("reads the digest a message carries, and nothing from a record that is not one", () => {

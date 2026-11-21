@@ -7,6 +7,7 @@ import { useApplyThreadModelPick } from "./useApplyThreadModelPick";
 import {
   type EnvironmentId,
   type ModelSelection,
+  type ProviderDriverKind,
   ProviderInstanceId,
   type ServerProvider,
   type ThreadId,
@@ -45,6 +46,7 @@ interface ComposerSelectionInput {
   readonly settings: UnifiedSettings;
   readonly providerStatuses: ReadonlyArray<ServerProvider>;
   readonly lockedProvider: ReturnType<typeof deriveLockedProvider>;
+  readonly allowedProviders?: ReadonlyArray<ProviderDriverKind> | null;
   readonly supportsProviderSwitchingViaHandoff: boolean;
   readonly multipleModelSelections: ReadonlyArray<ModelSelection> | null;
   readonly runtimeMode: RuntimeMode;
@@ -74,6 +76,7 @@ export function useComposerSelection(input: ComposerSelectionInput) {
     settings,
     providerStatuses,
     lockedProvider,
+    allowedProviders,
     supportsProviderSwitchingViaHandoff,
     multipleModelSelections,
     runtimeMode,
@@ -134,6 +137,14 @@ export function useComposerSelection(input: ComposerSelectionInput) {
     if (!activeThread) return;
     const entry = providerStatuses.find((snapshot) => snapshot.instanceId === instanceId);
     const resolvedDriverKind = entry?.driver ?? null;
+    if (
+      allowedProviders != null &&
+      resolvedDriverKind !== null &&
+      !allowedProviders.includes(resolvedDriverKind)
+    ) {
+      if (options?.focusComposer !== false) scheduleComposerFocus();
+      return;
+    }
     if (
       !supportsProviderSwitchingViaHandoff &&
       lockedProvider !== null &&
