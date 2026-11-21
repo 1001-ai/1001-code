@@ -5,7 +5,7 @@ import { appendLiveAppCheckout } from "./liveCheckoutInstructions.ts";
 import { REPLY_MARKER_INSTRUCTIONS } from "./replyMarkerInstructions.ts";
 import { BACK_REFERENCE_INSTRUCTIONS } from "./backReferenceInstructions.ts";
 
-export { QUESTION_CARD_INSTRUCTIONS };
+export { QUESTION_CARD_INSTRUCTIONS, questionCardCodexContext } from "./questionCardInstructions.ts";
 export { REPLY_MARKER_INSTRUCTIONS, replyMarkerCodexContext } from "./replyMarkerInstructions.ts";
 export {
   BACK_REFERENCE_INSTRUCTIONS,
@@ -31,6 +31,8 @@ export function buildRuntimeInstructions(runtime: {
   readonly pullRequestLinking?: boolean;
   /** False when the caller sends the live checkout text in its own entry. */
   readonly liveAppCheckout?: boolean;
+  /** False when the caller sends the question card text in its own entry. */
+  readonly questionCards?: boolean;
   /** False when the caller sends the reply marker text in its own entry. */
   readonly replyMarkers?: boolean;
   /** False when the caller sends the back-reference text in its own entry. */
@@ -48,7 +50,7 @@ export function buildRuntimeInstructions(runtime: {
   return appendLiveAppCheckout(
     runtime.pullRequestLinking === false
       ? runtimeInfo
-      : `${runtimeInfo}\n\n${PULL_REQUEST_LINKING_INSTRUCTIONS}\n\n${QUESTION_CARD_INSTRUCTIONS}${runtime.replyMarkers === false ? "" : `\n\n${REPLY_MARKER_INSTRUCTIONS}`}${runtime.backReferences === false ? "" : `\n\n${BACK_REFERENCE_INSTRUCTIONS}`}`,
+      : `${runtimeInfo}\n\n${PULL_REQUEST_LINKING_INSTRUCTIONS}${runtime.questionCards === false ? "" : `\n\n${QUESTION_CARD_INSTRUCTIONS}`}${runtime.replyMarkers === false ? "" : `\n\n${REPLY_MARKER_INSTRUCTIONS}`}${runtime.backReferences === false ? "" : `\n\n${BACK_REFERENCE_INSTRUCTIONS}`}`,
     runtime.liveAppCheckout,
   );
 }

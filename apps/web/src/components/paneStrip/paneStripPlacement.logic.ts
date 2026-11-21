@@ -14,11 +14,13 @@ const FIXED_PLACE = {
   preview: 4,
   "pull-request": 5,
   "pull-requests": 6,
-  device: 7,
-  "side-chat": 8,
-  board: 9,
-  memory: 10,
-  "agents-board": 11,
+  issue: 7,
+  device: 8,
+  thread: 9,
+  "linked-thread": 10,
+  board: 11,
+  memory: 12,
+  "agents-board": 13,
 } satisfies Record<RightPanelSurface["kind"], number>;
 
 /**

@@ -33,6 +33,7 @@ import { VoiceAgentToolkit } from "../mcp/toolkits/voiceAgent/tools.ts";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
+import * as GitManager from "../git/GitManager.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as PullRequestReviewGuideService from "../pullRequest/PullRequestReviewGuideService.ts";
 import * as PullRequestService from "../pullRequest/PullRequestService.ts";
@@ -160,6 +161,7 @@ it.effect(
                     return { agentsRunning: 2 } as never;
                   }),
               }),
+              Layer.mock(GitManager.GitManager)({}),
               Layer.mock(ProjectService.ProjectService)({}),
               Layer.mock(PullRequestReviewGuideService.PullRequestReviewGuideService)({}),
               Layer.mock(PullRequestService.PullRequestService)({}),

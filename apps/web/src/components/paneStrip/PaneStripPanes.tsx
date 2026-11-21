@@ -173,7 +173,7 @@ function StripPane(props: {
       )}
     >
       {/* A side chat brings its own title row, with its own Close. */}
-      {surface.kind === "side-chat" ? null : (
+      {surface.kind === "thread" ? null : (
         <header className={cn(PANE_HEADER_CLASS, isElectron && "drag-region")}>
           <span className="min-w-0 max-w-60 truncate">{title}</span>
           <span className="flex [-webkit-app-region:no-drag]">

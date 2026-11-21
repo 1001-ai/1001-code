@@ -3128,7 +3128,10 @@
     {
       "t": "span",
       "i": 2,
-      "c": [" ", "sur l’ordinateur qui a ouvert cette page"]
+      "c": [
+        " ",
+        "sur l’ordinateur qui a ouvert cette page"
+      ]
     }
   ],
   "b2d53b4d1d48fbef": [
@@ -3140,7 +3143,10 @@
     {
       "t": "span",
       "i": 2,
-      "c": [" ", "· quiconque l’exécute obtient cet accès"]
+      "c": [
+        " ",
+        "· quiconque l’exécute obtient cet accès"
+      ]
     }
   ],
   "c54cc9c75db9dc58": "N’approuvez qu’une connexion que vous venez de lancer.",
@@ -4648,8 +4654,6 @@
   "246274846dd07daa": "Chargez les tours précédents, puis cliquez sur la citation pour réessayer. Votre citation enregistrée n’a pas changé.",
   "d9649e703b414b67": "La réponse citée est indisponible",
   "b6d2a7ac2a8eac1e": "Elle a peut-être été supprimée. Le texte sélectionné reste enregistré dans votre citation.",
-  "be69a90d3d68d0d6": "La citation ne renvoie pas à une réponse de l’assistant",
-  "fc7d59b60c3b7d46": "Le texte sélectionné reste enregistré dans votre citation.",
   "8520b1297f0efd9b": "Compactage automatique vers {tokens} tokens.",
   "e4b9b6e99d9b6da1": "Le contexte est compacté automatiquement si nécessaire.",
   "57e30468577bb989": "En attente du serveur avant de pouvoir envoyer les pièces jointes",

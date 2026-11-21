@@ -1,7 +1,7 @@
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
 import { CopyIcon, LinkIcon, MessagesSquareIcon, ReplyIcon, type LucideIcon } from "lucide-react";
 import { useState, type MouseEvent, type ReactNode } from "react";
-import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
+import { namedClipboardTarget, writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { copyPromptLink } from "../promptLinks/copyPromptLink";
 import { Menu, MenuItem } from "../ui/menu";
 import { stackedThreadToast, toastManager } from "../ui/toast";
@@ -45,7 +45,14 @@ const POPUP_CLASS = [
 
 async function copyMessage(copy: MessageCopy) {
   try {
-    if (!(await writeTextToClipboard(copy.text, "message", copy.extraFlavors))) return;
+    if (
+      !(await writeTextToClipboard(
+        copy.text,
+        namedClipboardTarget("message"),
+        copy.extraFlavors,
+      ))
+    )
+      return;
     toastManager.add({ type: "success", title: "Message copied" });
   } catch (error) {
     toastManager.add(

@@ -3128,7 +3128,10 @@
     {
       "t": "span",
       "i": 2,
-      "c": [" ", "på datorn som öppnade den här sidan"]
+      "c": [
+        " ",
+        "på datorn som öppnade den här sidan"
+      ]
     }
   ],
   "b2d53b4d1d48fbef": [
@@ -3140,7 +3143,10 @@
     {
       "t": "span",
       "i": 2,
-      "c": [" ", "· den som kör den får den här åtkomsten"]
+      "c": [
+        " ",
+        "· den som kör den får den här åtkomsten"
+      ]
     }
   ],
   "c54cc9c75db9dc58": "Godkänn bara en inloggning som du själv precis har startat.",
@@ -4648,8 +4654,6 @@
   "246274846dd07daa": "Läs in tidigare omgångar och klicka sedan på citatet för att försöka igen. Ditt sparade citat är oförändrat.",
   "d9649e703b414b67": "Det citerade svaret är inte tillgängligt",
   "b6d2a7ac2a8eac1e": "Det kan ha tagits bort. Den markerade texten finns fortfarande sparad i ditt citat.",
-  "be69a90d3d68d0d6": "Citatet hänvisar inte till ett assistentsvar",
-  "fc7d59b60c3b7d46": "Den markerade texten finns fortfarande sparad i ditt citat.",
   "8520b1297f0efd9b": "Komprimeras automatiskt vid cirka {tokens} token.",
   "e4b9b6e99d9b6da1": "Kontexten komprimeras automatiskt vid behov.",
   "57e30468577bb989": "Väntar på servern innan filbilagor kan skickas",

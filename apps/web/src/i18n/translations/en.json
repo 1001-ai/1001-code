@@ -3128,7 +3128,10 @@
     {
       "t": "span",
       "i": 2,
-      "c": [" ", "on the computer that opened this page"]
+      "c": [
+        " ",
+        "on the computer that opened this page"
+      ]
     }
   ],
   "b2d53b4d1d48fbef": [
@@ -3140,7 +3143,10 @@
     {
       "t": "span",
       "i": 2,
-      "c": [" ", "· whoever runs it gets this access"]
+      "c": [
+        " ",
+        "· whoever runs it gets this access"
+      ]
     }
   ],
   "c54cc9c75db9dc58": "Only approve a sign-in you just started.",
@@ -4649,8 +4655,6 @@
   "246274846dd07daa": "Load earlier turns, then click the citation to try again. Your saved quote is unchanged.",
   "d9649e703b414b67": "The cited response is unavailable",
   "b6d2a7ac2a8eac1e": "It may have been removed. The selected text is still saved in your citation.",
-  "be69a90d3d68d0d6": "The citation does not refer to an assistant response",
-  "fc7d59b60c3b7d46": "The selected text is still saved in your citation.",
   "8520b1297f0efd9b": "Compacts automatically at about {tokens} tokens.",
   "e4b9b6e99d9b6da1": "Context compacts automatically when needed.",
   "57e30468577bb989": "Waiting for the server before file attachments can send",

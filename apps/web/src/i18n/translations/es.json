@@ -3128,7 +3128,10 @@
     {
       "t": "span",
       "i": 2,
-      "c": [" ", "en el ordenador que abrió esta página"]
+      "c": [
+        " ",
+        "en el ordenador que abrió esta página"
+      ]
     }
   ],
   "b2d53b4d1d48fbef": [
@@ -3140,7 +3143,10 @@
     {
       "t": "span",
       "i": 2,
-      "c": [" ", "· quien lo ejecute obtiene este acceso"]
+      "c": [
+        " ",
+        "· quien lo ejecute obtiene este acceso"
+      ]
     }
   ],
   "c54cc9c75db9dc58": "Aprueba solo un inicio de sesión que acabes de iniciar.",
@@ -4647,8 +4653,6 @@
   "246274846dd07daa": "Carga los turnos anteriores y vuelve a hacer clic en la cita. Tu cita guardada no cambia.",
   "d9649e703b414b67": "La respuesta citada no está disponible",
   "b6d2a7ac2a8eac1e": "Puede que se haya quitado. El texto seleccionado sigue guardado en tu cita.",
-  "be69a90d3d68d0d6": "La cita no hace referencia a una respuesta del asistente",
-  "fc7d59b60c3b7d46": "El texto seleccionado sigue guardado en tu cita.",
   "8520b1297f0efd9b": "Se compacta automáticamente hacia los {tokens} tokens.",
   "e4b9b6e99d9b6da1": "El contexto se compacta automáticamente cuando hace falta.",
   "57e30468577bb989": "Esperando al servidor para poder enviar los archivos adjuntos",

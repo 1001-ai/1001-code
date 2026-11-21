@@ -1,7 +1,7 @@
 import { agentsBoardAgentCommand } from "@t3tools/contracts";
 import { CheckIcon, CopyIcon } from "lucide-react";
 
-import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
+import { namedClipboardTarget, useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
@@ -12,7 +12,9 @@ export function AgentsBoardAgentCommand(props: {
   readonly repository: string | undefined;
 }) {
   const command = agentsBoardAgentCommand(props.branch, props.repository);
-  const { copyToClipboard, isCopied } = useCopyToClipboard({ target: "the line for an agent" });
+  const { copyToClipboard, isCopied } = useCopyToClipboard({
+    target: namedClipboardTarget("the line for an agent"),
+  });
   return (
     <div className="flex items-center gap-1.5 rounded-md border border-border bg-muted/50 py-1 ps-2.5 pe-1">
       <code className="min-w-0 flex-1 text-start font-mono text-xs wrap-anywhere select-all">

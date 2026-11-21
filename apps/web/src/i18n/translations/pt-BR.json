@@ -3128,7 +3128,10 @@
     {
       "t": "span",
       "i": 2,
-      "c": [" ", "no computador que abriu esta página"]
+      "c": [
+        " ",
+        "no computador que abriu esta página"
+      ]
     }
   ],
   "b2d53b4d1d48fbef": [
@@ -3140,7 +3143,10 @@
     {
       "t": "span",
       "i": 2,
-      "c": [" ", "· quem executar recebe este acesso"]
+      "c": [
+        " ",
+        "· quem executar recebe este acesso"
+      ]
     }
   ],
   "c54cc9c75db9dc58": "Aprove apenas um login que você acabou de iniciar.",
@@ -4647,8 +4653,6 @@
   "246274846dd07daa": "Carregue os turnos anteriores e clique na citação para tentar novamente. Sua citação salva não mudou.",
   "d9649e703b414b67": "A resposta citada não está disponível",
   "b6d2a7ac2a8eac1e": "Ela pode ter sido removida. O texto selecionado continua salvo na sua citação.",
-  "be69a90d3d68d0d6": "A citação não se refere a uma resposta do assistente",
-  "fc7d59b60c3b7d46": "O texto selecionado continua salvo na sua citação.",
   "8520b1297f0efd9b": "Compacta automaticamente em cerca de {tokens} tokens.",
   "e4b9b6e99d9b6da1": "O contexto é compactado automaticamente quando necessário.",
   "57e30468577bb989": "Aguardando o servidor para poder enviar anexos de arquivo",

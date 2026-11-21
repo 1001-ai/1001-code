@@ -24,13 +24,13 @@ export const THREAD_DETAILS_ITEMS = [
     label: msg("Lineage", { $context: "thread details item: parent and child agents" }),
     defaultVisible: true,
   },
-  { id: "tasks", label: msg("Tasks"), defaultVisible: true },
+  { id: "tasks", label: "Tasks", defaultVisible: true },
   { id: "sideChats", label: msg("Side chats"), defaultVisible: true },
   { id: "usage", label: msg("Usage limits"), defaultVisible: true },
   { id: "context", label: msg("Context window"), defaultVisible: true },
-  { id: "subagents", label: msg("Running subagents"), defaultVisible: true },
-  { id: "cost", label: msg("Estimated cost"), defaultVisible: true },
-  { id: "composerStatus", label: msg("Status line under composer"), defaultVisible: true },
+  { id: "subagents", label: "Running subagents", defaultVisible: true },
+  { id: "cost", label: "Estimated cost", defaultVisible: true },
+  { id: "composerStatus", label: "Status line under composer", defaultVisible: true },
 ] as const;
 
 export type ThreadDetailsItemId = (typeof THREAD_DETAILS_ITEMS)[number]["id"];

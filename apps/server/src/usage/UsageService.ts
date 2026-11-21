@@ -1283,8 +1283,11 @@ export const make = Effect.gen(function* () {
   const readAccountRecords = Effect.fn("UsageService.readAccountRecords")(
     function* (provider: UsageProviderKind) {
       const settings = yield* readSettings;
+      const nowMs = yield* Clock.currentTimeMillis;
       const retentionCutoffMs =
-        (yield* Clock.currentTimeMillis) - CACHE_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+        settings.usageHistoryRetentionDays === "unlimited"
+          ? 0
+          : Math.max(0, nowMs - settings.usageHistoryRetentionDays * 24 * 60 * 60 * 1000);
       const sources = yield* Effect.forEach(
         scanReaders.filter(({ reader }) => reader.provider === provider),
         ({ driver, reader }) =>

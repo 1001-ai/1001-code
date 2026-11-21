@@ -3129,7 +3129,10 @@
     {
       "t": "span",
       "i": 2,
-      "c": [" ", "auf dem Computer, der diese Seite geöffnet hat"]
+      "c": [
+        " ",
+        "auf dem Computer, der diese Seite geöffnet hat"
+      ]
     }
   ],
   "b2d53b4d1d48fbef": [
@@ -3141,7 +3144,10 @@
     {
       "t": "span",
       "i": 2,
-      "c": [" ", "· wer es ausführt, erhält diesen Zugriff"]
+      "c": [
+        " ",
+        "· wer es ausführt, erhält diesen Zugriff"
+      ]
     }
   ],
   "c54cc9c75db9dc58": "Genehmige nur eine Anmeldung, die du gerade selbst gestartet hast.",
@@ -4650,8 +4656,6 @@
   "246274846dd07daa": "Lade frühere Runden und klicke dann erneut auf das Zitat. Dein gespeichertes Zitat bleibt unverändert.",
   "d9649e703b414b67": "Die zitierte Antwort ist nicht verfügbar",
   "b6d2a7ac2a8eac1e": "Sie wurde möglicherweise entfernt. Der ausgewählte Text ist weiterhin in deinem Zitat gespeichert.",
-  "be69a90d3d68d0d6": "Das Zitat bezieht sich nicht auf eine Antwort des Assistenten",
-  "fc7d59b60c3b7d46": "Der ausgewählte Text ist weiterhin in deinem Zitat gespeichert.",
   "8520b1297f0efd9b": "Wird bei etwa {tokens} Tokens automatisch komprimiert.",
   "e4b9b6e99d9b6da1": "Der Kontext wird bei Bedarf automatisch komprimiert.",
   "57e30468577bb989": "Warte auf den Server, bevor Dateianhänge gesendet werden können",

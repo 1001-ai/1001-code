@@ -217,7 +217,7 @@ export function resolveAssistantCitationRange(
   if (excludedAncestor(root, excluded) !== null) return null;
   const stream = readAssistantText(root, excluded);
   const match = backReference
-    ? findBackReferenceText(normalizeWhitespace(stream.text), selector.text)
+    ? findBackReferenceText(stream.text.replace(/\s+/g, " "), selector.text)
     : findAssistantCitationText(stream.text, selector);
   if (match === null) return null;
 
