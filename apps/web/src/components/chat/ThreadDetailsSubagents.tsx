@@ -30,7 +30,7 @@ export function ThreadDetailsSubagents({
           tone={null}
           value={`${running} running`}
           ariaValue={`${subagentLabel(running)} running`}
-          tooltip={<SubagentsTooltip turn={turn} />}
+          tooltip={<SubagentsTooltip turn={turn} environmentId={environmentId} />}
         />
       </div>
     </ThreadDetailsSection>

@@ -1,7 +1,9 @@
 import type { ContextWindowSnapshot } from "@t3tools/client-runtime/state/context-window";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
   type EnvironmentId,
   isOrchestrationV2WorkActive,
+  type OrchestrationV2Subagent,
   type ProviderInstanceId,
   type ServerProvider,
   type ServerProviderUsageLimits,
@@ -25,6 +27,8 @@ import {
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { formatContextWindowTokens } from "../../lib/contextWindow";
 import { cn } from "../../lib/utils";
+import { useThreadShell } from "../../state/entities";
+import { useEnvironmentProviders } from "../../state/environments";
 import { useThreadCostEstimate, useThreadTurnSubagents } from "../../state/threadCost";
 import { formatUpcomingTimestamp } from "../../timestampFormat";
 import { Button } from "../ui/button";
@@ -32,6 +36,7 @@ import { Menu, MenuItem, MenuPopup } from "../ui/menu";
 import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { formatContextWindowCompactionMessage } from "./compaction.logic";
+import { resolveSubagentModelLabel } from "./subagentModelSwitch.logic";
 import {
   contextTone,
   formatAge,
@@ -182,7 +187,7 @@ export const ComposerStatusStrip = memo(function ComposerStatusStrip(
           {showSubagents ? (
             <StatusItem
               label={`${subagentLabel(liveSubagents)} running`}
-              tooltip={<SubagentsTooltip turn={subagents} />}
+              tooltip={<SubagentsTooltip turn={subagents} environmentId={props.environmentId} />}
               className="ms-auto"
             >
               <StatusMeter
@@ -469,16 +474,58 @@ function ContextTooltip({ usage }: { readonly usage: ContextWindowSnapshot }) {
   );
 }
 
-export function SubagentsTooltip({ turn }: { readonly turn: ThreadTurnSubagents }) {
+function SubagentsTooltipRow({
+  subagent,
+  environmentId,
+  providersByEnvironment,
+}: {
+  readonly subagent: OrchestrationV2Subagent;
+  readonly environmentId: EnvironmentId;
+  readonly providersByEnvironment: ReadonlyMap<EnvironmentId, readonly ServerProvider[]>;
+}) {
+  const childSelection = useThreadShell(
+    subagent.origin === "app_owned" && subagent.childThreadId !== null
+      ? scopeThreadRef(environmentId, subagent.childThreadId)
+      : null,
+  )?.source?.modelSelection;
+  const providerEnvironmentId = subagent.remoteChild?.environmentId ?? environmentId;
+  const provider = providersByEnvironment
+    .get(providerEnvironmentId)
+    ?.find((candidate) => candidate.instanceId === subagent.providerInstanceId);
+  const { modelLabel } = resolveSubagentModelLabel({
+    model: subagent.model,
+    executedModel: subagent.executedModel,
+    modelSelection: subagent.modelSelection ?? childSelection,
+    provider,
+  });
+  return (
+    <span className="flex max-w-72 items-baseline justify-between gap-3 text-muted-foreground">
+      <span className="min-w-0 truncate">{subagentTitle(subagent)}</span>
+      {modelLabel ? <span className="shrink-0 text-foreground/75">{modelLabel}</span> : null}
+    </span>
+  );
+}
+
+export function SubagentsTooltip({
+  turn,
+  environmentId,
+}: {
+  readonly turn: ThreadTurnSubagents;
+  readonly environmentId: EnvironmentId;
+}) {
+  const providersByEnvironment = useEnvironmentProviders();
   const running = turn.subagents.filter((subagent) => isOrchestrationV2WorkActive(subagent.status));
   const hidden = running.length - MAX_LISTED_SUBAGENTS;
   return (
     <>
       <span className="text-foreground">{subagentLabel(running.length)} working</span>
       {running.slice(0, MAX_LISTED_SUBAGENTS).map((subagent) => (
-        <span key={subagent.id} className="max-w-64 truncate text-muted-foreground">
-          {subagentTitle(subagent)}
-        </span>
+        <SubagentsTooltipRow
+          key={subagent.id}
+          subagent={subagent}
+          environmentId={environmentId}
+          providersByEnvironment={providersByEnvironment}
+        />
       ))}
       {hidden > 0 ? <span className="text-muted-foreground">and {hidden} more</span> : null}
     </>

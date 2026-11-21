@@ -67,6 +67,7 @@ import { ProviderInstanceIcon, providerTextColor } from "./ProviderInstanceIcon"
 import { cn } from "~/lib/utils";
 import { TimelineSystemDivider } from "./TimelineSystemDivider";
 import { subagentResumedSince } from "./V2LifecycleRow.logic";
+import { SubagentModelPicker } from "./SubagentModelPicker";
 import { Button, InlineButton } from "../ui/button";
 import { T3Wordmark } from "../T3Wordmark";
 
@@ -491,7 +492,7 @@ function SubagentTimelineLink(props: {
     startedAt: isoOrNull(agent?.startedAt ?? props.startedAt),
     completedAt: isoOrNull(agent?.completedAt ?? props.completedAt),
   };
-  const content = (
+  const leadingContent = (
     <>
       <EnvironmentSubagentAvatar
         environmentId={props.parentRef.environmentId}
@@ -526,6 +527,10 @@ function SubagentTimelineLink(props: {
           )}
         </span>
       </span>
+    </>
+  );
+  const trailingContent = (
+    <>
       {detail !== null && (props.event !== undefined || status !== "completed") ? (
         <span
           className={cn("shrink-0 text-xs", failed ? "text-destructive" : "text-muted-foreground")}
@@ -544,34 +549,53 @@ function SubagentTimelineLink(props: {
       ) : null}
     </>
   );
-  const className =
-    "group/subagent flex w-full min-w-0 items-center gap-2.5 rounded-md px-2 py-1.5 text-left";
   return (
     <Tooltip>
-      <TooltipTrigger
-        delay={200}
-        render={
-          open === null ? (
-            <div data-v2-item-type="subagent" aria-description={statusLabel} className={className}>
-              {content}
-            </div>
-          ) : (
-            <button
-              type="button"
-              data-v2-item-type="subagent"
-              aria-label={gt("Open {title}", { title: props.title })}
-              aria-description={statusLabel}
-              {...trigger(open, { panel })}
-              className={cn(
-                className,
-                "cursor-pointer transition-colors hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70",
-              )}
-            >
-              {content}
-            </button>
-          )
-        }
-      />
+      <div
+        data-v2-item-type="subagent"
+        className={cn(
+          "group/subagent relative flex w-full min-w-0 items-center gap-2.5 rounded-md px-2 py-1.5 text-left",
+          open !== null &&
+            "transition-colors hover:bg-accent/20 has-[>button:first-child:focus-visible]:ring-2 has-[>button:first-child:focus-visible]:ring-inset has-[>button:first-child:focus-visible]:ring-ring/70",
+        )}
+      >
+        <TooltipTrigger
+          delay={200}
+          render={
+            open === null ? (
+              <div
+                aria-description={statusLabel}
+                className="flex min-w-0 flex-1 items-center gap-2.5 after:absolute after:inset-0"
+              >
+                {leadingContent}
+              </div>
+            ) : (
+              <button
+                type="button"
+                aria-label={gt("Open {title}", { title: props.title })}
+                aria-description={statusLabel}
+                {...trigger(open, { panel })}
+                className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 text-left after:absolute after:inset-0 focus-visible:outline-none"
+              >
+                {leadingContent}
+              </button>
+            )
+          }
+        />
+        <SubagentModelPicker
+          parentRef={props.parentRef}
+          providerInstanceId={props.providerInstanceId}
+          origin={props.origin}
+          status={liveStatus}
+          title={props.title}
+          model={agent?.model ?? null}
+          executedModel={agent?.executedModel}
+          modelSelection={agent?.modelSelection}
+          threadId={props.threadId}
+          remote={remote}
+        />
+        {trailingContent}
+      </div>
       <ThreadHoverCardPopup>
         <SubagentTimelineTooltip
           {...props}
