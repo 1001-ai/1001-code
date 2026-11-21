@@ -3488,7 +3488,11 @@ export default function ChatView(props: ChatViewProps) {
             {isElectron && rightPanelControlsAtRoot ? (
               <span
                 aria-hidden
-                className="pointer-events-none fixed top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] h-[var(--workspace-topbar-height)] w-46.5 [-webkit-app-region:no-drag]"
+                className={cn(
+                  "pointer-events-none top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] h-[var(--workspace-topbar-height)] [-webkit-app-region:no-drag]",
+                  paneStrip !== null ? "absolute" : "fixed",
+                  isInboxClientThread(activeThread) ? "w-54.5" : "w-46.5",
+                )}
               />
             ) : null}
             {!rightPanelControlsAtRoot && !rightPanelControlsInPanel ? panelLayoutControls : null}
@@ -4164,6 +4168,10 @@ export default function ChatView(props: ChatViewProps) {
                 <RightPanelMaximizeControl
                   maximized={rightPanelMaximized}
                   onToggle={toggleRightPanelMaximizedStable}
+                />
+                <ChatInboxResetButton
+                  thread={activeThread}
+                  projectDisplayName={activeProject?.title}
                 />
                 {panelToggleControls}
               </div>
