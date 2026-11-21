@@ -1,8 +1,11 @@
 import { assert, describe, it } from "@effect/vitest";
 
 import {
+  BACK_REFERENCE_INSTRUCTIONS,
   buildRuntimeInstructions,
   PULL_REQUEST_LINKING_INSTRUCTIONS,
+  QUESTION_CARD_INSTRUCTIONS,
+  REPLY_MARKER_INSTRUCTIONS,
 } from "./runtimeInstructions.ts";
 
 describe("buildRuntimeInstructions", () => {
@@ -68,7 +71,13 @@ describe("buildRuntimeInstructions", () => {
     const single = buildRuntimeInstructions({ harness: "Codex" });
     assert.equal(
       single,
-      `${buildRuntimeInstructions({ harness: "Codex", pullRequestLinking: false })}\n\n${PULL_REQUEST_LINKING_INSTRUCTIONS}`,
+      [
+        buildRuntimeInstructions({ harness: "Codex", pullRequestLinking: false }),
+        PULL_REQUEST_LINKING_INSTRUCTIONS,
+        QUESTION_CARD_INSTRUCTIONS,
+        REPLY_MARKER_INSTRUCTIONS,
+        BACK_REFERENCE_INSTRUCTIONS,
+      ].join("\n\n"),
     );
     assert.equal(
       buildRuntimeInstructions({ harness: "Codex", runtimePolicy: { ...base, cwd: "/work/app" } }),

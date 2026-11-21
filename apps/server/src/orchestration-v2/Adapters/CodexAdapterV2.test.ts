@@ -281,7 +281,12 @@ describe("CodexAdapterV2 runtime policy", () => {
       assert.deepEqual((yield* build("approval-required")).sandboxPolicy, { type: "readOnly" });
       assert.deepEqual((yield* build("full-access")).sandboxPolicy, { type: "dangerFullAccess" });
       // The folder list reaches the model without T3 Code's MCP tools.
-      assert.deepEqual(Object.keys(autoAcceptEdits.additionalContext ?? {}), ["t3_code_workspace"]);
+      assert.deepEqual(Object.keys(autoAcceptEdits.additionalContext ?? {}), [
+        "t3_code_question_cards",
+        "t3_code_reply_markers",
+        "t3_code_back_references",
+        "t3_code_workspace",
+      ]);
       assert.include(
         autoAcceptEdits.additionalContext?.["t3_code_workspace"]?.value,
         "- api (Git repository): /work/api",
