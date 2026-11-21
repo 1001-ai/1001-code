@@ -126,6 +126,11 @@ describe("canSwitchSubagentModel", () => {
       expected: true,
     },
     {
+      name: "running delegated subagent before thread id is assigned",
+      input: { status: "running" as const, origin: "app_owned" as const, childThreadId: null },
+      expected: false,
+    },
+    {
       name: "completed delegated subagent without thread",
       input: { status: "completed" as const, origin: "app_owned" as const, childThreadId: null },
       expected: false,

@@ -31,12 +31,10 @@ export function canSwitchSubagentModel(input: {
   readonly childThreadId: ThreadId | null;
   readonly remote?: OrchestrationV2RemoteTaskChild | undefined;
 }): boolean {
-  if (isOrchestrationV2WorkActive(input.status) || input.status === "idle") {
-    return true;
+  if (input.origin === "app_owned") {
+    return input.childThreadId !== null || input.remote !== undefined;
   }
-  return (
-    input.origin === "app_owned" && (input.childThreadId !== null || input.remote !== undefined)
-  );
+  return isOrchestrationV2WorkActive(input.status) || input.status === "idle";
 }
 
 /** Resolves a subagent's display model label and slug, or nulls when no model has been reported. */
