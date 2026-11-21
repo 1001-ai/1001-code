@@ -22,7 +22,7 @@ export function InboxResetIconButton(props: {
 
   return (
     <Tooltip>
-      <TooltipTrigger render={<span className="flex shrink-0" />}>
+      <TooltipTrigger render={<span className="flex shrink-0 [-webkit-app-region:no-drag]" />}>
         <Button
           type="button"
           variant="ghost"
