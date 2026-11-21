@@ -320,10 +320,15 @@ const make = Effect.gen(function* () {
       recordedShell?.id ?? oldestInboxShell(existingShells, projectId)?.id ?? null;
     const oldThreadIds = Array.from(
       new Set([
-        ...(recordedShell ? [recordedShell.id] : []),
         ...existingShells.map((shell) => shell.id),
+        ...(recordedShell ? [recordedShell.id] : []),
       ]),
     );
+    // Delete duplicates before the primary Inbox thread so a failed delete never drops the live Inbox.
+    const orderedOldIds =
+      previousThreadId === null
+        ? oldThreadIds
+        : [...oldThreadIds.filter((id) => id !== previousThreadId), previousThreadId];
     // Make the replacement before deleting the old thread, so an unavailable provider loses nothing.
     const nextThreadId = yield* create(projectId);
     if (nextThreadId === null) {
@@ -331,7 +336,7 @@ const make = Effect.gen(function* () {
       return yield* new InboxAgentError({ reason: "unavailable" });
     }
     // Delete old Inbox threads while they are still marked as Inbox threads, so a running turn stays locked until deleted.
-    for (const oldId of oldThreadIds) {
+    for (const oldId of orderedOldIds) {
       if (oldId === nextThreadId) continue;
       const deleted = yield* threads
         .dispatch({

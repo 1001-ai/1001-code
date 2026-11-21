@@ -558,9 +558,10 @@ it.effect(
           expect(reset.previousThreadId).toBe(firstId);
           expect(reset.threadId).not.toBe(firstId);
           expect(created).toHaveLength(2);
-          expect(deleted.map((entry) => entry.command.threadId)).toEqual([firstId, archivedId]);
+          // Duplicates are deleted before the live recorded Inbox thread.
+          expect(deleted.map((entry) => entry.command.threadId)).toEqual([archivedId, firstId]);
           // The old Inbox stays locked until its deletion commits.
-          expect(deleted[0]?.lockedAtDelete).toBe(true);
+          expect(deleted[1]?.lockedAtDelete).toBe(true);
           expect(shells.get(firstId!)?.deletedAt).not.toBeNull();
           expect(shells.get(archivedId)?.deletedAt).not.toBeNull();
           expect(service.isInboxThread(firstId!)).toBe(false);
@@ -647,6 +648,42 @@ it.effect("rolls back the new Inbox thread if deleting the old one fails while i
         expect(service.isInboxThread(oldId)).toBe(true);
         expect(service.isInboxThread(rolledBackId)).toBe(false);
       }),
+    );
+  }),
+);
+
+it.effect("keeps the live recorded Inbox untouched if deleting a duplicate fails", () =>
+  Effect.gen(function* () {
+    const stuckDuplicate = ThreadId.make("inbox-archived-stuck");
+    yield* withInbox(
+      { refuseDelete: new Set([stuckDuplicate]) },
+      ({ service, created, deleted, shells }) =>
+        Effect.gen(function* () {
+          const live = yield* service.ensure(PROJECT);
+          const liveId = live.status === "ready" ? live.threadId : null;
+          expect(liveId).not.toBeNull();
+          shells.set(stuckDuplicate, {
+            ...liveThreadShell(stuckDuplicate),
+            projectId: PROJECT,
+            title: INBOX_AGENT_THREAD_TITLE,
+            createdBy: "system",
+            creationSource: "server",
+            archivedAt: DateTime.makeUnsafe(100),
+          } as Shell);
+
+          const failed = yield* service.reset(PROJECT).pipe(Effect.flip);
+          expect(failed.reason).toBe("failed");
+          expect(created).toHaveLength(2);
+          const rolledBackId = created[1]!.threadId;
+          // The duplicate failed before touching the live Inbox; only the replacement was rolled back.
+          expect(deleted.map((entry) => entry.command.threadId)).toEqual([
+            stuckDuplicate,
+            rolledBackId,
+          ]);
+          expect(shells.get(liveId!)?.deletedAt).toBeNull();
+          expect(shells.get(rolledBackId)?.deletedAt).not.toBeNull();
+          expect(service.isInboxThread(liveId!)).toBe(true);
+        }),
     );
   }),
 );
