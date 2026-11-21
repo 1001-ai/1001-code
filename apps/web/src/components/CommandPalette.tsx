@@ -1567,7 +1567,7 @@ function OpenCommandPaletteDialog(props: {
     });
   }
 
-  if (activeThread !== null) {
+  if (activeThread) {
     actionItems.push(
       boardPaletteAction(scopeThreadRef(activeThread.environmentId, activeThread.id)),
       memoryPaletteAction(scopeThreadRef(activeThread.environmentId, activeThread.id)),

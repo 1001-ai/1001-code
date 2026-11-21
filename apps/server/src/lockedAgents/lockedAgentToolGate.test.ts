@@ -164,9 +164,13 @@ it.effect(
               Layer.mock(GitManager.GitManager)({}),
               Layer.mock(ProjectService.ProjectService)({}),
               Layer.mock(PullRequestReviewGuideService.PullRequestReviewGuideService)({}),
-              Layer.mock(PullRequestService.PullRequestService)({}),
+              Layer.mock(PullRequestService.PullRequestService)({
+                servesProject: () => Effect.succeed(false),
+              }),
               Layer.mock(Orchestrator.OrchestratorV2)({}),
-              Layer.mock(ProjectionStore.ProjectionStoreV2)({}),
+              Layer.mock(ProjectionStore.ProjectionStoreV2)({
+                getThreadShell: () => Effect.succeed(null),
+              }),
               NodeServices.layer,
               NodeCrypto.layer,
             ),

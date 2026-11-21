@@ -5,7 +5,10 @@ import { appendLiveAppCheckout } from "./liveCheckoutInstructions.ts";
 import { REPLY_MARKER_INSTRUCTIONS } from "./replyMarkerInstructions.ts";
 import { BACK_REFERENCE_INSTRUCTIONS } from "./backReferenceInstructions.ts";
 
-export { QUESTION_CARD_INSTRUCTIONS, questionCardCodexContext } from "./questionCardInstructions.ts";
+export {
+  QUESTION_CARD_INSTRUCTIONS,
+  questionCardCodexContext,
+} from "./questionCardInstructions.ts";
 export { REPLY_MARKER_INSTRUCTIONS, replyMarkerCodexContext } from "./replyMarkerInstructions.ts";
 export {
   BACK_REFERENCE_INSTRUCTIONS,

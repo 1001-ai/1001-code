@@ -46,11 +46,7 @@ const POPUP_CLASS = [
 async function copyMessage(copy: MessageCopy) {
   try {
     if (
-      !(await writeTextToClipboard(
-        copy.text,
-        namedClipboardTarget("message"),
-        copy.extraFlavors,
-      ))
+      !(await writeTextToClipboard(copy.text, namedClipboardTarget("message"), copy.extraFlavors))
     )
       return;
     toastManager.add({ type: "success", title: "Message copied" });

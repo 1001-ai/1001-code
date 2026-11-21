@@ -22,10 +22,7 @@ export function ReplyMarkersSettingsRow() {
       description="When a reply lands below a later message, quote the message it answers above it, and show “1 reply” under that message. Select either to see the exchange on its own."
       resetAction={
         enabled ? null : (
-          <SettingResetButton
-            ariaLabel="Reset reply markers"
-            onClick={() => setEnabled(true)}
-          />
+          <SettingResetButton ariaLabel="Reset reply markers" onClick={() => setEnabled(true)} />
         )
       }
       control={
