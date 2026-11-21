@@ -215,7 +215,7 @@ import { planThreadDeletion } from "./ThreadDeletion.ts";
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as ServerSettings from "../serverSettings.ts";
 import { voiceAgentThread } from "../voiceAgent/voiceAgentThread.ts";
-import { lockedAgentMessage, lockedAgentRefusal } from "../lockedAgents/lockedAgentGuard.ts";
+import { lockedAgentCommandRefusal, lockedAgentMessage } from "../lockedAgents/lockedAgentGuard.ts";
 import { recordOnlyMessageEvents, recordOnlyMessageRefusal } from "./recordOnlyMessage.ts";
 
 const isMessageQuestionAnswer = Schema.is(
@@ -4388,7 +4388,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       });
     }
     // Fork: a locked agent keeps its provider, and the Inbox its title; see fork/README.md.
-    const lockedRefusal = lockedAgentRefusal(command, thread);
+    const lockedRefusal = yield* lockedAgentCommandRefusal(command, thread, providerAdapters);
     if (lockedRefusal !== null) {
       return yield* new OrchestratorDispatchError({
         commandId: command.commandId,
@@ -7113,7 +7113,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         : undefined,
     );
     // Fork: a locked agent keeps its provider and its title; see fork/README.md.
-    const lockedRefusal = lockedAgentRefusal(command, projection.thread);
+    const lockedRefusal = yield* lockedAgentCommandRefusal(
+      command,
+      projection.thread,
+      providerAdapters,
+    );
     if (lockedRefusal !== null) {
       return yield* new OrchestratorDispatchError({
         commandId: command.commandId,

@@ -1,5 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
+  ANTIGRAVITY_DEFAULT_MODEL,
   type ApplicationStoredEvent,
   INBOX_AGENT_THREAD_TITLE,
   type OrchestrationV2ServerCommand,
@@ -44,6 +45,16 @@ const claude = (fields: Partial<ServerProvider> = {}) =>
     auth: { status: "authenticated" },
     ...fields,
   }) as unknown as ServerProvider;
+const antigravity = (fields: Partial<ServerProvider> = {}) =>
+  ({
+    instanceId: ProviderInstanceId.make("antigravity"),
+    driver: "antigravity",
+    enabled: true,
+    installed: true,
+    status: "ready",
+    auth: { status: "authenticated" },
+    ...fields,
+  }) as unknown as ServerProvider;
 const signedOut = claude({ auth: { status: "unauthenticated" } as never });
 
 type Create = Extract<OrchestrationV2ServerCommand, { readonly type: "thread.create" }>;
@@ -62,8 +73,8 @@ const withInbox = <A, E>(
     readonly watch?: boolean;
     readonly stateDir?: string;
     readonly providers?: ReadonlyArray<ServerProvider>;
-    /** Whether Claude is on for the project at the start. */
-    readonly enabled?: boolean;
+    /** Whether each provider is on for the project at the start. */
+    readonly enabled?: boolean | ((instanceId: ProviderInstanceId) => boolean);
   },
   test: (fixture: {
     readonly service: InboxAgent.InboxAgent["Service"];
@@ -77,7 +88,7 @@ const withInbox = <A, E>(
     readonly providerChanges: Queue.Queue<ReadonlyArray<ServerProvider>>;
     readonly settingsChanges: Queue.Queue<void>;
     readonly setProviders: (providers: ReadonlyArray<ServerProvider>) => void;
-    readonly setEnabled: (enabled: boolean) => void;
+    readonly setEnabled: (enabled: boolean | ((instanceId: ProviderInstanceId) => boolean)) => void;
     readonly stateDir: string;
   }) => Effect.Effect<A, E>,
 ) =>
@@ -94,7 +105,8 @@ const withInbox = <A, E>(
       const providerChanges = yield* Queue.unbounded<ReadonlyArray<ServerProvider>>();
       const settingsChanges = yield* Queue.unbounded<void>();
       let providers: ReadonlyArray<ServerProvider> = options.providers ?? [claude()];
-      let enabled = options.enabled ?? true;
+      let enabled: boolean | ((instanceId: ProviderInstanceId) => boolean) =
+        options.enabled ?? true;
       const live = (archived: boolean, projectId: ProjectId | undefined) =>
         [...shells.values()].filter(
           (shell) =>
@@ -140,7 +152,8 @@ const withInbox = <A, E>(
                   threads: live(snapshot?.location === "archive", snapshot?.projectId),
                 }) as never,
             ),
-          isProviderInstanceEnabledForProject: () => Effect.sync(() => enabled),
+          isProviderInstanceEnabledForProject: ({ instanceId }) =>
+            Effect.sync(() => (typeof enabled === "function" ? enabled(instanceId) : enabled)),
           dispatch: (command) =>
             Effect.gen(function* () {
               if (command.type === "thread.runtime-mode.set") {
@@ -407,18 +420,45 @@ it.effect("records the Inbox in the state file, and a restart knows it from ther
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 
-it.effect("skips a project without a usable Claude, and retries when providers change", () =>
+it.effect(
+  "falls back to Antigravity when Claude is unavailable or disabled for the project, preferring Claude when both are ready",
+  () =>
+    withInbox({ providers: [antigravity()] }, ({ service, created, setProviders, setEnabled }) =>
+      Effect.gen(function* () {
+        const first = yield* service.ensure(PROJECT);
+        expect(first).toMatchObject({ status: "ready", created: true });
+        expect(created[0]).toMatchObject({
+          projectId: PROJECT,
+          title: INBOX_AGENT_THREAD_TITLE,
+          modelSelection: { instanceId: "antigravity", model: ANTIGRAVITY_DEFAULT_MODEL },
+        });
+
+        // With both Claude and Antigravity ready, Claude is preferred when enabled for the project,
+        // and Antigravity is used when Claude is disabled for that project.
+        setProviders([antigravity(), claude()]);
+        setEnabled((instanceId) => instanceId === "antigravity");
+        const second = yield* service.ensure(OTHER_PROJECT);
+        expect(second).toMatchObject({ status: "ready", created: true });
+        expect(created[1]?.modelSelection).toEqual({
+          instanceId: "antigravity",
+          model: ANTIGRAVITY_DEFAULT_MODEL,
+        });
+      }),
+    ),
+);
+
+it.effect("skips a project without a usable provider, and retries when providers change", () =>
   withInbox({}, ({ service, created, setProviders, setEnabled }) =>
     Effect.gen(function* () {
       setProviders([signedOut]);
-      expect(yield* service.ensure(PROJECT)).toEqual({ status: "waiting-for-claude" });
-      // Still no Claude: nothing is retried.
+      expect(yield* service.ensure(PROJECT)).toEqual({ status: "waiting-for-provider" });
+      // Still no usable provider: nothing is retried.
       yield* service.retryWaiting([signedOut]);
       expect(created).toEqual([]);
 
       setProviders([claude()]);
       setEnabled(false);
-      expect(yield* service.ensure(PROJECT)).toEqual({ status: "waiting-for-claude" });
+      expect(yield* service.ensure(PROJECT)).toEqual({ status: "waiting-for-provider" });
       setEnabled(true);
       yield* service.retryWaiting([claude()]);
       expect(created.map((command) => command.projectId)).toEqual([PROJECT]);

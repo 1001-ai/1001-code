@@ -1,6 +1,7 @@
 import { BOARD_LIST_TOOL_NAME } from "./board.ts";
 import { INBOX_FORWARD_TOOL_NAME } from "./inboxAgent.ts";
 import { MEMORY_PROPOSE_TOOL_NAME, MEMORY_WITHDRAW_TOOL_NAME } from "./memory.ts";
+import { ProviderDriverKind } from "./providerInstance.ts";
 import {
   VOICE_AGENT_BOARD_TOOL_NAME,
   VOICE_AGENT_SEND_MESSAGE_TOOL_NAME,
@@ -8,12 +9,34 @@ import {
 } from "./voiceAgent.ts";
 
 /**
- * A locked agent is a thread that runs on Claude with only its own tools: no shell, no file
- * tools, no built-ins. The server knows which threads are locked (the voice agent's from its
- * lineage, a project's Inbox from the server's own record), so the lock, the MCP gate and the
- * guard all follow the thread itself.
+ * A locked agent is a thread that runs on a locked provider adapter with only its own tools: no
+ * shell, no file tools, no built-ins. The server knows which threads are locked (the voice agent's
+ * from its lineage, a project's Inbox from the server's own record), so the lock, the MCP gate and
+ * the guard all follow the thread itself.
  */
 export type LockedAgentKind = "voice" | "inbox";
+
+const CLAUDE_DRIVER = ProviderDriverKind.make("claudeAgent");
+const ANTIGRAVITY_DRIVER = ProviderDriverKind.make("antigravity");
+
+/**
+ * Provider drivers a locked agent of each kind may run on, in preference order. Only adapters with
+ * an equivalent tool lock belong here.
+ */
+export const LOCKED_AGENT_DRIVERS: Readonly<
+  Record<LockedAgentKind, ReadonlyArray<ProviderDriverKind>>
+> = {
+  voice: [CLAUDE_DRIVER],
+  inbox: [CLAUDE_DRIVER, ANTIGRAVITY_DRIVER],
+};
+
+/** Whether a locked agent of this kind may run on the given provider driver. */
+export function lockedAgentDriverAllowed(
+  driver: ProviderDriverKind,
+  kind: LockedAgentKind,
+): boolean {
+  return LOCKED_AGENT_DRIVERS[kind].includes(driver);
+}
 
 /** Every tool a locked agent of each kind may list or call. Nothing else reaches it. */
 export const LOCKED_AGENT_TOOL_NAMES: Readonly<Record<LockedAgentKind, ReadonlyArray<string>>> = {

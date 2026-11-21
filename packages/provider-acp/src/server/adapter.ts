@@ -212,6 +212,7 @@ const ACP_PROMPT_ACTIVITY_UPDATES: ReadonlySet<string> = new Set([
 ]);
 
 export interface AcpAdapterV2RuntimeInput {
+  readonly threadId?: ThreadId | null;
   readonly cwd: string;
   readonly runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy;
   readonly mcpServers: ReadonlyArray<EffectAcpSchema.McpServer>;
@@ -507,7 +508,10 @@ export interface AcpAdapterV2Flavor {
       cwd: string | null,
     ) => Effect.Effect<EffectAcpSchema.WriteTextFileResponse, EffectAcpErrors.AcpError>;
   };
-  readonly extractPermissionQuestion?: (request: EffectAcpSchema.RequestPermissionRequest) =>
+  readonly extractPermissionQuestion?: (
+    request: EffectAcpSchema.RequestPermissionRequest,
+    threadId?: ThreadId | null,
+  ) =>
     | {
         readonly question: OrchestrationV2UserInputQuestion;
         readonly respond: (
@@ -519,6 +523,7 @@ export interface AcpAdapterV2Flavor {
   readonly permissionDisposition?: (
     policy: ProviderAdapter.ProviderAdapterV2RuntimePolicy,
     request: EffectAcpSchema.RequestPermissionRequest,
+    threadId?: ThreadId | null,
   ) => AcpPermissionDisposition;
   readonly approvalOptions?: (
     request: EffectAcpSchema.RequestPermissionRequest,
@@ -693,6 +698,15 @@ export interface AcpAdapterV2Flavor {
   readonly sessionCarriesPullRequestLinking?: (
     initializeResult: EffectAcpSchema.InitializeResponse,
   ) => boolean;
+  /**
+   * Fork: locked agents replace T3's default ACP prompt wrapping with their own instructions and
+   * project memory; see fork/README.md.
+   */
+  readonly formatLockedPrompt?: (input: {
+    readonly text: string;
+    readonly turnInput: ProviderAdapter.ProviderAdapterV2TurnInput;
+    readonly sessionSetup: AcpSessionRuntime.AcpSessionRuntimeStartResult | null;
+  }) => string | undefined;
 }
 
 /**
@@ -2805,11 +2819,13 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           runtimeGeneration: number,
           agentRequests: Set<string>,
           mcpContext: AcpMcpContext,
+          threadId: ThreadId | null,
           resumeSessionId?: string,
           onTermination: AcpAdapterV2RuntimeInput["onTermination"] = () =>
             handleRuntimeTerminationAtGeneration(runtimeGeneration),
         ): AcpAdapterV2RuntimeInput => {
           return {
+            threadId,
             cwd: input.runtimePolicy.cwd ?? process.cwd(),
             runtimePolicy: input.runtimePolicy,
             mcpServers: mcpContext.servers,
@@ -7285,7 +7301,11 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                     )
                   : nativeParams;
               const transportRequestId = requestContext.requestId;
-              const permissionQuestion = flavor.extractPermissionQuestion?.(params);
+              const permissionThreadId = trackedTurn?.input.threadId ?? input.threadId;
+              const permissionQuestion = flavor.extractPermissionQuestion?.(
+                params,
+                permissionThreadId,
+              );
               if (permissionQuestion !== undefined) {
                 const userInput = yield* requestUserInputWithAdmission(
                   handlerGeneration,
@@ -7312,7 +7332,12 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               const dispositionFor = (
                 policy: ProviderAdapter.ProviderAdapterV2RuntimePolicy,
                 request: EffectAcpSchema.RequestPermissionRequest = params,
-              ) => (flavor.permissionDisposition ?? acpPermissionDisposition)(policy, request);
+              ) =>
+                (flavor.permissionDisposition ?? acpPermissionDisposition)(
+                  policy,
+                  request,
+                  permissionThreadId,
+                );
               if (
                 (followsAgentWorkState && dispositionFor(latestRuntimePolicy) === "ask") ||
                 (postSettleContinuationEnabled && flavor.wakeOnDetachedRequest)
@@ -7710,7 +7735,13 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           openAgentRequests = new Set();
           runtime = yield* flavor
             .makeRuntime(
-              makeRuntimeInput(runtimeGeneration, openAgentRequests, mcpContext, resumeSessionId),
+              makeRuntimeInput(
+                runtimeGeneration,
+                openAgentRequests,
+                mcpContext,
+                threadId,
+                resumeSessionId,
+              ),
             )
             .pipe(
               Effect.provideService(Scope.Scope, runtimeScope),
@@ -7792,6 +7823,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                   replacementGeneration,
                   replacementAgentRequests,
                   mcpContext,
+                  threadId,
                   undefined,
                   handleCandidateTermination,
                 ),
@@ -8936,14 +8968,21 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           // while the prompt is prepared still resends the notes in this prompt.
           const previousInstructionState = (yield* Ref.get(promptInstructionStates)).get(sessionId);
           const compactionMarker = (yield* Ref.get(compactionMarkers)).get(sessionId);
-          const text = t3AcpPromptWithInstructions({
-            prompt: messageText,
-            state: instructionState,
-            ...(previousInstructionState === undefined || compactionMarker !== undefined
-              ? {}
-              : { previousState: previousInstructionState }),
-          });
           const sessionSetup = yield* Ref.get(activeSessionSetup);
+          const lockedPrompt = flavor.formatLockedPrompt?.({
+            text: messageText,
+            turnInput,
+            sessionSetup,
+          });
+          const text =
+            lockedPrompt ??
+            t3AcpPromptWithInstructions({
+              prompt: messageText,
+              state: instructionState,
+              ...(previousInstructionState === undefined || compactionMarker !== undefined
+                ? {}
+                : { previousState: previousInstructionState }),
+            });
           const runtimeInstructions = buildRuntimeInstructions({
             harness: flavor.runtimeHarness ?? driver,
             model: turnInput.modelSelection.model,
@@ -8954,6 +8993,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           // The agent keeps its own history, so resend only after compaction or when the text changes.
           const sendRuntimeInstructions =
             !isNativeSlashCommand &&
+            lockedPrompt === undefined &&
             (compactionMarker !== undefined ||
               (yield* Ref.get(promptRuntimeInstructions)).get(sessionId) !== runtimeInstructions);
           const promptText = flavor.buildAttachmentPrompt ? text.trim() : text;
@@ -8971,7 +9011,8 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           }
           return {
             prompt,
-            instructionState: text === messageText ? undefined : instructionState,
+            instructionState:
+              lockedPrompt !== undefined || text === messageText ? undefined : instructionState,
             runtimeInstructions: sendRuntimeInstructions ? runtimeInstructions : undefined,
             compactionMarker,
           };

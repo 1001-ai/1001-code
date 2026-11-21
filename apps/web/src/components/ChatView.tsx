@@ -219,7 +219,7 @@ import {
   resolveThreadOpenRoute,
   type SideChatParentPanel,
 } from "~/lib/sideChatPane";
-import { inboxAgentLockedProvider, isInboxClientThread } from "~/state/inboxAgent.logic";
+import { inboxAgentAllowedProviders, isInboxClientThread } from "~/state/inboxAgent.logic";
 import {
   NO_PROVIDER_MODEL_SELECTION,
   providerInstanceEntriesFor,
@@ -1333,10 +1333,9 @@ export default function ChatView(props: ChatViewProps) {
     threadProvider,
     providers: providerStatuses,
   });
-  const modelPickerLockedProvider =
-    // Fork: the Inbox runs on Claude only; see fork/README.md.
-    inboxAgentLockedProvider(activeThread) ??
-    (supportsProviderSwitchingViaHandoff ? null : lockedProvider);
+  // Fork: the Inbox runs on supported locked-agent providers only; see fork/README.md.
+  const inboxAllowedProviders = inboxAgentAllowedProviders(activeThread);
+  const modelPickerLockedProvider = supportsProviderSwitchingViaHandoff ? null : lockedProvider;
   const pullRequestsCapabilityKnown = serverConfig !== null;
   const supportsPullRequests = serverConfig !== null;
   const attachmentEnvironmentConfig = environmentById.get(environmentId)?.serverConfig ?? null;
@@ -1408,6 +1407,7 @@ export default function ChatView(props: ChatViewProps) {
       activeProjectDefaultModelSelection?.instanceId,
     ],
     lockedProvider,
+    allowedProviders: inboxAllowedProviders,
     lockedInstanceId: activeRuntime?.providerInstanceId ?? activeThreadModelInstanceId,
   });
   const selectedProvider = selectedProviderEntry?.driverKind ?? requestedDriverKind;
@@ -3002,6 +3002,7 @@ export default function ChatView(props: ChatViewProps) {
     settings,
     providerStatuses,
     lockedProvider,
+    allowedProviders: inboxAllowedProviders,
     supportsProviderSwitchingViaHandoff,
     multipleModelSelections,
     runtimeMode,
@@ -3852,6 +3853,7 @@ export default function ChatView(props: ChatViewProps) {
                                 runtimeMode={runtimeMode}
                                 defaultRuntimeMode={defaultRuntimeMode}
                                 lockedProvider={modelPickerLockedProvider}
+                                allowedProviders={inboxAllowedProviders}
                                 providerStatuses={providerStatuses as ServerProvider[]}
                                 providerCatalogKnown={serverConfig !== null}
                                 activeProjectDefaultModelSelection={

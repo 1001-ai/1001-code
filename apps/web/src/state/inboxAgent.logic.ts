@@ -1,8 +1,9 @@
 import {
   isInboxThreadShell,
+  LOCKED_AGENT_DRIVERS,
   type OrchestrationV2ThreadShell,
   type ProjectId,
-  ProviderDriverKind,
+  type ProviderDriverKind,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 
@@ -11,7 +12,7 @@ export type InboxAgentStatus = "running" | "waiting" | "idle";
 
 /** Why a project's Inbox cannot open yet: only the server makes one. */
 export const INBOX_UNAVAILABLE_REASON =
-  "The server makes this project's Inbox once Claude is ready on it.";
+  "The server makes this project's Inbox once Claude or Antigravity is ready on it.";
 
 export const INBOX_COMPOSER_PLACEHOLDER = "Ask about this project's threads";
 
@@ -72,13 +73,14 @@ export function isInboxClientThread(thread: ClientThread | undefined): boolean {
   return isInboxThreadShell(thread?.source);
 }
 
-const CLAUDE = ProviderDriverKind.make("claudeAgent");
-
-/** The Inbox runs on Claude only: its model picker offers Claude's models and no other provider. */
-export function inboxAgentLockedProvider(
+/**
+ * The Inbox runs only on providers with a locked-agent adapter (`LOCKED_AGENT_DRIVERS.inbox`):
+ * its model picker offers those providers' models and disables every other provider.
+ */
+export function inboxAgentAllowedProviders(
   thread: ClientThread | undefined,
-): ProviderDriverKind | null {
-  return isInboxClientThread(thread) ? CLAUDE : null;
+): ReadonlyArray<ProviderDriverKind> | null {
+  return isInboxClientThread(thread) ? LOCKED_AGENT_DRIVERS.inbox : null;
 }
 
 export function inboxComposerPlaceholder(

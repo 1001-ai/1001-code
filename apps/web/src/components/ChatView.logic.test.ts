@@ -790,6 +790,24 @@ describe("resolveComposerProviderSelection", () => {
 
     expect(selection.selectedProviderEntry).toBeUndefined();
   });
+
+  it("restricts fallback selection to allowedProviders when switching between Inbox providers", () => {
+    const codexEntry = entry("codex");
+    const claudeDisabled = entry("claudeAgent", undefined, { enabled: false });
+    const agEntry = entry("antigravity");
+    const selection = resolveComposerProviderSelection({
+      entries: [codexEntry, claudeDisabled, agEntry],
+      candidateInstanceIds: [claudeDisabled.instanceId],
+      lockedProvider: null,
+      allowedProviders: [
+        ProviderDriverKind.make("claudeAgent"),
+        ProviderDriverKind.make("antigravity"),
+      ],
+      lockedInstanceId: claudeDisabled.instanceId,
+    });
+
+    expect(selection.selectedProviderEntry?.instanceId).toBe(agEntry.instanceId);
+  });
 });
 
 describe("checkout Git memory", () => {

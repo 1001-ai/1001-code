@@ -5,7 +5,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   findInboxThread,
   INBOX_COMPOSER_PLACEHOLDER,
-  inboxAgentLockedProvider,
+  inboxAgentAllowedProviders,
   inboxAgentStatus,
   inboxComposerPlaceholder,
   withoutInboxThreads,
@@ -57,11 +57,14 @@ describe("inboxAgent.logic", () => {
     );
   });
 
-  it("locks only the Inbox's model picker to Claude, and gives only it its placeholder", () => {
-    expect(inboxAgentLockedProvider({ source: shell("a") })).toBe("claudeAgent");
-    expect(inboxAgentLockedProvider({ source: shell("a", { createdBy: "user" }) })).toBeNull();
-    expect(inboxAgentLockedProvider({})).toBeNull();
-    expect(inboxAgentLockedProvider(null)).toBeNull();
+  it("restricts only the Inbox's model picker to supported locked-agent providers, and gives only it its placeholder", () => {
+    expect(inboxAgentAllowedProviders({ source: shell("a") })).toEqual([
+      "claudeAgent",
+      "antigravity",
+    ]);
+    expect(inboxAgentAllowedProviders({ source: shell("a", { createdBy: "user" }) })).toBeNull();
+    expect(inboxAgentAllowedProviders({})).toBeNull();
+    expect(inboxAgentAllowedProviders(null)).toBeNull();
     expect(inboxComposerPlaceholder({ source: shell("a") }, "Ask anything")).toBe(
       INBOX_COMPOSER_PLACEHOLDER,
     );

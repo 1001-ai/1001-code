@@ -53,6 +53,8 @@ export interface AntigravityAcpRuntimeInput extends Omit<
   readonly runtimeVersion?: string | null;
   /** Conversational sessions only; helpers and probes leave the system prompt untouched. */
   readonly sessionSystemPromptAppend?: string;
+  /** Fork: locked agents override session `_meta` with their tool filter and prompt; see fork/README.md. */
+  readonly sessionMeta?: AcpSessionRuntime.AcpSessionRuntimeOptions["sessionMeta"];
   readonly authMethod?: AntigravityAuthMethod;
 }
 
@@ -124,8 +126,10 @@ export const makeAntigravityAcpRuntime = Effect.fn("makeAntigravityAcpRuntime")(
       resumeMethod: "resume",
       cancelBehavior: "wait-for-prompt",
       clientInfo: antigravityClientInfo(input.runtimeVersion),
-      sessionMeta: (initializeResult) =>
-        antigravitySessionMeta(initializeResult, input.sessionSystemPromptAppend),
+      sessionMeta:
+        input.sessionMeta ??
+        ((initializeResult) =>
+          antigravitySessionMeta(initializeResult, input.sessionSystemPromptAppend)),
       clientCapabilities: {
         ...input.clientCapabilities,
         // Advertising writes swaps the agent's diff edits for whole-file client_edit_file.

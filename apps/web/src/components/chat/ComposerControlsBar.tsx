@@ -78,6 +78,7 @@ export function ComposerControlsBar(props: {
   activeThreadModelSelection: ChatComposerProps["activeThreadModelSelection"];
   selectedModelForPickerWithCustomFallback: string;
   lockedProvider: ChatComposerProps["lockedProvider"];
+  allowedProviders?: ChatComposerProps["allowedProviders"];
   lockedContinuationGroupKey: string | null;
   providerInstanceEntries: ReadonlyArray<ProviderInstanceEntry>;
   keybindings: ChatComposerProps["keybindings"];
@@ -122,6 +123,7 @@ export function ComposerControlsBar(props: {
     activeThreadModelSelection,
     selectedModelForPickerWithCustomFallback,
     lockedProvider,
+    allowedProviders,
     lockedContinuationGroupKey,
     providerInstanceEntries,
     keybindings,
@@ -209,6 +211,7 @@ export function ComposerControlsBar(props: {
           : selectedModelForPickerWithCustomFallback
       }
       lockedProvider={lockedProvider}
+      {...(allowedProviders !== undefined ? { allowedProviders } : {})}
       lockedContinuationGroupKey={lockedContinuationGroupKey}
       instanceEntries={providerInstanceEntries}
       keybindings={keybindings}

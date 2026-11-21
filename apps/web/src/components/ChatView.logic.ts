@@ -494,6 +494,7 @@ export function resolveComposerProviderSelection(input: {
   entries: ReadonlyArray<ProviderInstanceEntry>;
   candidateInstanceIds: ReadonlyArray<ProviderInstanceId | null | undefined>;
   lockedProvider: ProviderDriverKind | null;
+  allowedProviders?: ReadonlyArray<ProviderDriverKind> | null;
   lockedInstanceId: ProviderInstanceId | null | undefined;
 }) {
   const requestedInstanceId = input.candidateInstanceIds.find(
@@ -515,6 +516,7 @@ export function resolveComposerProviderSelection(input: {
     lockedContinuationGroupKey === null;
   const compatibleEntries = input.entries.filter(
     (entry) =>
+      (!input.allowedProviders || input.allowedProviders.includes(entry.driverKind)) &&
       (!input.lockedProvider || entry.driverKind === input.lockedProvider) &&
       (!lockedContinuationGroupKey || entry.continuationGroupKey === lockedContinuationGroupKey) &&
       (!requiresExactInstance || entry.instanceId === input.lockedInstanceId),
