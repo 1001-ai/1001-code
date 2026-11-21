@@ -1,11 +1,13 @@
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { settlePromise } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { InboxIcon } from "lucide-react";
-import { memo } from "react";
+import { memo, type MouseEvent as ReactMouseEvent } from "react";
 
 import { cn } from "~/lib/utils";
+import { readLocalApi } from "~/localApi";
 import type { SidebarProjectSnapshot } from "../../sidebarProjectGrouping";
-import { useInboxAgent } from "../../state/inboxAgent";
+import { useInboxAgent, useResetInbox } from "../../state/inboxAgent";
 import { ProjectFavicon, type ProjectFaviconProject } from "../ProjectFavicon";
 import { resolveSidebarRowAccessibility } from "../Sidebar.logic";
 import { sidebarFolderRowId } from "../sidebar/SidebarProjectFolderHeader";
@@ -32,7 +34,35 @@ export const InboxSidebarRow = memo(function InboxSidebarRow(props: {
 }) {
   const { environmentId, projectId } = props;
   const inbox = useInboxAgent({ environmentId, projectId });
+  const resetInbox = useResetInbox(
+    { environmentId, projectId },
+    { projectDisplayName: props.projectDisplayName, threadId: inbox.threadId },
+  );
   const { isMobile, setOpenMobile } = useSidebar();
+  const handleContextMenu = (event: ReactMouseEvent<HTMLButtonElement>) => {
+    if (inbox.threadId === null) return;
+    const api = readLocalApi();
+    if (!api) return;
+    event.preventDefault();
+    void (async () => {
+      const clicked = await settlePromise(() =>
+        api.contextMenu.show(
+          [
+            {
+              id: "reset-inbox",
+              label: "Reset Inbox",
+              icon: "refresh-cw",
+              disabled: !resetInbox.canReset,
+            },
+          ],
+          { x: event.clientX, y: event.clientY },
+        ),
+      );
+      if (clicked._tag === "Success" && clicked.value === "reset-inbox") {
+        await resetInbox.reset();
+      }
+    })();
+  };
   const isActive =
     inbox.threadId !== null &&
     props.routeThreadKey === scopedThreadKey(scopeThreadRef(environmentId, inbox.threadId));
@@ -59,6 +89,7 @@ export const InboxSidebarRow = memo(function InboxSidebarRow(props: {
         if (isMobile) setOpenMobile(false);
         void inbox.open();
       }}
+      onContextMenu={handleContextMenu}
       className={cn(
         "flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-md px-(--sidebar-row-content-inset) text-left text-sm text-sidebar-foreground outline-none select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:cursor-default disabled:opacity-60",
         isActive ? "bg-sidebar-row-active" : "hover:bg-sidebar-row-hover",

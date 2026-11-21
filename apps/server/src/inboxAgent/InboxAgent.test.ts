@@ -16,6 +16,7 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
@@ -58,6 +59,7 @@ const antigravity = (fields: Partial<ServerProvider> = {}) =>
 const signedOut = claude({ auth: { status: "unauthenticated" } as never });
 
 type Create = Extract<OrchestrationV2ServerCommand, { readonly type: "thread.create" }>;
+type Delete = Extract<OrchestrationV2ServerCommand, { readonly type: "thread.delete" }>;
 type RuntimeModeSet = Extract<
   OrchestrationV2ServerCommand,
   { readonly type: "thread.runtime-mode.set" }
@@ -75,10 +77,13 @@ const withInbox = <A, E>(
     readonly providers?: ReadonlyArray<ServerProvider>;
     /** Whether each provider is on for the project at the start. */
     readonly enabled?: boolean | ((instanceId: ProviderInstanceId) => boolean);
+    /** Optional thread ids whose `thread.delete` fails while leaving the thread live. */
+    readonly refuseDelete?: ReadonlySet<ThreadId>;
   },
   test: (fixture: {
     readonly service: InboxAgent.InboxAgent["Service"];
     readonly created: Array<Create>;
+    readonly deleted: Array<{ readonly command: Delete; readonly lockedAtDelete: boolean }>;
     readonly runtimeModeSets: Array<RuntimeModeSet>;
     /** Each create, as the watcher's milestone. */
     readonly creates: Queue.Queue<Create>;
@@ -98,6 +103,7 @@ const withInbox = <A, E>(
       const stateDir = options.stateDir ?? (yield* fs.makeTempDirectoryScoped());
       const shells = new Map<ThreadId, Shell>();
       const created: Array<Create> = [];
+      const deleted: Array<{ readonly command: Delete; readonly lockedAtDelete: boolean }> = [];
       const runtimeModeSets: Array<RuntimeModeSet> = [];
       const creates = yield* Queue.unbounded<Create>();
       const projects: Array<ProjectId> = [PROJECT];
@@ -134,6 +140,10 @@ const withInbox = <A, E>(
         }),
         Layer.mock(ProjectStore.ProjectStoreV2)({
           list: () => Effect.sync(() => projects.map((projectId) => ({ projectId }) as never)),
+          get: (projectId) =>
+            Effect.sync(() =>
+              projects.includes(projectId) ? Option.some({ projectId } as never) : Option.none(),
+            ),
         }),
         Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
           namedProjectsRoot: "/projects",
@@ -164,6 +174,17 @@ const withInbox = <A, E>(
                 shells.set(command.threadId, { ...shell, runtimeMode: command.runtimeMode });
                 return undefined as never;
               }
+              if (command.type === "thread.delete") {
+                deleted.push({ command, lockedAtDelete: isInboxThread(command.threadId) });
+                if (options.refuseDelete?.has(command.threadId)) {
+                  return yield* Effect.die("delete-failed");
+                }
+                const shell = shells.get(command.threadId);
+                if (shell !== undefined) {
+                  shells.set(command.threadId, { ...shell, deletedAt: DateTime.makeUnsafe(1) });
+                }
+                return undefined as never;
+              }
               if (command.type !== "thread.create") throw new Error(command.type);
               // Two triggers racing would both get here without the service's lock.
               yield* Effect.yieldNow;
@@ -191,6 +212,7 @@ const withInbox = <A, E>(
       return yield* test({
         service,
         created,
+        deleted,
         runtimeModeSets,
         creates,
         shells,
@@ -507,4 +529,124 @@ it.effect("makes a waiting project's Inbox once Claude is turned on in its setti
       expect((yield* Queue.take(creates)).projectId).toBe(PROJECT);
     }),
   ),
+);
+
+it.effect(
+  "resets a project's Inbox by creating a new thread, deleting old ones while locked, and persisting state",
+  () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const stateDir = yield* fs.makeTempDirectoryScoped();
+      const nextThreadId = yield* withInbox({ stateDir }, ({ service, created, deleted, shells }) =>
+        Effect.gen(function* () {
+          const first = yield* service.ensure(PROJECT);
+          const firstId = first.status === "ready" ? first.threadId : null;
+          expect(firstId).not.toBeNull();
+          // An archived duplicate Inbox thread is also cleaned up so clients never fall back to it.
+          const archivedId = ThreadId.make("inbox-archived");
+          shells.set(archivedId, {
+            ...liveThreadShell(archivedId),
+            projectId: PROJECT,
+            title: INBOX_AGENT_THREAD_TITLE,
+            createdBy: "system",
+            creationSource: "server",
+            archivedAt: DateTime.makeUnsafe(100),
+          } as Shell);
+
+          const reset = yield* service.reset(PROJECT);
+          expect(reset.previousThreadId).toBe(firstId);
+          expect(reset.threadId).not.toBe(firstId);
+          expect(created).toHaveLength(2);
+          expect(deleted.map((entry) => entry.command.threadId)).toEqual([firstId, archivedId]);
+          // The old Inbox stays locked until its deletion commits.
+          expect(deleted[0]?.lockedAtDelete).toBe(true);
+          expect(shells.get(firstId!)?.deletedAt).not.toBeNull();
+          expect(shells.get(archivedId)?.deletedAt).not.toBeNull();
+          expect(service.isInboxThread(firstId!)).toBe(false);
+          expect(service.isInboxThread(reset.threadId)).toBe(true);
+          return reset.threadId;
+        }),
+      );
+
+      const state = JSON.parse(
+        yield* fs.readFileString(path.join(stateDir, "inbox-agent", "state.json")),
+      );
+      expect(state).toEqual({ version: 1, projects: { [PROJECT]: nextThreadId } });
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+it.effect(
+  "refuses reset without deleting the existing Inbox when no Inbox provider is available",
+  () =>
+    withInbox({}, ({ service, deleted, shells, setProviders, setEnabled }) =>
+      Effect.gen(function* () {
+        const first = yield* service.ensure(PROJECT);
+        const firstId = first.status === "ready" ? first.threadId : null;
+        setProviders([signedOut]);
+        const unavailable = yield* service.reset(PROJECT).pipe(Effect.flip);
+        expect(unavailable.reason).toBe("unavailable");
+        expect(deleted).toEqual([]);
+        expect(shells.get(firstId!)?.deletedAt).toBeNull();
+        expect(service.isInboxThread(firstId!)).toBe(true);
+
+        setProviders([claude()]);
+        setEnabled(false);
+        const disabled = yield* service.reset(PROJECT).pipe(Effect.flip);
+        expect(disabled.reason).toBe("unavailable");
+        expect(deleted).toEqual([]);
+
+        // Falls back to Antigravity when Claude is disabled for the project.
+        setProviders([claude(), antigravity()]);
+        setEnabled((instanceId) => instanceId === "antigravity");
+        const onAntigravity = yield* service.reset(PROJECT);
+        expect(onAntigravity.previousThreadId).toBe(firstId);
+        expect(onAntigravity.threadId).not.toBe(firstId);
+        expect(service.isInboxThread(onAntigravity.threadId)).toBe(true);
+      }),
+    ),
+);
+
+it.effect(
+  "refuses reset for the No project folder and unknown projects, and creates when missing",
+  () =>
+    withInbox({}, ({ service, created }) =>
+      Effect.gen(function* () {
+        const scratch = yield* service.reset(SCRATCH).pipe(Effect.flip);
+        expect(scratch.reason).toBe("unsupported");
+        const missing = yield* service.reset(OTHER_PROJECT).pipe(Effect.flip);
+        expect(missing.reason).toBe("project-not-found");
+
+        const fresh = yield* service.reset(PROJECT);
+        expect(fresh.previousThreadId).toBeNull();
+        expect(created).toHaveLength(1);
+        expect(service.isInboxThread(fresh.threadId)).toBe(true);
+      }),
+    ),
+);
+
+it.effect("rolls back the new Inbox thread if deleting the old one fails while it stays live", () =>
+  Effect.gen(function* () {
+    const oldId = ThreadId.make("inbox-stuck");
+    yield* withInbox({ refuseDelete: new Set([oldId]) }, ({ service, created, deleted, shells }) =>
+      Effect.gen(function* () {
+        shells.set(oldId, {
+          ...liveThreadShell(oldId),
+          projectId: PROJECT,
+          title: INBOX_AGENT_THREAD_TITLE,
+          createdBy: "system",
+          creationSource: "server",
+        } as Shell);
+        yield* service.ensure(PROJECT);
+        const failed = yield* service.reset(PROJECT).pipe(Effect.flip);
+        expect(failed.reason).toBe("failed");
+        expect(created).toHaveLength(1);
+        const rolledBackId = created[0]!.threadId;
+        expect(deleted.map((entry) => entry.command.threadId)).toEqual([oldId, rolledBackId]);
+        expect(shells.get(rolledBackId)?.deletedAt).not.toBeNull();
+        expect(service.isInboxThread(oldId)).toBe(true);
+        expect(service.isInboxThread(rolledBackId)).toBe(false);
+      }),
+    );
+  }),
 );

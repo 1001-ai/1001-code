@@ -10,11 +10,13 @@ import type { SideChatParentPanel } from "../../lib/sideChatPane";
 import { cn } from "../../lib/utils";
 import { hostRightPanel } from "../../rightPanelStore";
 import { useInboxAgent } from "../../state/inboxAgent";
+import { useProject } from "../../state/entities";
 import { useProjectMoments } from "../../state/projectMoments";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "../../workspaceTitlebar";
 import ChatView from "../ChatView";
 import { BackgroundThreadContext } from "../chat/backgroundThread";
 import { TimelineMomentCards } from "../chat/TimelineMomentCards";
+import { InboxResetIconButton } from "../inboxAgent/InboxResetButton";
 import { paneStripInboxThreadId } from "./paneStrip.logic";
 import { usePaneOnScreen } from "./paneStripMode";
 import { PANE_STRIP_PROJECT_ATTRIBUTE, PaneStripNudge } from "./PaneStripNudge";
@@ -42,6 +44,7 @@ export function PaneStripProjectPane(props: {
 }) {
   const { threadRef, projectId } = props;
   const inbox = useInboxAgent({ environmentId: threadRef.environmentId, projectId });
+  const project = useProject({ environmentId: threadRef.environmentId, projectId });
   const inboxThreadId = paneStripInboxThreadId({
     routeThreadId: threadRef.threadId,
     inboxThreadId: inbox.threadId,
@@ -66,7 +69,18 @@ export function PaneStripProjectPane(props: {
           data-side-chat-pane
           className="flex min-h-0 min-w-0 flex-[1_1_30rem] flex-col border-r border-border"
         >
-          <PaneHeader first icon={<InboxIcon aria-hidden className={ICON_CLASS} />}>
+          <PaneHeader
+            first
+            icon={<InboxIcon aria-hidden className={ICON_CLASS} />}
+            actions={
+              <InboxResetIconButton
+                environmentId={threadRef.environmentId}
+                projectId={projectId}
+                threadId={inboxThreadId}
+                projectDisplayName={project?.title}
+              />
+            }
+          >
             Inbox
           </PaneHeader>
           {/* Only while on screen: a mounted chat counts as reading the Inbox, which clears its unread mark. */}
@@ -112,6 +126,7 @@ function PaneHeader(props: {
   /** The leftmost header makes room for the window controls when the sidebar is collapsed. */
   readonly first: boolean;
   readonly icon: ReactNode;
+  readonly actions?: ReactNode;
   readonly children: ReactNode;
 }) {
   return (
@@ -123,7 +138,8 @@ function PaneHeader(props: {
       )}
     >
       {props.icon}
-      {props.children}
+      <span className="min-w-0 flex-1 truncate">{props.children}</span>
+      {props.actions}
     </header>
   );
 }

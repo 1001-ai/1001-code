@@ -2,8 +2,10 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   INBOX_AGENT_DEFAULT_MODEL,
+  InboxAgentError,
   inboxAgentDefaultModel,
   inboxAgentDigestOf,
+  inboxAgentResetFailureMessage,
   isInboxThreadShell,
 } from "./inboxAgent.ts";
 import {
@@ -128,5 +130,18 @@ describe("lockedAgents", () => {
     expect(inboxAgentDigestOf(record(digest))).toEqual(digest);
     expect(inboxAgentDigestOf(record({ since: 1 }))).toBeNull();
     expect(inboxAgentDigestOf(undefined)).toBeNull();
+  });
+
+  it("formats Inbox reset failure reasons and authorization errors cleanly", () => {
+    expect(inboxAgentResetFailureMessage(new InboxAgentError({ reason: "unavailable" }))).toBe(
+      "Claude or Antigravity is not ready or is disabled for this project.",
+    );
+    expect(
+      inboxAgentResetFailureMessage(new InboxAgentError({ reason: "project-not-found" })),
+    ).toBe("This project no longer exists.");
+    expect(
+      inboxAgentResetFailureMessage({ _tag: "EnvironmentAuthorizationError", message: "Denied." }),
+    ).toBe("This connection is not allowed to reset the Inbox on this server.");
+    expect(inboxAgentResetFailureMessage(new Error("Socket closed."))).toBe("Socket closed.");
   });
 });

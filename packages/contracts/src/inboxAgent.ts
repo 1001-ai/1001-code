@@ -1,6 +1,6 @@
 import * as Schema from "effect/Schema";
 
-import { IsoDateTime, NonNegativeInt, ThreadId } from "./baseSchemas.ts";
+import { IsoDateTime, NonNegativeInt, ProjectId, ThreadId } from "./baseSchemas.ts";
 import type { OrchestrationMessageContext } from "./composerContext.ts";
 import { ANTIGRAVITY_DEFAULT_MODEL } from "./model.ts";
 import type { OrchestrationV2ThreadShell } from "./orchestrationV2.ts";
@@ -112,4 +112,55 @@ export function inboxAgentDigestOf(
     return decoded._tag === "Some" ? decoded.value : null;
   }
   return null;
+}
+
+export const InboxAgentProjectInput = Schema.Struct({
+  projectId: ProjectId,
+});
+export type InboxAgentProjectInput = typeof InboxAgentProjectInput.Type;
+
+export const InboxAgentResetResult = Schema.Struct({
+  /** The brand-new Inbox thread replacing the old one. */
+  threadId: ThreadId,
+  /** The deleted Inbox thread, or null if the project did not have one yet. */
+  previousThreadId: Schema.NullOr(ThreadId),
+});
+export type InboxAgentResetResult = typeof InboxAgentResetResult.Type;
+
+export const InboxAgentErrorReason = Schema.Literals([
+  "project-not-found",
+  "unsupported",
+  "unavailable",
+  "failed",
+]);
+export type InboxAgentErrorReason = typeof InboxAgentErrorReason.Type;
+
+const INBOX_ERROR_MESSAGES: Record<InboxAgentErrorReason, string> = {
+  "project-not-found": "This project no longer exists.",
+  unsupported: "This project does not have an Inbox.",
+  unavailable: "Claude or Antigravity is not ready or is disabled for this project.",
+  failed: "Could not reset the Inbox thread.",
+};
+
+const isInboxErrorReason = Schema.is(InboxAgentErrorReason);
+
+export class InboxAgentError extends Schema.TaggedError<InboxAgentError>()("InboxAgentError", {
+  reason: InboxAgentErrorReason,
+}) {
+  override get message(): string {
+    return INBOX_ERROR_MESSAGES[this.reason];
+  }
+}
+
+/** Human-readable error message when resetting the Inbox fails. */
+export function inboxAgentResetFailureMessage(error: unknown): string {
+  const fields = typeof error === "object" && error !== null ? error : {};
+  const reason = "reason" in fields ? fields.reason : undefined;
+  if (isInboxErrorReason(reason)) return INBOX_ERROR_MESSAGES[reason];
+  if ("_tag" in fields && fields._tag === "EnvironmentAuthorizationError") {
+    return "This connection is not allowed to reset the Inbox on this server.";
+  }
+  return error instanceof Error && error.message.trim().length > 0
+    ? error.message
+    : INBOX_ERROR_MESSAGES.failed;
 }

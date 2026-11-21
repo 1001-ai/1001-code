@@ -46,6 +46,7 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   [WS_METHODS.voiceAgentSay]: AuthOrchestrationOperateScope,
   [WS_METHODS.voiceAgentClose]: AuthOrchestrationOperateScope,
   [WS_METHODS.voiceAgentMediaStep]: AuthOrchestrationOperateScope,
+  [WS_METHODS.inboxAgentReset]: AuthOrchestrationOperateScope,
   [WS_METHODS.serverRefreshProviders]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsRunAction]: AuthSourceControlWriteScope,
   [WS_METHODS.pullRequestsUpdate]: AuthSourceControlWriteScope,

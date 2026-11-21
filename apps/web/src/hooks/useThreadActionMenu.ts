@@ -23,6 +23,11 @@ import {
   threadActionRequiresOperate,
   type ThreadActionMenuId,
 } from "../components/threadActionMenu.logic";
+import {
+  INBOX_RESET_MENU_ITEM_ID,
+  withInboxResetMenuItem,
+} from "../components/inboxAgent/inboxResetMenu.logic";
+import { resetInboxFromMenu } from "../components/inboxAgent/inboxResetMenu";
 import { titleRegenerationToast } from "../components/threadTitleRegenerationToast";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import { copyThreadReference } from "../lib/copyThreadReference";
@@ -138,25 +143,47 @@ export function useThreadActionMenu(input: {
       };
       const isRegeneratingTitle = thread.titleRegeneration != null;
       const snoozePresets = resolveSnoozePresets(now, timestampFormat, threadRef.environmentId);
-      const items = buildThreadActionMenuItems({
-        canOperate: readEnvironmentScope(threadRef.environmentId, AuthOrchestrationOperateScope),
-        canFind: onFind !== undefined,
-        branch: thread.branch ?? null,
-        projectFilter: null,
-        isPinned: thread.pinnedAt != null,
-        isSettled: supports.settlement && thread.settledOverride === "settled",
-        autoSettleEnabled: thread.autoSettleDisabledAt == null,
-        isSnoozed: supports.snooze && effectiveSnoozed(thread, { now: now.toISOString() }),
-        canSnoozeNow: canSnooze(thread, { now: now.toISOString() }),
-        isRegeneratingTitle,
-        isRunning: !threadRuntimeCanArchive(thread.runtime),
-        supports,
-        snoozePresets,
-        canShareWithGuest,
-        canTurnIntoProject: canTurnThreadIntoProject(threadRef),
-      });
+      const canOperate = readEnvironmentScope(
+        threadRef.environmentId,
+        AuthOrchestrationOperateScope,
+      );
+      const items = withInboxResetMenuItem(
+        thread,
+        canOperate,
+        buildThreadActionMenuItems({
+          canOperate,
+          canFind: onFind !== undefined,
+          branch: thread.branch ?? null,
+          projectFilter: null,
+          isPinned: thread.pinnedAt != null,
+          isSettled: supports.settlement && thread.settledOverride === "settled",
+          autoSettleEnabled: thread.autoSettleDisabledAt == null,
+          isSnoozed: supports.snooze && effectiveSnoozed(thread, { now: now.toISOString() }),
+          canSnoozeNow: canSnooze(thread, { now: now.toISOString() }),
+          isRegeneratingTitle,
+          isRunning: !threadRuntimeCanArchive(thread.runtime),
+          supports,
+          snoozePresets,
+          canShareWithGuest,
+          canTurnIntoProject: canTurnThreadIntoProject(threadRef),
+        }),
+      );
       const clicked = await settlePromise(() => api.contextMenu.show(items, position));
       if (clicked._tag === "Failure" || clicked.value === null) return;
+      if (clicked.value === INBOX_RESET_MENU_ITEM_ID) {
+        const project = projects.find(
+          (candidate) =>
+            candidate.environmentId === thread.environmentId && candidate.id === thread.projectId,
+        );
+        await resetInboxFromMenu({
+          environmentId: threadRef.environmentId,
+          projectId: thread.projectId,
+          projectDisplayName: project?.title,
+          previousThreadId: threadRef.threadId,
+          router,
+        });
+        return;
+      }
       const action: ThreadActionMenuId = clicked.value;
       if (
         threadActionRequiresOperate(action) &&
