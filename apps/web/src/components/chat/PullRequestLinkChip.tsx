@@ -1,5 +1,6 @@
 import type { EnvironmentId, PullRequestRef, ScopedThreadRef } from "@t3tools/contracts";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+import { useMessages } from "gt-react";
 
 import { PULL_REQUEST_STATE_PRESENTATION } from "~/components/pullRequest/pullRequestIcons";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
@@ -51,6 +52,7 @@ export function pullRequestLinkChip(input: {
 
 /** A pull request link's content as a chip with its state's icon and color. */
 export function PullRequestLinkChip({ target, label }: PullRequestLinkChipProps) {
+  const m = useMessages();
   const state = pullRequestChipState(
     useSharedPullRequestSummary(target.environmentId, target.input),
   );
@@ -60,7 +62,7 @@ export function PullRequestLinkChip({ target, label }: PullRequestLinkChipProps)
       {state === null ? (
         <Icon aria-hidden />
       ) : (
-        <Icon role="img" aria-label={PULL_REQUEST_STATE_PRESENTATION[state].label} />
+        <Icon role="img" aria-label={m(PULL_REQUEST_STATE_PRESENTATION[state].label)} />
       )}
       <ContextChipLabel className="[a:hover_&]:decoration-current">{label}</ContextChipLabel>
     </ContextChip>
