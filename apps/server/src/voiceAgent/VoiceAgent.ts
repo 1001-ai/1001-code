@@ -407,7 +407,9 @@ const make = Effect.gen(function* () {
         ? null
         : { id: parentId, projectId: input.projectId, branch: null, worktreePath: null });
     if (parent === null) return yield* new VoiceAgentError({ reason: "thread-not-found" });
-    const provider = replay ? undefined : lockedAgentProvider(yield* registry.getProviders);
+    const provider = replay
+      ? undefined
+      : lockedAgentProvider(yield* registry.getProviders, "voice");
     const selection: ModelSelection | undefined = replay
       ? DEV_REPLAY_SELECTION
       : provider && { instanceId: provider.instanceId, model: VOICE_AGENT_DEFAULT_MODEL };

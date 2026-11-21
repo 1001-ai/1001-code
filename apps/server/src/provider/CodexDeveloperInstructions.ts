@@ -2,6 +2,7 @@ import type { V2TurnStartParams__AdditionalContextEntry } from "effect-codex-app
 import {
   buildRuntimeInstructions,
   liveAppCheckoutCodexContext,
+  questionCardCodexContext,
   replyMarkerCodexContext,
   backReferenceCodexContext,
 } from "@t3tools/provider-core/server/runtimeInstructions";
@@ -62,10 +63,12 @@ export function buildCodexAdditionalContext(
         harness: "Codex",
         ...runtime,
         liveAppCheckout: false,
+        questionCards: false,
         replyMarkers: false,
         backReferences: false,
       }),
     },
+    ...questionCardCodexContext(),
     ...replyMarkerCodexContext(),
     ...backReferenceCodexContext(),
     ...liveAppCheckoutCodexContext(),

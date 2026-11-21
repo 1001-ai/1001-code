@@ -58,6 +58,10 @@ vi.mock(import("../../state/environments"), () => ({
   useEnvironment: (() => null) as never,
 }));
 
+vi.mock(import("../../state/linkedThreadView"), () => ({
+  useLinkedThreadOpener: (() => null) as never,
+}));
+
 vi.mock(import("../../hooks/useSettings"), () => ({
   useEnvironmentSettings: (() => DEFAULT_UNIFIED_SETTINGS) as never,
 }));
@@ -212,7 +216,7 @@ it("opens the same-provider model menu without opening the subagent thread and s
   );
 
   await screen.getByRole("button", { name: "Open Review auth flow" }).click();
-  expect(onOpenThread).toHaveBeenCalledWith(childThreadId);
+  expect(onOpenThread).toHaveBeenCalledWith(childThreadId, undefined, "primary");
 });
 
 it("shows a static model label for finished provider-native subagents", async () => {

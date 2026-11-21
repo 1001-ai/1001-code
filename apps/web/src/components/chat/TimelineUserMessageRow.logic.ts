@@ -7,16 +7,21 @@ import {
   isVideoAttachment,
 } from "../../types";
 import type { ComposerContextRecord, KnownComposerContextRecord } from "@t3tools/contracts";
+import { msg } from "gt-react";
 import type { resolveUserMessagePresentation } from "@t3tools/client-runtime/user-message";
 import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
 import { filePreviewKind } from "@t3tools/shared/filePreview";
+import { m, type MessageResolver } from "~/i18n/messages";
 import {
   asKnownContextRecord,
   type ResolvedUserMessageContext,
 } from "~/lib/composerContextRecords";
 
-export function userMessageFileLabel(file: Pick<ChatFileAttachment, "name" | "source">) {
-  return file.source?._tag === "pasted-text" ? "Pasted text" : file.name;
+export function userMessageFileLabel(
+  file: Pick<ChatFileAttachment, "name" | "source">,
+  resolve: MessageResolver = m,
+) {
+  return file.source?._tag === "pasted-text" ? resolve(msg("Pasted text")) : file.name;
 }
 
 export function resolvePreviewAnnotationImage(input: {

@@ -13,12 +13,8 @@ import {
   type UsageLimitSourceSnapshots,
 } from "@t3tools/contracts";
 import type { ThreadTurnSubagents } from "@t3tools/client-runtime/state/thread-subagents";
-import {
-  formatDuration,
-  type LimitPace,
-  paceOf,
-  remainingPercent,
-} from "@t3tools/shared/usageLimits";
+import { type LimitPace, paceOf, remainingPercent } from "@t3tools/shared/usageLimits";
+import { formatDuration } from "@t3tools/shared/usageLimitsCopy";
 import { createLucideIcon, GaugeIcon } from "lucide-react";
 import { memo, useState, type ReactNode } from "react";
 

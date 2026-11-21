@@ -20,10 +20,11 @@ import { usePaneOnScreen } from "./paneStripMode";
 import { PANE_STRIP_PROJECT_ATTRIBUTE, PaneStripNudge } from "./PaneStripNudge";
 
 // The Inbox agent edits no files and has no terminal, so there is nothing to hand the thread.
-const INBOX_PARENT_PANEL: SideChatParentPanel = {
+const inboxParentPanel = (hostRef: ScopedThreadRef): SideChatParentPanel => ({
+  hostRef,
   openToolDiff: () => {},
   runShellCommand: () => {},
-};
+});
 
 // The cards were written for a chat's margin: these stand in for the open chat's rows and minimap.
 const NO_ROWS: [] = [];
@@ -151,7 +152,7 @@ const InboxChat = memo(function InboxChat(props: {
             environmentId={environmentId}
             threadId={threadId}
             routeKind="server"
-            embedded={INBOX_PARENT_PANEL}
+            embedded={inboxParentPanel(scopeThreadRef(environmentId, hostThreadId))}
           />
         </ComposerHandleContext>
       </BackgroundThreadContext>

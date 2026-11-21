@@ -22,6 +22,7 @@ import { PANE_STRIP_ATTRIBUTE, shouldRevealActivePane } from "./paneStrip.logic"
 import { revealColumn } from "./PaneStripMoves";
 import { PANE_STRIP_COLUMN_CLASS, type PaneStripHandle, usePaneOnScreen } from "./paneStripMode";
 import { usePaneStripOrder } from "./paneStripPlacement";
+import { usePaneStripReplace } from "./PaneStripReplace";
 import { PaneStripWidthButton, usePaneStripWidth } from "./PaneStripWidth";
 
 type PanelProps = ComponentProps<typeof ChatRightPanel>;
@@ -58,6 +59,14 @@ function PaneStripPanes(
   const shown = useRef<{ threadKey: string; activeSurfaceId: string | null } | null>(null);
   const browserProfiles = useBrowserDefaults().profiles;
   const surfaces = usePaneStripOrder(props.surfaces);
+  usePaneStripReplace({
+    host,
+    threadKey,
+    surfaces: props.surfaces,
+    titleOf: (surface) => surfaceTitle(surface, props.previewSessions, props.terminalLabelsById),
+    onMove: props.onMoveSurface,
+    onClose: props.onCloseSurface,
+  });
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- scrolls the strip's DOM scroller to the pane that just became active
   useEffect(() => {
@@ -164,7 +173,7 @@ function StripPane(props: {
       )}
     >
       {/* A side chat brings its own title row, with its own Close. */}
-      {surface.kind === "side-chat" ? null : (
+      {surface.kind === "thread" ? null : (
         <header className={cn(PANE_HEADER_CLASS, isElectron && "drag-region")}>
           <span className="min-w-0 max-w-60 truncate">{title}</span>
           <span className="flex [-webkit-app-region:no-drag]">

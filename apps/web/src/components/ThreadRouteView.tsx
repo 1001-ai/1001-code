@@ -8,7 +8,7 @@ import { Navigate, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 import ChatView from "./ChatView";
-import { BackgroundThreadContext } from "./chat/backgroundThread";
+import { BackgroundThreadContext, HiddenThreadContext } from "./chat/backgroundThread";
 import { PaneStripLayout } from "./paneStrip/PaneStripLayout";
 import { SidebarInset } from "./ui/sidebar";
 import { useComposerDraftStore } from "../composerDraftStore";
@@ -32,7 +32,7 @@ import {
  * Keeps the family of an open thread the shell leaves out (an older settled thread) in the shell
  * rows until the route leaves it, so every reader of its shell row finds it.
  */
-function useOpenThreadFamily(threadRef: ScopedThreadRef | null, missing: boolean) {
+export function useOpenThreadFamily(threadRef: ScopedThreadRef | null, missing: boolean) {
   const key = threadRef === null ? null : scopedThreadKey(threadRef);
   // Sticks to the route thread, so the row the family brings in does not release it.
   const [mountedKey, setMountedKey] = useState<string | null>(null);
@@ -231,7 +231,9 @@ export function ThreadRouteView({
       inert={background}
     >
       <PaneStripLayout threadRef={serverThreadRef}>
-        <BackgroundThreadContext value={background}>{view}</BackgroundThreadContext>
+        <BackgroundThreadContext value={background}>
+          <HiddenThreadContext value={background}>{view}</HiddenThreadContext>
+        </BackgroundThreadContext>
       </PaneStripLayout>
       {background ? null : redirect}
     </SidebarInset>

@@ -2,21 +2,28 @@ import * as Schema from "effect/Schema";
 
 import { IsoDateTime, NonNegativeInt, ThreadId } from "./baseSchemas.ts";
 import type { OrchestrationMessageContext } from "./composerContext.ts";
+import { ANTIGRAVITY_DEFAULT_MODEL } from "./model.ts";
 import type { OrchestrationV2ThreadShell } from "./orchestrationV2.ts";
+import type { ProviderDriverKind } from "./providerInstance.ts";
 
 /**
  * Each project has one Inbox: an ordinary thread named "Inbox" that the server makes and that the
- * user talks to about all of the project's threads. It runs on Claude with only its own tools. The
- * wire carries nothing new for it: the server knows its thread from its own state file, and a
- * client finds it with `isInboxThreadShell`.
+ * user talks to about all of the project's threads. It runs on a supported locked-agent provider
+ * (Claude or Antigravity) with only its own tools. The wire carries nothing new for it: the server
+ * knows its thread from its own state file, and a client finds it with `isInboxThreadShell`.
  */
 
-/** The model a new Inbox thread starts on, at medium effort. The user can pick another Claude model. */
+/** The model a new Claude Inbox thread starts on, at medium effort. The user can pick another model or provider. */
 export const INBOX_AGENT_DEFAULT_MODEL = "claude-opus-5-5";
 export const INBOX_AGENT_DEFAULT_EFFORT = "medium";
 export const INBOX_AGENT_THREAD_TITLE = "Inbox";
 /** The Inbox's tool that passes a teammate's message on, unchanged, to one of its project's threads. */
 export const INBOX_FORWARD_TOOL_NAME = "inbox_forward";
+
+/** Default model for a new Inbox thread on a supported locked-agent driver. */
+export function inboxAgentDefaultModel(driver: ProviderDriverKind): string {
+  return driver === "antigravity" ? ANTIGRAVITY_DEFAULT_MODEL : INBOX_AGENT_DEFAULT_MODEL;
+}
 
 /**
  * Whether a thread looks like a project's Inbox from the fields every client already has: the
