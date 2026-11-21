@@ -57,7 +57,7 @@ function blockStatus(view: MemoryView): string {
   if (view.block === null) return `Nothing is sent yet · ${revision}`;
   const bytes = new TextEncoder().encode(view.block).length;
   const size = `About ${Math.ceil(bytes / 4).toLocaleString()} tokens (${(bytes / 1024).toFixed(1)} of ${MEMORY_MAX_BYTES / 1024} KB)`;
-  return `${size} · ${revision}${view.truncated ? " · over the limit, so the end is left out" : ""}`;
+  return `${size} · ${revision}${view.truncated ? " · over the limit, so earlier lines are left out" : ""}`;
 }
 
 /** The project's memory in the right panel: one row per line with its author, changed as a pull request. */

@@ -1,7 +1,13 @@
 import { type MemoryProposal, VOICE_AGENT_MEMORY_CATEGORY } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { memoryProposalInput, proposalForCall, proposalTarget } from "./memoryProposal.logic";
+import {
+  isAllProjectsMemoryFile,
+  memoryProposalInput,
+  proposalForCall,
+  proposalTarget,
+  proposalTargetScope,
+} from "./memoryProposal.logic";
 
 const proposal = (id: string, createdAt: string, text = "Use tabs."): MemoryProposal =>
   ({
@@ -114,5 +120,18 @@ describe("memoryProposalInput", () => {
       kind: null,
       scope: null,
     });
+  });
+
+  it("maps accept choice and cross-project toggle to memory scopes and identifies all-project files", () => {
+    expect(proposalTargetScope("me", false)).toBe("personal-project");
+    expect(proposalTargetScope("me", true)).toBe("personal");
+    expect(proposalTargetScope("team", false)).toBe("project");
+    expect(proposalTargetScope("team", true)).toBe("team");
+
+    expect(isAllProjectsMemoryFile("memory/team.md")).toBe(true);
+    expect(isAllProjectsMemoryFile("memory/people/alice.md")).toBe(true);
+    expect(isAllProjectsMemoryFile("memory/projects/web.md")).toBe(false);
+    expect(isAllProjectsMemoryFile("memory/projects/web/people/alice.md")).toBe(false);
+    expect(isAllProjectsMemoryFile(null)).toBe(false);
   });
 });

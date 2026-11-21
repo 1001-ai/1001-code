@@ -63,6 +63,7 @@ describe("buildMemoryBlock", () => {
     const empty = buildMemoryBlock({ documents: [], repository: null, proposable: true });
     expect(empty?.text).toContain("Nothing is saved yet.");
     expect(empty?.text).toContain("call memory_propose");
+    expect(empty?.text).toContain("Write it neutrally");
     expect(empty?.text).not.toContain("open a pull request");
 
     const mine = buildMemoryBlock({
@@ -117,14 +118,39 @@ describe("buildMemoryBlock", () => {
 
     const long = Array.from({ length: 400 }, (_, index) => `- Memory entry ${index} ✓`).join("\n");
     const cut = buildMemoryBlock({
-      documents: [doc("team", long), doc("personal", "- Mine.", "alice")],
+      documents: [
+        doc("team", long),
+        doc("project", "- Project rule.", "Web"),
+        doc("personal", "- Mine.", "alice"),
+        doc("personal-project", "- Project personal.", "alice"),
+      ],
       repository: null,
       proposable: false,
     });
     expect(cut?.truncated).toBe(true);
     expect(bytes(cut!.text)).toBeLessThanOrEqual(MEMORY_MAX_BYTES);
+    // Earlier sections are trimmed first so personal and project memories stay intact.
     expect(cut?.text).toContain("- Memory entry 0 ✓");
+    expect(cut?.text).toContain("- Project rule.");
+    expect(cut?.text).toContain("- Mine.");
+    expect(cut?.text).toContain("- Project personal.");
     expect(cut?.text).not.toContain("�");
     expect(cut?.text.endsWith("</memory>")).toBe(true);
+
+    // When both team and project exceed the budget, team is dropped completely before personal.
+    const bothLong = buildMemoryBlock({
+      documents: [
+        doc("team", long),
+        doc("project", long, "Web"),
+        doc("personal", "- Mine.", "alice"),
+      ],
+      repository: null,
+      proposable: false,
+    });
+    expect(bothLong?.truncated).toBe(true);
+    expect(bytes(bothLong!.text)).toBeLessThanOrEqual(MEMORY_MAX_BYTES);
+    expect(bothLong?.text).not.toContain("memory/team.md");
+    expect(bothLong?.text).toContain("memory/projects/Web.md");
+    expect(bothLong?.text).toContain("- Mine.");
   });
 });

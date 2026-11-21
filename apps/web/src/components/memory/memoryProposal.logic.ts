@@ -84,6 +84,15 @@ export function memoryScopeLabel(scope: MemoryScope): string {
   }
 }
 
+export function proposalTargetScope(choice: "me" | "team", allProjects: boolean): MemoryScope {
+  if (choice === "me") return allProjects ? "personal" : "personal-project";
+  return allProjects ? "team" : "project";
+}
+
+export function isAllProjectsMemoryFile(file: string | null): boolean {
+  return file === "memory/team.md" || (file !== null && /^memory\/people\/[^/]+\.md$/.test(file));
+}
+
 /** A `memory_propose` call that recorded a proposal; a failed one stays an ordinary tool row. */
 export function isMemoryProposalItem(item: OrchestrationV2TurnItem): boolean {
   return (

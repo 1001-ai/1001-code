@@ -31,7 +31,7 @@ const MemoryProposeTool = Tool.make(MEMORY_PROPOSE_TOOL_NAME, {
         Schema.isMaxLength(MEMORY_PROPOSAL_MAX_LENGTH),
       ).annotate({
         description:
-          "The memory: one short line in plain words. With replaces, the line that takes its place; leave text out to remove that line.",
+          'The memory: one short line in plain words. Write it neutrally (avoid "me" or the user\'s name), since it may be accepted for the team. With replaces, the line that takes its place; leave text out to remove that line.',
       }),
     ),
     reason: Schema.String.check(Schema.isMaxLength(MEMORY_PROPOSAL_REASON_MAX_LENGTH)).annotate({

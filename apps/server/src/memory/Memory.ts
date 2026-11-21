@@ -498,18 +498,50 @@ const make = Effect.gen(function* () {
     if (input.replaces !== undefined) {
       return yield* proposeEdit({ ...input, text, replaces: input.replaces });
     }
-    if (text === "") {
+    const normalized = memoryLineText(text);
+    if (normalized === "") {
       return yield* new TeamCatalogError({
         detail:
           "Give text for a new memory, or replaces with the exact text of a saved memory line to change it (with text) or remove it (without text).",
       });
     }
-    if ((yield* catalogProject(catalog, input.projectId)) === null) {
+    const { view, project } = yield* readWithProject(input.projectId);
+    if (project === null) {
       return yield* new TeamCatalogError({
         detail: `${NOT_IN_CATALOG} There is nowhere to save memory for it.`,
       });
     }
-    return yield* addProposal({ ...input, text });
+    const documents = yield* Effect.forEach(
+      ["team", "project", "personal", "personal-project"] as const,
+      (scope) => writableDocument(view, project, scope),
+    );
+    const savedIn = documents.find(
+      (candidate) =>
+        candidate !== undefined &&
+        candidate.file !== null &&
+        hasMemoryLine(candidate.text, normalized),
+    );
+    if (savedIn !== undefined && savedIn.file !== null) {
+      return yield* new TeamCatalogError({
+        detail: `This memory is already saved in ${savedIn.file}.`,
+      });
+    }
+    const pendingElsewhere = (yield* SubscriptionRef.get(proposalsRef)).find(
+      (proposal) =>
+        proposal.projectId === input.projectId &&
+        proposal.threadId !== input.threadId &&
+        proposal.category === undefined &&
+        proposal.kind === undefined &&
+        proposal.decision === null &&
+        memoryLineText(proposal.text) === normalized,
+    );
+    if (pendingElsewhere !== undefined) {
+      return yield* new TeamCatalogError({
+        detail:
+          "Another thread in this project already proposed this memory and it is waiting for review.",
+      });
+    }
+    return yield* addProposal({ ...input, text: normalized });
   });
 
   /** A change or removal of a saved line, which must be in exactly one of the project's files. */
@@ -637,7 +669,19 @@ const make = Effect.gen(function* () {
     line: string,
   ) {
     const { view, project } = yield* readWithProject(input.projectId);
-    const scope: MemoryScope = input.choice === "me" ? "personal-project" : "project";
+    const scope: MemoryScope =
+      input.scope ?? (input.choice === "me" ? "personal-project" : "project");
+    if (
+      (input.choice === "me" && scope !== "personal" && scope !== "personal-project") ||
+      (input.choice === "team" && scope !== "team" && scope !== "project")
+    ) {
+      return yield* new TeamCatalogError({
+        detail:
+          input.choice === "me"
+            ? "Accept for me can save only to your personal or personal-project memory."
+            : "Accept for team can save only to team or project memory.",
+      });
+    }
     const target = yield* writableDocument(view, project, scope);
     if (view.revision === null || target === undefined) {
       return yield* new TeamCatalogError({ detail: NO_CATALOG });
@@ -645,6 +689,11 @@ const make = Effect.gen(function* () {
     if (target.file === null) {
       return yield* new TeamCatalogError({
         detail: target.unavailable ?? "This scope has no memory file here.",
+      });
+    }
+    if (hasMemoryLine(target.text, line)) {
+      return yield* new TeamCatalogError({
+        detail: `Nothing to save: this memory is already in ${target.file}.`,
       });
     }
     return {
