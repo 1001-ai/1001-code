@@ -206,10 +206,19 @@ const T3_MCP_TITLE_PATTERNS: ReadonlyArray<RegExp> = [
   /^t3-code_([a-z0-9_]+)$/,
   /^mcp__t3-code__([a-z0-9_]+)$/,
   /^mcp_t3-code_([a-z0-9_]+)$/,
+  /^mcp\.t3-code\.([a-z0-9_]+)$/,
   /^t3-code[.:/]([a-z0-9_]+)$/,
   /^Permit ([a-z0-9_]+) on t3-code$/,
-  /^Run (?:mcp_)?t3-code_([a-z0-9_]+)\?$/,
+  /^Run(?:ning)? (?:mcp_)?t3-code_([a-z0-9_]+)\??$/,
 ];
+
+function allowedT3McpTool(server: unknown, tool: unknown, kind: LockedAgentKind): string | null {
+  if (typeof server !== "string" || typeof tool !== "string") return null;
+  const trimmedTool = tool.trim();
+  return server.trim() === T3_MCP_SERVER && lockedAgentToolAllowed(trimmedTool, kind)
+    ? trimmedTool
+    : null;
+}
 
 function extractAllowedT3McpToolFromPermission(
   request: EffectAcpSchema.RequestPermissionRequest,
@@ -217,40 +226,39 @@ function extractAllowedT3McpToolFromPermission(
 ): string | null {
   const { toolCall } = request;
   if (toolCall.toolCallId.startsWith("interaction_")) return null;
-  if (toolCall.kind != null && toolCall.kind !== "other") return null;
   if (toolCall.locations != null && toolCall.locations.length > 0) return null;
 
   const meta = unknownRecord(toolCall._meta);
+  const rawInput = unknownRecord(toolCall.rawInput);
   if (meta !== undefined) {
     const mcp = unknownRecord(meta.mcp);
-    if (mcp !== undefined || meta.is_mcp_tool_call === true) {
-      return mcp?.server === T3_MCP_SERVER &&
-        typeof mcp.tool === "string" &&
-        lockedAgentToolAllowed(mcp.tool, kind)
-        ? mcp.tool
-        : null;
+    if (mcp !== undefined) {
+      return allowedT3McpTool(mcp.server, mcp.tool, kind);
     }
     if (typeof meta.serverId === "string" || typeof meta.toolName === "string") {
-      return meta.serverId === T3_MCP_SERVER &&
-        typeof meta.toolName === "string" &&
-        lockedAgentToolAllowed(meta.toolName, kind)
-        ? meta.toolName
-        : null;
+      return allowedT3McpTool(meta.serverId, meta.toolName, kind);
+    }
+    if (
+      meta.is_mcp_tool_call === true &&
+      rawInput !== undefined &&
+      (typeof rawInput.server === "string" || typeof rawInput.tool === "string")
+    ) {
+      return allowedT3McpTool(rawInput.server, rawInput.tool, kind);
     }
   }
 
-  const rawInput = unknownRecord(toolCall.rawInput);
   if (
     rawInput !== undefined &&
     (typeof rawInput.ServerName === "string" || typeof rawInput.ToolName === "string")
   ) {
-    return rawInput.ServerName === T3_MCP_SERVER &&
-      typeof rawInput.ToolName === "string" &&
-      lockedAgentToolAllowed(rawInput.ToolName, kind)
-      ? rawInput.ToolName
-      : null;
+    if (toolCall.kind != null && toolCall.kind !== "other" && toolCall.kind !== "execute") {
+      return null;
+    }
+    if ("CommandLine" in rawInput || "command" in rawInput) return null;
+    return allowedT3McpTool(rawInput.ServerName, rawInput.ToolName, kind);
   }
 
+  if (toolCall.kind != null && toolCall.kind !== "other") return null;
   const title = toolCall.title?.trim();
   if (!title) return null;
   for (const pattern of T3_MCP_TITLE_PATTERNS) {

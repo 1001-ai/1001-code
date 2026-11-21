@@ -223,9 +223,31 @@ it("allows only LOCKED_AGENT_TOOL_NAMES.inbox on t3-code in the permission gate 
     toolCall: { toolCallId: "tc-1", ...toolCall },
   });
 
-  // Every Inbox tool is allowed via Antigravity 1.4.5 `_meta.mcp`, ACP `_meta.serverId`,
-  // lazy `call_mcp_tool` envelope, or qualified t3-code title.
+  // Every Inbox tool is allowed via Antigravity's `_meta.is_mcp_tool_call` + `rawInput.{server,tool}`,
+  // `_meta.mcp`, ACP `_meta.serverId`, lazy `call_mcp_tool` envelope (including `kind: "execute"`),
+  // or qualified t3-code title.
   for (const tool of LOCKED_AGENT_TOOL_NAMES.inbox) {
+    expect(
+      lockedAgentAntigravityPermissionDisposition(
+        permission({
+          title: `mcp.t3-code.${tool}`,
+          kind: "other",
+          _meta: { is_mcp_tool_call: true },
+          rawInput: { server: "t3-code", tool, arguments: {} },
+        }),
+        inbox.id,
+      ),
+    ).toBe("allow");
+    expect(
+      lockedAgentAntigravityPermissionDisposition(
+        permission({
+          title: `Run mcp_t3-code_${tool}?`,
+          kind: "other",
+          _meta: { is_mcp_tool_call: true },
+        }),
+        inbox.id,
+      ),
+    ).toBe("allow");
     expect(
       lockedAgentAntigravityPermissionDisposition(
         permission({
@@ -241,6 +263,16 @@ it("allows only LOCKED_AGENT_TOOL_NAMES.inbox on t3-code in the permission gate 
         permission({
           title: `Permit ${tool} on t3-code`,
           kind: "other",
+        }),
+        inbox.id,
+      ),
+    ).toBe("allow");
+    expect(
+      lockedAgentAntigravityPermissionDisposition(
+        permission({
+          title: `MCP Tool ${tool}`,
+          kind: "execute",
+          rawInput: { ServerName: "t3-code", ToolName: tool, Arguments: {} },
         }),
         inbox.id,
       ),
@@ -269,6 +301,33 @@ it("allows only LOCKED_AGENT_TOOL_NAMES.inbox on t3-code in the permission gate 
 
   // Disallowed T3 MCP tools, other MCP servers, built-ins, file locations, and questions are denied.
   for (const denied of [
+    permission({
+      title: "mcp.t3-code.t3_thread_interrupt",
+      kind: "other",
+      _meta: { is_mcp_tool_call: true },
+      rawInput: { server: "t3-code", tool: "t3_thread_interrupt", arguments: {} },
+    }),
+    permission({
+      title: "mcp.t3-code.t3_thread_read",
+      kind: "other",
+      _meta: { is_mcp_tool_call: true },
+      rawInput: { server: "evil", tool: "t3_thread_read", arguments: {} },
+    }),
+    permission({
+      title: "t3-code_t3_thread_read",
+      kind: "other",
+      _meta: { is_mcp_tool_call: true },
+      rawInput: { server: "t3-code", tool: "delegate_task", arguments: {} },
+    }),
+    permission({
+      title: "MCP Tool t3_thread_read",
+      kind: "execute",
+      rawInput: {
+        ServerName: "t3-code",
+        ToolName: "t3_thread_read",
+        CommandLine: "rm -rf /",
+      },
+    }),
     permission({
       title: "t3-code_t3_thread_interrupt",
       kind: "other",
