@@ -19,6 +19,7 @@ import {
   INBOX_LAUNCH_NOT_USER_STARTED,
   INBOX_LAUNCH_OTHER_PROJECT,
   INBOX_LAUNCH_UNREADABLE,
+  INBOX_SEND_NEEDS_QUEUE,
   INBOX_SEND_NOT_USER_STARTED,
   INBOX_SEND_OTHER_PROJECT,
   INBOX_SEND_RELAYED,
@@ -176,10 +177,34 @@ const CASES: ReadonlyArray<{
     args: { threadId: OTHER_PROJECT },
     refused: INBOX_SEND_OTHER_PROJECT,
   },
-  { name: "allows another project's Inbox", args: { threadId: OTHER_INBOX }, refused: null },
+  {
+    name: "allows another project's Inbox as a queued run",
+    args: { threadId: OTHER_INBOX, mode: "queue" },
+    refused: null,
+  },
+  {
+    name: "refuses another project's Inbox with the default mode, which can join its run",
+    args: { threadId: OTHER_INBOX },
+    refused: INBOX_SEND_NEEDS_QUEUE,
+  },
+  {
+    name: "refuses another project's Inbox in auto mode",
+    args: { threadId: OTHER_INBOX, mode: "auto" },
+    refused: INBOX_SEND_NEEDS_QUEUE,
+  },
+  {
+    name: "refuses steering another project's Inbox",
+    args: { threadId: OTHER_INBOX, mode: "steer" },
+    refused: INBOX_SEND_NEEDS_QUEUE,
+  },
+  {
+    name: "keeps any mode for its own project's threads",
+    args: { threadId: SAME_PROJECT, mode: "steer" },
+    refused: null,
+  },
   {
     name: "refuses a thread of another project only named Inbox",
-    args: { threadId: LOOKALIKE_INBOX },
+    args: { threadId: LOOKALIKE_INBOX, mode: "queue" },
     refused: INBOX_SEND_OTHER_PROJECT,
   },
   {
@@ -189,7 +214,7 @@ const CASES: ReadonlyArray<{
   },
   {
     name: "refuses another project's Inbox in another environment",
-    args: { threadId: OTHER_INBOX, environmentId: "environment-elsewhere" },
+    args: { threadId: OTHER_INBOX, environmentId: "environment-elsewhere", mode: "queue" },
     refused: INBOX_SEND_OTHER_PROJECT,
   },
   {
@@ -201,13 +226,13 @@ const CASES: ReadonlyArray<{
   {
     name: "refuses the sending Inbox in a run it started",
     setup: relayedBy(OTHER_INBOX),
-    args: { threadId: OTHER_INBOX },
+    args: { threadId: OTHER_INBOX, mode: "queue" },
     refused: INBOX_SEND_RELAYED,
   },
   {
     name: "refuses a third project's Inbox in a run another Inbox started",
     setup: relayedBy(OTHER_INBOX),
-    args: { threadId: THIRD_INBOX },
+    args: { threadId: THIRD_INBOX, mode: "queue" },
     refused: INBOX_SEND_RELAYED,
   },
   {

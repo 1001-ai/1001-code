@@ -73,6 +73,7 @@ describe("lockedAgents", () => {
       "t3_thread_list",
       "t3_thread_read",
       "t3_thread_search",
+      "t3_project_list",
       "t3_thread_send",
       "t3_thread_wait",
       "t3_thread_launch",

@@ -18,6 +18,8 @@ export const INBOX_SEND_OTHER_PROJECT =
   "The Inbox messages only its own project's threads and other projects' Inboxes, in this environment. To reach another project's thread, message that project's Inbox.";
 export const INBOX_SEND_RELAYED =
   "In a turn another project's Inbox started, the Inbox messages only its own project's threads. Answer that Inbox in your reply instead.";
+export const INBOX_SEND_NEEDS_QUEUE =
+  'The Inbox messages another project\'s Inbox only as a new run. Retry with mode "queue".';
 export const INBOX_SEND_SELF = "The Inbox cannot message itself.";
 export const INBOX_SEND_UNREADABLE =
   "The Inbox could not confirm this send is allowed, so nothing was sent.";
@@ -36,6 +38,7 @@ const SendCall = Schema.Struct({
   arguments: Schema.Struct({
     threadId: ThreadId,
     environmentId: Schema.optional(EnvironmentId),
+    mode: Schema.optional(Schema.String),
   }),
 });
 const decodeSendCall = Schema.decodeUnknownOption(SendCall);
@@ -116,10 +119,10 @@ interface InboxCallInput {
 }
 
 /**
- * Why an Inbox may not make this `t3_thread_send` call, or null when it may, always in this
- * environment and never to itself. In a run answering the user's own message it may send to its
- * project's threads and to other projects' Inboxes; in a run another Inbox's message started, only
- * to its project's threads, so a chain stops there. Anything it cannot read refuses.
+ * Why an Inbox may not make this `t3_thread_send` call, or null when it may: in this environment,
+ * never to itself. A user's run may send to its project's threads and, queued, to other projects'
+ * Inboxes; a run another Inbox's message started only to its project's threads, so a chain stops
+ * there. Anything it cannot read refuses.
  */
 export const inboxSendRefusal = Effect.fn("InboxAgent.sendRefusal")(
   function* (
@@ -141,8 +144,12 @@ export const inboxSendRefusal = Effect.fn("InboxAgent.sendRefusal")(
     if (targetShell === null) return INBOX_SEND_UNREADABLE;
     const ownProject = targetShell.projectId === acting.inbox.projectId;
     if (acting.relayed) return ownProject ? null : INBOX_SEND_RELAYED;
+    if (ownProject) return null;
     // A user's thread titled "Inbox" is not one: only the server's record names a project's Inbox.
-    return ownProject || isInboxThread(target.threadId) ? null : INBOX_SEND_OTHER_PROJECT;
+    if (!isInboxThread(target.threadId)) return INBOX_SEND_OTHER_PROJECT;
+    // Only "queue" always starts its own run there; "auto" (the default) and steers can join the
+    // Inbox's active run, which would not be the relayed turn that caps the chain.
+    return target.mode === "queue" ? null : INBOX_SEND_NEEDS_QUEUE;
   },
   (effect) => effect.pipe(Effect.orElseSucceed(() => INBOX_SEND_UNREADABLE)),
 );
