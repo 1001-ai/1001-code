@@ -10,16 +10,20 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import type * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
+import { isInboxThread } from "./inboxAgentThreads.ts";
 
 export const INBOX_SEND_NOT_USER_STARTED =
-  "The Inbox messages threads only in a turn the user started with their own message. Tell the user what you would send instead.";
-export const INBOX_SEND_OTHER_PROJECT = "The Inbox messages only threads of its own project.";
+  "The Inbox messages threads only in a turn the user started with their own message, or one another project's Inbox started. Tell the user what you would send instead.";
+export const INBOX_SEND_OTHER_PROJECT =
+  "The Inbox messages only its own project's threads and other projects' Inboxes, in this environment. To reach another project's thread, message that project's Inbox.";
+export const INBOX_SEND_RELAYED =
+  "In a turn another project's Inbox started, the Inbox messages only its own project's threads. Answer that Inbox in your reply instead.";
 export const INBOX_SEND_SELF = "The Inbox cannot message itself.";
 export const INBOX_SEND_UNREADABLE =
   "The Inbox could not confirm this send is allowed, so nothing was sent.";
 
 export const INBOX_LAUNCH_NOT_USER_STARTED =
-  "The Inbox starts threads only in a turn the user started with their own message. Tell the user what thread you would start instead.";
+  "The Inbox starts threads only in a turn the user started with their own message, or one another project's Inbox started. Tell the user what thread you would start instead.";
 export const INBOX_LAUNCH_OTHER_PROJECT =
   "The Inbox starts threads only in its own project in this environment. Omit projectId, environmentId and scratch.";
 export const INBOX_LAUNCH_DELEGATED = "The Inbox cannot start delegated tasks. Omit delegatedFrom.";
@@ -47,13 +51,13 @@ const LaunchCall = Schema.Struct({
 });
 const decodeLaunchCall = Schema.decodeUnknownOption(LaunchCall);
 
+type TurnMessage = Pick<
+  OrchestrationV2ConversationMessage,
+  "role" | "createdBy" | "senderThreadId" | "linkedSender" | "scheduledTaskId" | "context"
+>;
+
 /** The user's own words, typed in the thread: not another agent's, a schedule's or a guest's. */
-function isUserTypedMessage(
-  message: Pick<
-    OrchestrationV2ConversationMessage,
-    "role" | "createdBy" | "senderThreadId" | "linkedSender" | "scheduledTaskId" | "context"
-  >,
-): boolean {
+function isUserTypedMessage(message: TurnMessage): boolean {
   return (
     message.role === "user" &&
     message.createdBy === "user" &&
@@ -65,10 +69,27 @@ function isUserTypedMessage(
 }
 
 /**
- * The Inbox's shell while its active run answers the user's own typed message, else null: the
- * Inbox acts on other threads only in such a run.
+ * A `t3_thread_send` from another project's Inbox (it stamps the caller as `senderThreadId`). That
+ * Inbox sends across projects only in a turn its user started, so this one is user-started too.
  */
-const userStartedInbox = Effect.fn("InboxAgent.userStartedInbox")(function* (
+function isInboxRelayedMessage(message: TurnMessage, inboxThreadId: ThreadId): boolean {
+  return (
+    message.role === "user" &&
+    message.createdBy === "agent" &&
+    message.senderThreadId !== undefined &&
+    message.senderThreadId !== inboxThreadId &&
+    isInboxThread(message.senderThreadId) &&
+    message.linkedSender === undefined &&
+    message.scheduledTaskId === undefined &&
+    message.context?.guest === undefined
+  );
+}
+
+/**
+ * The Inbox's shell and who started its active run: the user's own typed message, or another
+ * project's Inbox relaying one. Null for any other run: the Inbox acts on other threads only then.
+ */
+const actingInbox = Effect.fn("InboxAgent.actingInbox")(function* (
   threads: ThreadManagementService.ThreadManagementService["Service"],
   inboxThreadId: ThreadId,
 ) {
@@ -82,7 +103,10 @@ const userStartedInbox = Effect.fn("InboxAgent.userStartedInbox")(function* (
     messageIds: [run.userMessageId],
   });
   const message = messages.find((candidate) => candidate.id === run.userMessageId);
-  return message !== undefined && isUserTypedMessage(message) ? inbox : null;
+  if (message === undefined) return null;
+  if (isUserTypedMessage(message)) return { inbox, relayed: false };
+  if (isInboxRelayedMessage(message, inboxThreadId)) return { inbox, relayed: true };
+  return null;
 });
 
 interface InboxCallInput {
@@ -92,9 +116,10 @@ interface InboxCallInput {
 }
 
 /**
- * Why an Inbox may not make this `t3_thread_send` call, or null when it may. It may send only
- * while its active run answers the user's own message, and only to another thread of its project
- * in this environment. Anything it cannot read refuses.
+ * Why an Inbox may not make this `t3_thread_send` call, or null when it may, always in this
+ * environment and never to itself. In a run answering the user's own message it may send to its
+ * project's threads and to other projects' Inboxes; in a run another Inbox's message started, only
+ * to its project's threads, so a chain stops there. Anything it cannot read refuses.
  */
 export const inboxSendRefusal = Effect.fn("InboxAgent.sendRefusal")(
   function* (
@@ -109,21 +134,24 @@ export const inboxSendRefusal = Effect.fn("InboxAgent.sendRefusal")(
     }
     if (target.threadId === input.inboxThreadId) return INBOX_SEND_SELF;
 
-    const inbox = yield* userStartedInbox(threads, input.inboxThreadId);
-    if (inbox === null) return INBOX_SEND_NOT_USER_STARTED;
+    const acting = yield* actingInbox(threads, input.inboxThreadId);
+    if (acting === null) return INBOX_SEND_NOT_USER_STARTED;
 
     const targetShell = yield* threads.getThreadShell(target.threadId);
     if (targetShell === null) return INBOX_SEND_UNREADABLE;
-    if (targetShell.projectId !== inbox.projectId) return INBOX_SEND_OTHER_PROJECT;
-    return null;
+    const ownProject = targetShell.projectId === acting.inbox.projectId;
+    if (acting.relayed) return ownProject ? null : INBOX_SEND_RELAYED;
+    // A user's thread titled "Inbox" is not one: only the server's record names a project's Inbox.
+    return ownProject || isInboxThread(target.threadId) ? null : INBOX_SEND_OTHER_PROJECT;
   },
   (effect) => effect.pipe(Effect.orElseSucceed(() => INBOX_SEND_UNREADABLE)),
 );
 
 /**
  * Why an Inbox may not make this `t3_thread_launch` call, or null when it may. It may launch only
- * while its active run answers the user's own message, only in its own project in this
- * environment, and always into a new worktree. Anything it cannot read refuses.
+ * while its active run answers the user's own message or another project's Inbox relaying one,
+ * only in its own project in this environment, and always into a new worktree. Anything it cannot
+ * read refuses.
  */
 export const inboxLaunchRefusal = Effect.fn("InboxAgent.launchRefusal")(
   function* (
@@ -142,9 +170,9 @@ export const inboxLaunchRefusal = Effect.fn("InboxAgent.launchRefusal")(
     if (launch.delegatedFrom !== undefined) return INBOX_LAUNCH_DELEGATED;
     if (launch.workspaceStrategy?.type !== "worktree") return INBOX_LAUNCH_NEEDS_WORKTREE;
 
-    const inbox = yield* userStartedInbox(threads, input.inboxThreadId);
-    if (inbox === null) return INBOX_LAUNCH_NOT_USER_STARTED;
-    if (launch.projectId !== undefined && launch.projectId !== inbox.projectId) {
+    const acting = yield* actingInbox(threads, input.inboxThreadId);
+    if (acting === null) return INBOX_LAUNCH_NOT_USER_STARTED;
+    if (launch.projectId !== undefined && launch.projectId !== acting.inbox.projectId) {
       return INBOX_LAUNCH_OTHER_PROJECT;
     }
     return null;
