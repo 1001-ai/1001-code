@@ -73,6 +73,11 @@ describe("memoryProposalInput", () => {
       reason: "Said twice.",
       ...general,
     });
+    expect(memoryProposalInput({ text: "- Use tabs.", reason: "Said twice." })).toEqual({
+      text: "Use tabs.",
+      reason: "Said twice.",
+      ...general,
+    });
     expect(memoryProposalInput({ text: "Use tabs." })).toEqual({
       text: "Use tabs.",
       reason: "",

@@ -659,11 +659,17 @@ it.effect("a proposal made during a slow save is not lost when that save lands",
     const first = yield* Effect.forkChild(memory.proposeFromAgent(agentProposal("Use tabs.")));
     yield* Deferred.await(slowFirstSave.started);
     const second = yield* Effect.forkChild(memory.proposeFromAgent(agentProposal("Prefer pnpm.")));
-    // Lets the second call run as far as it can before the first save lands.
+    const duplicate = yield* Effect.forkChild(
+      Effect.flip(memory.proposeFromAgent(agentProposal("Use tabs.", ThreadId.make("thread-2")))),
+    );
+    // Lets the concurrent calls run as far as they can before the first save lands.
     yield* Effect.yieldNow;
     yield* Deferred.succeed(slowFirstSave.release, undefined);
     yield* Fiber.join(first);
     yield* Fiber.join(second);
+    expect((yield* Fiber.join(duplicate)).detail).toBe(
+      "Another thread in this project already proposed this memory and it is waiting for review.",
+    );
     expect(fixture.store.saved.map((saved) => saved.text)).toEqual(["Use tabs.", "Prefer pnpm."]);
   }).pipe(Effect.scoped),
 );

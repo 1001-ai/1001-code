@@ -35,7 +35,10 @@ export function memoryProposalInput(input: unknown): MemoryProposalInput | null 
   const reason = nonEmpty(fields.reason) ?? "";
   if (voiceAgent) return text === null ? null : { text, reason, voiceAgent, replaces, kind: null };
   if (replaces === null) {
-    return text === null ? null : { text, reason, voiceAgent, replaces: null, kind: null };
+    const normalized = text === null ? "" : lineText(text);
+    return normalized === ""
+      ? null
+      : { text: normalized, reason, voiceAgent, replaces: null, kind: null };
   }
   const old = lineText(replaces);
   return text === null

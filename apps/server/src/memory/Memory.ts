@@ -526,21 +526,6 @@ const make = Effect.gen(function* () {
         detail: `This memory is already saved in ${savedIn.file}.`,
       });
     }
-    const pendingElsewhere = (yield* SubscriptionRef.get(proposalsRef)).find(
-      (proposal) =>
-        proposal.projectId === input.projectId &&
-        proposal.threadId !== input.threadId &&
-        proposal.category === undefined &&
-        proposal.kind === undefined &&
-        proposal.decision === null &&
-        memoryLineText(proposal.text) === normalized,
-    );
-    if (pendingElsewhere !== undefined) {
-      return yield* new TeamCatalogError({
-        detail:
-          "Another thread in this project already proposed this memory and it is waiting for review.",
-      });
-    }
     return yield* addProposal({ ...input, text: normalized });
   });
 
@@ -605,7 +590,8 @@ const make = Effect.gen(function* () {
     readonly file?: string | undefined;
   }) {
     const text = input.text.trim();
-    const existing = (yield* SubscriptionRef.get(proposalsRef)).find(
+    const proposals = yield* SubscriptionRef.get(proposalsRef);
+    const existing = proposals.find(
       (proposal) =>
         proposal.threadId === input.threadId &&
         proposal.text === text &&
@@ -615,6 +601,24 @@ const make = Effect.gen(function* () {
         proposal.decision === null,
     );
     if (existing !== undefined) return onWire(existing);
+    if (input.category === undefined && input.kind === undefined) {
+      const normalized = memoryLineText(text);
+      const pendingElsewhere = proposals.find(
+        (proposal) =>
+          proposal.projectId === input.projectId &&
+          proposal.threadId !== input.threadId &&
+          proposal.category === undefined &&
+          proposal.kind === undefined &&
+          proposal.decision === null &&
+          memoryLineText(proposal.text) === normalized,
+      );
+      if (pendingElsewhere !== undefined) {
+        return yield* new TeamCatalogError({
+          detail:
+            "Another thread in this project already proposed this memory and it is waiting for review.",
+        });
+      }
+    }
     const proposal: MemoryProposalStore.StoredMemoryProposal = {
       id: yield* random.uuidV4(),
       projectId: input.projectId,
