@@ -57,10 +57,10 @@ or press the thread pin shortcut (`mod+shift+p` by default) on the highlighted r
 project** in the command palette and **Settings → Projects** work too. A list keeps its order
 while it is open, so a new pin moves up the next time you open it.
 
-On web and desktop, drag a project by its grip in the sidebar's project filter to reorder your
-projects. Pinned projects stay first, so a project moves within its group. Dropping one sets
-**Settings → General → Project order** to **Manual**; pick another order there to go back. The
-order is kept on this device.
+On web and desktop, drag a project row in the sidebar's Projects section—or by its grip in the
+sidebar's project filter—to reorder your projects. Pinned projects stay first, so a project moves
+within its group. Dropping one sets **Settings → General → Project order** to **Manual**; pick
+another order there to go back. The order is kept on this device.
 
 Archive a project you are done with in **Settings → Projects**. It leaves the project pickers.
 Its threads, settings, and files stay as they are, and archived projects still show in the

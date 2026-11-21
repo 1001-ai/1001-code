@@ -1,3 +1,5 @@
+import type { SyntheticListenerMap } from "@dnd-kit/core/dist/hooks/utilities";
+import { CSS, type Transform } from "@dnd-kit/utilities";
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { settlePromise } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
@@ -15,6 +17,14 @@ import { useSidebar } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { INBOX_STATUS_DOT, inboxFolderRowVisible } from "./inboxSidebar.logic";
 
+export interface InboxSidebarRowSortable {
+  readonly listeners: SyntheticListenerMap | undefined;
+  readonly setNodeRef: (node: HTMLElement | null) => void;
+  readonly transform: Transform | null;
+  readonly transition: string | undefined;
+  readonly isDragging: boolean;
+}
+
 /**
  * A row that opens a project's Inbox. In the Projects section it carries the project's
  * name and icon; as a folder's first row it reads "Inbox" and hides with the folder.
@@ -31,6 +41,7 @@ export const InboxSidebarRow = memo(function InboxSidebarRow(props: {
   /** The folder row this row sits under; a closed folder hides it unless it is open. */
   folderRowId?: string;
   folderCollapsed?: boolean;
+  sortable?: InboxSidebarRowSortable;
 }) {
   const { environmentId, projectId } = props;
   const inbox = useInboxAgent({ environmentId, projectId });
@@ -76,6 +87,7 @@ export const InboxSidebarRow = memo(function InboxSidebarRow(props: {
     projectDisplayName: props.projectDisplayName,
     isActive,
   });
+  const sortable = props.sortable;
   const row = (
     <button
       type="button"
@@ -91,7 +103,8 @@ export const InboxSidebarRow = memo(function InboxSidebarRow(props: {
       }}
       onContextMenu={handleContextMenu}
       className={cn(
-        "flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-md px-(--sidebar-row-content-inset) text-left text-sm text-sidebar-foreground outline-none select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:cursor-default disabled:opacity-60",
+        "flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-md px-(--sidebar-row-content-inset) text-left text-sm text-sidebar-foreground outline-none select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:pointer-events-none disabled:cursor-default disabled:opacity-60",
+        sortable?.isDragging && "cursor-grabbing",
         isActive ? "bg-sidebar-row-active" : "hover:bg-sidebar-row-hover",
       )}
     >
@@ -108,12 +121,28 @@ export const InboxSidebarRow = memo(function InboxSidebarRow(props: {
       ) : null}
     </button>
   );
+  const sortableStyle =
+    sortable && (sortable.transform || sortable.transition)
+      ? {
+          transform: CSS.Translate.toString(sortable.transform),
+          transition: sortable.transition,
+        }
+      : undefined;
   return (
-    <li className="list-none py-0.5">
+    <li
+      ref={sortable?.setNodeRef}
+      style={sortableStyle}
+      {...(sortable?.listeners ?? {})}
+      data-dragging={sortable?.isDragging ? "true" : undefined}
+      className={cn(
+        "list-none py-0.5",
+        sortable?.isDragging && "relative z-10 rounded-md bg-sidebar shadow-md",
+      )}
+    >
       {inbox.unavailableReason === null ? (
         row
       ) : (
-        <Tooltip>
+        <Tooltip disabled={sortable?.isDragging}>
           <TooltipTrigger render={<span className="flex w-full" />}>{row}</TooltipTrigger>
           <TooltipPopup side="right">{inbox.unavailableReason}</TooltipPopup>
         </Tooltip>
