@@ -659,6 +659,6 @@ One entry for each place this fork changes a file upstream owns, or replaces som
 ### The sidebar's Projects section collapses
 
 - **Where:** only fork files: `apps/web/src/components/inboxAgent/SidebarProjectsSection.tsx` draws its header with upstream's `CollapsibleSectionHeader`, the shelves' header, and keeps the open state in local storage under `t3code:sidebar:projects-expanded` (open by default); `SidebarProjectsSection.browser.test.tsx` covers collapsing and the remembered state. No upstream file changes.
-- **Why:** with many projects the section pushes threads down. Collapsed, only the header and its project count show, like the Working, Snoozed and Settled shelves. Per device and client only, as the shelves are. Mobile is unchanged.
+- **Why:** with many projects the section pushes threads down. Collapsed, only the header and its project count show, like the Working, Snoozed and Settled shelves; the rows pass the header as their parent (`folderRowId`, for arrow keys) and `folderCollapsed`, so the open Inbox's row stays, as it does in a closed folder. Per device and client only, as the shelves are. Mobile is unchanged.
 - **On conflict:** none expected. If upstream renames or restyles `CollapsibleSectionHeader` or `useLocalStorage`, follow it.
 - **Check:** `vp test run src/components/inboxAgent/SidebarProjectsSection.browser.test.tsx` (from `apps/web`) passes.

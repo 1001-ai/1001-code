@@ -8,6 +8,7 @@ import { InboxSidebarRow } from "./InboxSidebarRow";
 import { inboxSidebarProjects } from "./inboxSidebar.logic";
 
 export const PROJECTS_SECTION_EXPANDED_KEY = "t3code:sidebar:projects-expanded";
+const PROJECTS_SECTION_ROW_ID = "section:projects";
 
 /** Without project folders: one row per project in scope, each opening that project's Inbox. */
 export const SidebarProjectsSection = memo(function SidebarProjectsSection(props: {
@@ -26,7 +27,7 @@ export const SidebarProjectsSection = memo(function SidebarProjectsSection(props
     <>
       <li className="relative mx-0.5 h-8 list-none">
         <CollapsibleSectionHeader
-          data-sidebar-row="section:projects"
+          data-sidebar-row={PROJECTS_SECTION_ROW_ID}
           data-testid="sidebar-projects-header"
           expanded={expanded}
           onClick={() => setExpanded((value) => !value)}
@@ -35,19 +36,20 @@ export const SidebarProjectsSection = memo(function SidebarProjectsSection(props
           Projects
         </CollapsibleSectionHeader>
       </li>
-      {expanded
-        ? groups.map((group) => (
-            <InboxSidebarRow
-              key={group.projectKey}
-              environmentId={group.environmentId}
-              projectId={group.id}
-              label={group.displayName}
-              projectDisplayName={group.displayName}
-              favicon={group}
-              routeThreadKey={props.routeThreadKey}
-            />
-          ))
-        : null}
+      {/* Collapsed, the rows hide as a closed folder's Inbox does: the open Inbox stays. */}
+      {groups.map((group) => (
+        <InboxSidebarRow
+          key={group.projectKey}
+          environmentId={group.environmentId}
+          projectId={group.id}
+          label={group.displayName}
+          projectDisplayName={group.displayName}
+          favicon={group}
+          routeThreadKey={props.routeThreadKey}
+          folderRowId={PROJECTS_SECTION_ROW_ID}
+          folderCollapsed={!expanded}
+        />
+      ))}
       <li aria-hidden className="mx-2.5 my-1.5 h-px list-none bg-sidebar-border/60" />
     </>
   );

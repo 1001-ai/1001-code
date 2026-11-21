@@ -3,8 +3,10 @@ import { expect, it, vi } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
 
 vi.mock(import("./InboxSidebarRow"), () => ({
-  InboxSidebarRow: ((props: { label: string }) => (
-    <li data-testid="projects-section-row">{props.label}</li>
+  InboxSidebarRow: ((props: { label: string; folderCollapsed?: boolean }) => (
+    <li data-testid="projects-section-row" data-collapsed={String(props.folderCollapsed)}>
+      {props.label}
+    </li>
   )) as never,
 }));
 
@@ -30,7 +32,7 @@ function section() {
   );
 }
 
-it("collapses to its header and remembers it across reloads", async () => {
+it("collapses its rows and remembers it across reloads", async () => {
   localStorage.removeItem(PROJECTS_SECTION_EXPANDED_KEY);
   using _storage = {
     [Symbol.dispose]: () => localStorage.removeItem(PROJECTS_SECTION_EXPANDED_KEY),
@@ -42,13 +44,12 @@ it("collapses to its header and remembers it across reloads", async () => {
     await expect.element(screen.getByText("No project")).toBeInTheDocument();
     await userEvent.click(header);
     await expect.element(header).toHaveAttribute("aria-expanded", "false");
-    await expect
-      .element(screen.getByTestId("projects-section-row").first())
-      .not.toBeInTheDocument();
+    await expect.element(screen.getByText("No project")).toHaveAttribute("data-collapsed", "true");
   }
   await using screen = await render(section());
   const header = screen.getByTestId("sidebar-projects-header");
   await expect.element(header).toHaveAttribute("aria-expanded", "false");
+  await expect.element(screen.getByText("Acme")).toHaveAttribute("data-collapsed", "true");
   await userEvent.click(header);
-  await expect.element(screen.getByText("Acme")).toBeInTheDocument();
+  await expect.element(screen.getByText("Acme")).toHaveAttribute("data-collapsed", "false");
 });
