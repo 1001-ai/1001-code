@@ -12,6 +12,8 @@ import { CSS } from "@dnd-kit/utilities";
 import { GripVerticalIcon } from "lucide-react";
 import { type ComponentProps, createContext, use, useState } from "react";
 
+import type { SidebarProjectSortOrder } from "@t3tools/contracts/settings";
+
 import { updateClientSettings, useClientSettings } from "../../hooks/useSettings";
 import { keepOrder } from "../../hooks/useOrderWhileOpen";
 import type { SidebarProjectSnapshot } from "../../sidebarProjectGrouping";
@@ -21,6 +23,36 @@ import { moveProjectScopeKey, projectOrderForGroups } from "./projectScopeReorde
 
 const ReorderDisabledContext = createContext(true);
 const GRIP_SELECTOR = "[data-project-scope-grip]";
+
+/**
+ * Moves `activeKey` onto `overKey` within `groups`, saves the resulting manual order on this
+ * device, and switches Project order to Manual. Returns the new key order, or null when nothing
+ * moves (including drops across the pinned line).
+ */
+export function commitProjectGroupReorder(input: {
+  readonly groups: readonly SidebarProjectSnapshot[];
+  readonly activeKey: string;
+  readonly overKey: string;
+  readonly sortOrder: SidebarProjectSortOrder;
+}): string[] | null {
+  const keys = input.groups.map((group) => group.projectKey);
+  const groupByKey = new Map(input.groups.map((group) => [group.projectKey, group] as const));
+  const moved = moveProjectScopeKey({
+    keys,
+    pinnedKeys: new Set(keys.filter((key) => groupByKey.get(key)?.pinned)),
+    activeKey: input.activeKey,
+    overKey: input.overKey,
+  });
+  if (moved === null) return null;
+  const movedGroups = moved.flatMap((key) => groupByKey.get(key) ?? []);
+  useUiStateStore.setState((state) => ({
+    projectOrder: projectOrderForGroups({ groups: movedGroups, previousOrder: state.projectOrder }),
+  }));
+  if (input.sortOrder !== "manual") {
+    void updateClientSettings({ sidebarProjectSortOrder: "manual" });
+  }
+  return moved;
+}
 
 /** Shows a drop in the open menu at once; the menu otherwise keeps its opening order. */
 export function useProjectScopeDropOrder<TItem extends { readonly value: string }>(
@@ -51,23 +83,19 @@ export function ProjectScopeReorderList({
   readonly disabled: boolean;
   readonly onReordered: (keys: readonly string[]) => void;
 }) {
-  const keys = items.flatMap((item) => (groupByKey.has(item.value) ? [item.value] : []));
+  const projectGroups = items.flatMap((item) => groupByKey.get(item.value) ?? []);
+  const keys = projectGroups.map((group) => group.projectKey);
   const sortOrder = useClientSettings((settings) => settings.sidebarProjectSortOrder);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
   const handleDragEnd = (event: DragEndEvent) => {
     if (event.over === null) return;
-    const moved = moveProjectScopeKey({
-      keys,
-      pinnedKeys: new Set(keys.filter((key) => groupByKey.get(key)?.pinned)),
+    const moved = commitProjectGroupReorder({
+      groups: projectGroups,
       activeKey: String(event.active.id),
       overKey: String(event.over.id),
+      sortOrder,
     });
     if (moved === null) return;
-    const groups = moved.flatMap((key) => groupByKey.get(key) ?? []);
-    useUiStateStore.setState((state) => ({
-      projectOrder: projectOrderForGroups({ groups, previousOrder: state.projectOrder }),
-    }));
-    if (sortOrder !== "manual") void updateClientSettings({ sidebarProjectSortOrder: "manual" });
     // Rows the menu shows that are not projects ("All projects") keep their places in front.
     onReordered([
       ...items.map((item) => item.value).filter((key) => !groupByKey.has(key)),
