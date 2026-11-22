@@ -261,7 +261,9 @@ the left, and each run of one person's cards starts with their name. A narrower 
 chat's turn markers there instead. Hover or focus a card to open it in place with its details;
 click it, or **Jump to it**, to scroll to that point in this thread, or **Open thread** for a
 moment in another thread. **Open PR** opens its pull request. A new card always brings the list
-back to the newest.
+back to the newest. Click **Activity** at the top of the list to hide it, and again to bring it
+back; the margin shows the chat's turn markers while it is hidden, and the choice is kept in this
+browser.
 
 In a [team project](./team-projects.md), the list also shows when teammates' agents on the
 [Agents board](./team-projects.md#agents-board) start, ask a question, or finish, under the

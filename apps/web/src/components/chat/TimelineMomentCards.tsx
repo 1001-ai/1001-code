@@ -26,6 +26,7 @@ import { formatShortTimestamp } from "~/timestampFormat";
 import { PULL_REQUEST_STATE_PRESENTATION } from "../pullRequest/pullRequestIcons";
 import { Button } from "../ui/button";
 import { Switch } from "../ui/switch";
+import { ActivityListToggle, useActivityListShown } from "./ActivityListToggle";
 import type { MessagesTimelineRow } from "./MessagesTimeline.logic";
 import {
   findMessageRow,
@@ -79,16 +80,7 @@ interface Expanded {
   readonly shown: string | null;
 }
 
-export function TimelineMomentCards({
-  threadRef,
-  projectId,
-  moments,
-  gutterWidth,
-  rows,
-  stripMap,
-  onWheel,
-  onJump,
-}: {
+interface MomentCardsProps {
   threadRef: ScopedThreadRef;
   projectId: ProjectId | null;
   moments: ReadonlyArray<ProjectMoment>;
@@ -97,7 +89,33 @@ export function TimelineMomentCards({
   stripMap: Map<string, HTMLSpanElement>;
   onWheel: (event: WheelEvent) => void;
   onJump: (rowIndex: number) => void;
-}) {
+}
+
+/** The activity list, or only its toggle while it is hidden (the board is not read then). */
+export function TimelineMomentCards(props: MomentCardsProps) {
+  const [shown, setShown] = useActivityListShown();
+  if (shown) return <MomentStack {...props} onHide={() => setShown(false)} />;
+  return (
+    <div
+      className="pointer-events-none absolute top-0 left-0 z-40 flex px-3 pt-3 pb-1.5"
+      data-testid="timeline-moment-cards"
+    >
+      <ActivityListToggle shown={false} onToggle={() => setShown(true)} />
+    </div>
+  );
+}
+
+function MomentStack({
+  threadRef,
+  projectId,
+  moments,
+  gutterWidth,
+  rows,
+  stripMap,
+  onWheel,
+  onJump,
+  onHide,
+}: MomentCardsProps & { onHide: () => void }) {
   const environmentId = threadRef.environmentId;
   const board = useAgentsBoard(environmentId, projectId);
   const viewer = useTeamCatalog(environmentId)?.viewer ?? null;
@@ -256,16 +274,19 @@ export function TimelineMomentCards({
       data-testid="timeline-moment-cards"
       style={{ width: gutterWidth }}
     >
-      {teamProject ? (
-        <label className="pointer-events-auto flex w-fit items-center gap-2 px-3 pt-3 pb-1.5 text-muted-foreground text-xs">
-          <Switch
-            size="sm"
-            checked={showTeammates}
-            onCheckedChange={(checked) => setShowTeammates(checked)}
-          />
-          Teammates
-        </label>
-      ) : null}
+      <div className="flex items-center gap-4 px-3 pt-3 pb-1.5">
+        <ActivityListToggle shown onToggle={onHide} />
+        {teamProject ? (
+          <label className="pointer-events-auto flex w-fit items-center gap-2 text-muted-foreground text-xs">
+            <Switch
+              size="sm"
+              checked={showTeammates}
+              onCheckedChange={(checked) => setShowTeammates(checked)}
+            />
+            Teammates
+          </label>
+        ) : null}
+      </div>
       <div className="relative min-h-0 flex-1">
         <div
           ref={attachStack}
