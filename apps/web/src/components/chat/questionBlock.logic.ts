@@ -252,8 +252,7 @@ function blockquoteMatchesQuestion(blockquote: Element, match: QuestionQuoteMatc
   const items = list.children.filter(
     (child): child is Element => child.type === "element" && child.tagName === "li",
   );
-  const expectedCount =
-    match.card.kind === "boolean" ? 2 : (match.card.options?.length ?? 0);
+  const expectedCount = match.card.kind === "boolean" ? 2 : (match.card.options?.length ?? 0);
   if (items.length !== expectedCount) return false;
   for (const item of items) {
     const start = item.position?.start.offset;

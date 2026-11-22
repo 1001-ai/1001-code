@@ -180,10 +180,7 @@ export function hastBoardIssueRefs(tree: Root): void {
           type: "element",
           tagName: "a",
           properties: {
-            href: formatComposerContextHref(
-              BOARD_ISSUE_REF_KIND,
-              identifier as ComposerContextId,
-            ),
+            href: formatComposerContextHref(BOARD_ISSUE_REF_KIND, identifier as ComposerContextId),
           },
           children: [{ type: "text", value: identifier }],
         });
