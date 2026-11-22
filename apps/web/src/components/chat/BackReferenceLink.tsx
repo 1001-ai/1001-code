@@ -15,7 +15,6 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import type { PluggableList } from "unified";
 
 import {
   assistantCitationNavigation,
@@ -29,6 +28,7 @@ import {
 } from "~/lib/backReferenceCitation";
 import { useQuietThreadShell } from "~/state/entities";
 import { environmentThreadDetails, threadEnvironment } from "../../state/threads";
+import type { MarkdownExtensions } from "../../markdown/wordsHast";
 import { toastManager } from "../ui/toast";
 import type { ChatMarkdownContextReference } from "../ChatMarkdown";
 import {
@@ -39,7 +39,7 @@ import {
   BACK_REFERENCE_KIND,
   backReferenceSources,
   findBackReferenceTarget,
-  remarkBackReferences,
+  hastBackReferences,
   sameBackReferenceSources,
   searchBackReferenceHistory,
   type BackReferenceSource,
@@ -79,9 +79,9 @@ export const BackReferenceScope = createContext<{
 
 type RenderContextReference = (reference: ChatMarkdownContextReference) => ReactNode;
 
-// Module constants: the plugin list keys ChatMarkdown's shared parse cache.
-const BACK_REFERENCE_REMARK_PLUGINS: PluggableList = [remarkBackReferences];
-const pluginsAfter = new WeakMap<PluggableList, PluggableList>();
+// Module constants: the extensions object keys ChatMarkdown's shared parse cache.
+const BACK_REFERENCE_EXTENSIONS: MarkdownExtensions = { hastTransforms: [hastBackReferences] };
+const extensionsAfter = new WeakMap<MarkdownExtensions, MarkdownExtensions>();
 const rendererAfter = new WeakMap<RenderContextReference, RenderContextReference>();
 
 function renderBackReferenceOr(
@@ -105,7 +105,7 @@ const renderBackReference = renderBackReferenceOr(undefined);
  */
 export function useBackReferences<
   Props extends {
-    readonly extraRemarkPlugins?: PluggableList;
+    readonly extensions?: MarkdownExtensions;
     readonly renderContextReference?: RenderContextReference;
   },
 >({
@@ -140,11 +140,18 @@ export function useBackReferences<
   if (threadRef === undefined || itemId === undefined || targets.size === 0) {
     return { scope: null, markdownProps };
   }
-  const { extraRemarkPlugins: plugins, renderContextReference: render } = markdownProps;
-  let extraRemarkPlugins = BACK_REFERENCE_REMARK_PLUGINS;
-  if (plugins !== undefined && plugins.length > 0) {
-    extraRemarkPlugins = pluginsAfter.get(plugins) ?? [...plugins, remarkBackReferences];
-    pluginsAfter.set(plugins, extraRemarkPlugins);
+  const { extensions: baseExtensions, renderContextReference: render } = markdownProps;
+  let extensions = BACK_REFERENCE_EXTENSIONS;
+  if (baseExtensions !== undefined) {
+    let composed = extensionsAfter.get(baseExtensions);
+    if (composed === undefined) {
+      composed = {
+        ...baseExtensions,
+        hastTransforms: [...(baseExtensions.hastTransforms ?? []), hastBackReferences],
+      };
+      extensionsAfter.set(baseExtensions, composed);
+    }
+    extensions = composed;
   }
   let renderContextReference = renderBackReference;
   if (render !== undefined) {
@@ -153,7 +160,7 @@ export function useBackReferences<
   }
   return {
     scope: { threadRef, itemId, targets },
-    markdownProps: { ...markdownProps, extraRemarkPlugins, renderContextReference },
+    markdownProps: { ...markdownProps, extensions, renderContextReference },
   };
 }
 

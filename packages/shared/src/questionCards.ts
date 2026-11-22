@@ -152,43 +152,78 @@ export function parseQuestionQuote(source: string): QuestionBlock | null {
 const CARD_HEADER_HINT = /^ {0,3}> ?\*\*Q[1-9]/m;
 const FENCE = /^ {0,3}(`{3,}|~{3,})/;
 
+export interface QuestionQuoteMatch {
+  readonly source: string;
+  readonly card: QuestionBlock;
+  readonly start: number;
+  readonly end: number;
+}
+
 /**
- * The question cards in an assistant message's markdown: each run of quote lines that
- * `parseQuestionQuote` accepts. Quotes in code fences, and quotes a lazy line continues, are not cards.
+ * The question cards in an assistant message's markdown with each quote's source and UTF-16
+ * offsets: each run of quote lines that `parseQuestionQuote` accepts. Quotes in code fences, and
+ * quotes a lazy line continues, are not cards.
  */
-export function questionCardsInMarkdown(text: string): ReadonlyArray<QuestionBlock> {
+export function questionQuoteSourcesInMarkdown(text: string): ReadonlyArray<QuestionQuoteMatch> {
   if (!CARD_HEADER_HINT.test(text)) return [];
-  const cards: QuestionBlock[] = [];
+  const matches: QuestionQuoteMatch[] = [];
   let quote: string[] = [];
+  let quoteStart = 0;
+  let quoteEnd = 0;
   let continued = false;
   let fence: string | null = null;
   const flush = () => {
-    const card = quote.length > 0 && !continued ? parseQuestionQuote(quote.join("\n")) : null;
-    if (card) cards.push(card);
+    if (quote.length > 0 && !continued) {
+      const source = quote.join("\n");
+      const card = parseQuestionQuote(source);
+      if (card) matches.push({ source, card, start: quoteStart, end: quoteEnd });
+    }
     quote = [];
     continued = false;
   };
-  for (const line of text.split(/\r\n|\r|\n/)) {
+  let lineStart = 0;
+  while (lineStart < text.length) {
+    let lineEnd = lineStart;
+    while (lineEnd < text.length && text[lineEnd] !== "\n" && text[lineEnd] !== "\r") lineEnd++;
+    const line = text.slice(lineStart, lineEnd);
+    const nextLineStart =
+      text[lineEnd] === "\r" && text[lineEnd + 1] === "\n"
+        ? lineEnd + 2
+        : lineEnd < text.length
+          ? lineEnd + 1
+          : lineEnd;
     const marker = FENCE.exec(line)?.[1];
     if (fence !== null) {
       if (marker?.startsWith(fence) && line.trim() === marker) {
         fence = null;
       }
+      lineStart = nextLineStart;
       continue;
     }
     if (marker !== undefined) {
       flush();
       fence = marker;
     } else if (QUOTE_LINE.test(line)) {
+      if (quote.length === 0) quoteStart = lineStart;
+      quoteEnd = lineEnd;
       quote.push(line);
     } else if (line.trim().length === 0) {
       flush();
     } else if (quote.length > 0) {
       continued = true;
     }
+    lineStart = nextLineStart;
   }
   flush();
-  return cards;
+  return matches;
+}
+
+/**
+ * The question cards in an assistant message's markdown: each run of quote lines that
+ * `parseQuestionQuote` accepts. Quotes in code fences, and quotes a lazy line continues, are not cards.
+ */
+export function questionCardsInMarkdown(text: string): ReadonlyArray<QuestionBlock> {
+  return questionQuoteSourcesInMarkdown(text).map((match) => match.card);
 }
 
 // Up to three spaces of indent: four or a tab make an indented code block.

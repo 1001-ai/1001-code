@@ -11,12 +11,13 @@ import {
 } from "~/lib/assistantCitationNavigation";
 import { useQuietThreadShell } from "~/state/entities";
 import { environmentThreadDetails } from "../../state/threads";
+import type { MarkdownExtensions } from "../../markdown/wordsHast";
 import type { ChatMarkdownContextReference } from "../ChatMarkdown";
 import {
   findQuestionRefs,
+  hastQuestionRefs,
   latestQuestionCards,
   QUESTION_REF_KIND,
-  remarkQuestionRefs,
   sameQuestionCardTargets,
   type QuestionCardTarget,
 } from "./questionBlock.logic";
@@ -45,8 +46,8 @@ export const QuestionRefScope = createContext<{
   readonly cards: QuestionCards;
 } | null>(null);
 
-// Module constants: the plugin list keys ChatMarkdown's shared parse cache.
-const QUESTION_REF_REMARK_PLUGINS = [remarkQuestionRefs];
+// Module constant: the extensions object keys ChatMarkdown's shared parse cache.
+const QUESTION_REF_EXTENSIONS: MarkdownExtensions = { hastTransforms: [hastQuestionRefs] };
 
 function renderQuestionRef(reference: ChatMarkdownContextReference): ReactNode {
   if (reference.kind !== QUESTION_REF_KIND) return <span>{reference.label}</span>;
@@ -83,7 +84,7 @@ export function useQuestionRefs({
     scope: active ? { threadRef, cards } : null,
     markdownProps: active
       ? {
-          extraRemarkPlugins: QUESTION_REF_REMARK_PLUGINS,
+          extensions: QUESTION_REF_EXTENSIONS,
           renderContextReference: renderQuestionRef,
         }
       : {},

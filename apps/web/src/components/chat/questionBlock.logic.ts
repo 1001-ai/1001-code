@@ -4,11 +4,13 @@ import {
   QUESTION_MULTI_SEPARATOR,
   answerOnLine,
   questionCardsInMarkdown,
+  questionQuoteSourcesInMarkdown,
   readAnswerLine,
   questionWithdrawalsInMarkdown,
   type QuestionBlock,
+  type QuestionQuoteMatch,
 } from "@t3tools/shared/questionCards";
-import type { PhrasingContent, Root, RootContent, Strong } from "mdast";
+import type { Element, ElementContent, Root } from "hast";
 
 const BOOLEAN_OPTIONS = ["Yes", "No"] as const;
 
@@ -212,43 +214,129 @@ export const QUESTION_REF_KIND = "question";
 
 const QUESTION_HEADER_TEXT = /^Q[1-9][0-9]{0,5} · /;
 
-function isQuestionHeader(node: Strong): boolean {
+function isQuestionHeader(node: Element): boolean {
   const [first] = node.children;
   return first?.type === "text" && QUESTION_HEADER_TEXT.test(first.value);
 }
 
+function hastPlainText(node: ElementContent): string {
+  if (node.type === "text") return node.value;
+  if (node.type !== "element") return "";
+  let text = "";
+  for (const child of node.children) text += hastPlainText(child);
+  return text;
+}
+
+function containsReplyHint(node: Element): boolean {
+  for (const child of node.children) {
+    if (child.type !== "element") continue;
+    if (child.tagName === "em" && hastPlainText(child).startsWith("Reply with ")) return true;
+    if (containsReplyHint(child)) return true;
+  }
+  return false;
+}
+
+function blockquoteMatchesQuestion(blockquote: Element, match: QuestionQuoteMatch): boolean {
+  const blocks = blockquote.children.filter((child): child is Element => child.type === "element");
+  const firstBlock = blocks[0];
+  if (!firstBlock || firstBlock.tagName !== "p") return false;
+  const header = firstBlock.children[0];
+  if (header?.type !== "element" || header.tagName !== "strong") return false;
+  if (!hastPlainText(header).startsWith(`${match.card.id} · `)) return false;
+
+  const list = blocks.find((block) => block.tagName === "ul");
+  if (match.card.kind === "text") {
+    return list === undefined && containsReplyHint(blockquote);
+  }
+  if (!list) return false;
+  const items = list.children.filter(
+    (child): child is Element => child.type === "element" && child.tagName === "li",
+  );
+  const expectedCount = match.card.kind === "boolean" ? 2 : (match.card.options?.length ?? 0);
+  if (items.length !== expectedCount) return false;
+  for (const item of items) {
+    const start = item.position?.start.offset;
+    const end = item.position?.end.offset;
+    if (start !== undefined && end !== undefined && (start < match.start || end > match.end)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Marks top-level question blockquotes in Words' hast with their markdown source so
+ * `ChatMarkdown` renders them as question-card islands without needing blockquote positions.
+ */
+export function attachQuestionQuoteSources(tree: Root, source: string): void {
+  const matches = questionQuoteSourcesInMarkdown(source);
+  if (matches.length === 0) return;
+  let cursor = 0;
+  for (const child of tree.children) {
+    if (cursor >= matches.length) break;
+    if (
+      child.type !== "element" ||
+      child.tagName !== "blockquote" ||
+      child.properties.dataAlert !== undefined
+    ) {
+      continue;
+    }
+    for (let index = cursor; index < matches.length; index++) {
+      const match = matches[index]!;
+      if (!blockquoteMatchesQuestion(child, match)) continue;
+      child.properties.dataQuestionSource = match.source;
+      cursor = index + 1;
+      break;
+    }
+  }
+}
+
 /**
  * Turns each question id in prose into a `t3-context` link that `renderContextReference` renders.
- * Code is not text, so it keeps its ids; links and a card's own `**Q4 · prompt**` line are skipped.
+ * Code, links, math SVG and a card's own `**Q4 · prompt**` line are skipped.
  */
-export function remarkQuestionRefs() {
-  return (tree: Root) => {
-    const visit = (node: Root | RootContent) => {
-      if (!("children" in node) || node.type === "link" || node.type === "linkReference") return;
-      if (node.type === "strong" && isQuestionHeader(node)) return;
-      node.children = node.children.flatMap((child): typeof node.children => {
-        if (child.type !== "text") {
-          visit(child);
-          return [child];
-        }
-        const refs = findQuestionRefs(child.value);
-        if (refs.length === 0) return [child];
-        const parts: PhrasingContent[] = [];
-        let offset = 0;
-        for (const { id, start, end } of refs) {
-          if (start > offset) parts.push({ type: "text", value: child.value.slice(offset, start) });
-          parts.push({
-            type: "link",
-            url: formatComposerContextHref(QUESTION_REF_KIND, id as ComposerContextId),
-            children: [{ type: "text", value: id }],
-          });
-          offset = end;
-        }
-        if (offset < child.value.length)
-          parts.push({ type: "text", value: child.value.slice(offset) });
-        return parts;
-      });
-    };
-    visit(tree);
+export function hastQuestionRefs(tree: Root): void {
+  const visit = (node: Root | Element) => {
+    if (
+      node.type === "element" &&
+      (node.tagName === "a" ||
+        node.tagName === "code" ||
+        node.tagName === "pre" ||
+        node.tagName === "svg" ||
+        (node.tagName === "strong" && isQuestionHeader(node)))
+    ) {
+      return;
+    }
+    const children = node.children as ElementContent[];
+    for (let index = 0; index < children.length; index++) {
+      const child = children[index]!;
+      if (child.type === "element") {
+        visit(child);
+        continue;
+      }
+      if (child.type !== "text") continue;
+      const refs = findQuestionRefs(child.value);
+      if (refs.length === 0) continue;
+      const parts: ElementContent[] = [];
+      let offset = 0;
+      for (const { id, start, end } of refs) {
+        if (start > offset) parts.push({ type: "text", value: child.value.slice(offset, start) });
+        parts.push({
+          type: "element",
+          tagName: "a",
+          properties: {
+            href: formatComposerContextHref(QUESTION_REF_KIND, id as ComposerContextId),
+          },
+          children: [{ type: "text", value: id }],
+        });
+        offset = end;
+      }
+      if (offset < child.value.length) {
+        parts.push({ type: "text", value: child.value.slice(offset) });
+      }
+      children.splice(index, 1, ...parts);
+      index += parts.length - 1;
+    }
   };
+  visit(tree);
 }

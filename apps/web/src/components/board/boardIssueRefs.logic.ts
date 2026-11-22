@@ -8,7 +8,7 @@ import type {
 } from "@t3tools/contracts";
 import { teamCatalogRepositoryMatches } from "@t3tools/contracts";
 import { formatComposerContextHref } from "@t3tools/shared/composerContextReferences";
-import type { PhrasingContent, Root, RootContent } from "mdast";
+import type { Element, ElementContent, Root } from "hast";
 
 import type { BoardOpenIssue } from "./boardOpenIssueStore";
 
@@ -149,35 +149,49 @@ export function boardOpenIssueView(
 
 /**
  * Turns each issue id in prose into a `t3-context` link that `renderContextReference` renders.
- * Code is not text, so it keeps its ids, and existing links are left alone.
+ * Code, existing links and math SVG keep their ids.
  */
-export function remarkBoardIssueRefs() {
-  return (tree: Root) => {
-    const visit = (node: Root | RootContent) => {
-      if (!("children" in node) || node.type === "link" || node.type === "linkReference") return;
-      node.children = node.children.flatMap((child): typeof node.children => {
-        if (child.type !== "text") {
-          visit(child);
-          return [child];
-        }
-        const refs = findIssueRefs(child.value);
-        if (refs.length === 0) return [child];
-        const parts: PhrasingContent[] = [];
-        let offset = 0;
-        for (const { identifier, start, end } of refs) {
-          if (start > offset) parts.push({ type: "text", value: child.value.slice(offset, start) });
-          parts.push({
-            type: "link",
-            url: formatComposerContextHref(BOARD_ISSUE_REF_KIND, identifier as ComposerContextId),
-            children: [{ type: "text", value: identifier }],
-          });
-          offset = end;
-        }
-        if (offset < child.value.length)
-          parts.push({ type: "text", value: child.value.slice(offset) });
-        return parts;
-      });
-    };
-    visit(tree);
+export function hastBoardIssueRefs(tree: Root): void {
+  const visit = (node: Root | Element) => {
+    if (
+      node.type === "element" &&
+      (node.tagName === "a" ||
+        node.tagName === "code" ||
+        node.tagName === "pre" ||
+        node.tagName === "svg")
+    ) {
+      return;
+    }
+    const children = node.children as ElementContent[];
+    for (let index = 0; index < children.length; index++) {
+      const child = children[index]!;
+      if (child.type === "element") {
+        visit(child);
+        continue;
+      }
+      if (child.type !== "text") continue;
+      const refs = findIssueRefs(child.value);
+      if (refs.length === 0) continue;
+      const parts: ElementContent[] = [];
+      let offset = 0;
+      for (const { identifier, start, end } of refs) {
+        if (start > offset) parts.push({ type: "text", value: child.value.slice(offset, start) });
+        parts.push({
+          type: "element",
+          tagName: "a",
+          properties: {
+            href: formatComposerContextHref(BOARD_ISSUE_REF_KIND, identifier as ComposerContextId),
+          },
+          children: [{ type: "text", value: identifier }],
+        });
+        offset = end;
+      }
+      if (offset < child.value.length) {
+        parts.push({ type: "text", value: child.value.slice(offset) });
+      }
+      children.splice(index, 1, ...parts);
+      index += parts.length - 1;
+    }
   };
+  visit(tree);
 }
