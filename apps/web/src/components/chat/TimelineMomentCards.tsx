@@ -26,7 +26,11 @@ import { formatShortTimestamp } from "~/timestampFormat";
 import { PULL_REQUEST_STATE_PRESENTATION } from "../pullRequest/pullRequestIcons";
 import { Button } from "../ui/button";
 import { Switch } from "../ui/switch";
-import { ActivityListToggle, useActivityListShown } from "./ActivityListToggle";
+import {
+  ActivityListToggle,
+  ActivityListToggleSpace,
+  useActivityListShown,
+} from "./ActivityListToggle";
 import type { MessagesTimelineRow } from "./MessagesTimeline.logic";
 import {
   findMessageRow,
@@ -94,14 +98,14 @@ interface MomentCardsProps {
 /** The activity list, or only its toggle while it is hidden (the board is not read then). */
 export function TimelineMomentCards(props: MomentCardsProps) {
   const [shown, setShown] = useActivityListShown();
-  if (shown) return <MomentStack {...props} onHide={() => setShown(false)} />;
   return (
-    <div
-      className="pointer-events-none absolute top-0 left-0 z-40 flex px-3 pt-3 pb-1.5"
-      data-testid="timeline-moment-cards"
-    >
-      <ActivityListToggle shown={false} onToggle={() => setShown(true)} />
-    </div>
+    <>
+      {shown ? <MomentStack {...props} /> : null}
+      {/* One toggle for both states, so it keeps keyboard focus when the list hides or shows. */}
+      <div className="pointer-events-none absolute top-0 left-0 z-40 flex px-3 pt-3 pb-1.5">
+        <ActivityListToggle shown={shown} onToggle={() => setShown(!shown)} />
+      </div>
+    </>
   );
 }
 
@@ -114,8 +118,7 @@ function MomentStack({
   stripMap,
   onWheel,
   onJump,
-  onHide,
-}: MomentCardsProps & { onHide: () => void }) {
+}: MomentCardsProps) {
   const environmentId = threadRef.environmentId;
   const board = useAgentsBoard(environmentId, projectId);
   const viewer = useTeamCatalog(environmentId)?.viewer ?? null;
@@ -275,7 +278,8 @@ function MomentStack({
       style={{ width: gutterWidth }}
     >
       <div className="flex items-center gap-4 px-3 pt-3 pb-1.5">
-        <ActivityListToggle shown onToggle={onHide} />
+        {/* Room for the toggle the parent draws over this row. */}
+        <ActivityListToggleSpace />
         {teamProject ? (
           <label className="pointer-events-auto flex w-fit items-center gap-2 text-muted-foreground text-xs">
             <Switch

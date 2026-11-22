@@ -72,6 +72,7 @@ it("hides the list and remembers it across reloads", async () => {
     await expect.element(screen.getByText("Thread started")).toBeInTheDocument();
     await userEvent.click(toggle);
     await expect.element(toggle).toHaveAttribute("aria-expanded", "false");
+    await expect.element(toggle).toHaveFocus();
     await expect.element(screen.getByText("Thread started")).not.toBeInTheDocument();
   }
   await using screen = await render(cards());

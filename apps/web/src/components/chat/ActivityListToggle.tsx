@@ -11,6 +11,16 @@ export function useActivityListShown() {
   return useLocalStorage(ACTIVITY_LIST_SHOWN_KEY, true, Schema.Boolean);
 }
 
+/** An invisible copy of the toggle's label, holding its place in a row it is drawn over. */
+export function ActivityListToggleSpace() {
+  return (
+    <span aria-hidden className="invisible flex h-5 shrink-0 items-center gap-1 text-xs">
+      <span className="size-3" />
+      Activity
+    </span>
+  );
+}
+
 export function ActivityListToggle(props: {
   readonly shown: boolean;
   readonly onToggle: () => void;
