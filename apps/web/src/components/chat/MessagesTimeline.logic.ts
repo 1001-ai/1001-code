@@ -15,6 +15,7 @@ import {
 } from "@t3tools/client-runtime/user-message";
 import type { HandoffTimelineRun } from "@t3tools/client-runtime/handoff";
 import type { LampTranscriptRow } from "../lamp/lampTranscript.logic";
+import { messageHasQuestionCards } from "./questionBlock.logic";
 import { renderCodexDirectivesForCopy } from "~/markdown/markdownText";
 import {
   commandDisplayText,
@@ -800,8 +801,9 @@ function retainedAssistantReplyEntryIds(
   for (const entry of timelineEntries) {
     if (
       entry.kind === "message" &&
-      entry.projectedItem?.item.type === "assistant_message" &&
-      entry.projectedItem.item.phase === "final_answer"
+      ((entry.projectedItem?.item.type === "assistant_message" &&
+        entry.projectedItem.item.phase === "final_answer") ||
+        messageHasQuestionCards(entry.message))
     )
       replyEntryIds.add(entry.id);
 
