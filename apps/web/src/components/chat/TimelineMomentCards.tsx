@@ -100,11 +100,11 @@ export function TimelineMomentCards(props: MomentCardsProps) {
   const [shown, setShown] = useActivityListShown();
   return (
     <>
-      {shown ? <MomentStack {...props} /> : null}
-      {/* One toggle for both states, so it keeps keyboard focus when the list hides or shows. */}
-      <div className="pointer-events-none absolute top-0 left-0 z-40 flex px-3 pt-3 pb-1.5">
+      {/* One toggle for both states, so it keeps keyboard focus; first, so Tab reaches it first. */}
+      <div className="pointer-events-none absolute top-0 left-0 z-50 flex px-3 pt-3 pb-1.5">
         <ActivityListToggle shown={shown} onToggle={() => setShown(!shown)} />
       </div>
+      {shown ? <MomentStack {...props} /> : null}
     </>
   );
 }

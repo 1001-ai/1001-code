@@ -70,6 +70,8 @@ it("hides the list and remembers it across reloads", async () => {
     const toggle = screen.getByTestId("activity-list-toggle");
     await expect.element(toggle).toHaveAttribute("aria-expanded", "true");
     await expect.element(screen.getByText("Thread started")).toBeInTheDocument();
+    await userEvent.tab();
+    await expect.element(toggle).toHaveFocus();
     await userEvent.click(toggle);
     await expect.element(toggle).toHaveAttribute("aria-expanded", "false");
     await expect.element(toggle).toHaveFocus();
