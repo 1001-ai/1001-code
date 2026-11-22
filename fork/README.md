@@ -662,3 +662,10 @@ One entry for each place this fork changes a file upstream owns, or replaces som
 - **Why:** with many projects the section pushes threads down. Collapsed, only the header and its project count show, like the Working, Snoozed and Settled shelves; the rows pass the header as their parent (`folderRowId`, for arrow keys) and `folderCollapsed`, so the open Inbox's row stays, as it does in a closed folder. Per device and client only, as the shelves are. Mobile is unchanged.
 - **On conflict:** none expected. If upstream renames or restyles `CollapsibleSectionHeader` or `useLocalStorage`, follow it.
 - **Check:** `vp test run src/components/inboxAgent/SidebarProjectsSection.browser.test.tsx` (from `apps/web`) passes.
+
+### The activity list hides
+
+- **Where:** only fork files: `apps/web/src/components/chat/ActivityListToggle.tsx` (the **Activity** toggle and `useActivityListShown`, kept in local storage under `t3code:timeline-moments:shown`, shown by default), drawn by `TimelineMomentCards.tsx` at the top of the list beside **Teammates**; `TimelineMomentsGutter.tsx` keeps upstream's minimap under the toggle while the list is hidden; `paneStrip/PaneStripNudge.tsx` drops activity cards from the nudge while it is hidden (Inbox replies still nudge). `TimelineMomentCards.browser.test.tsx` covers hiding and the remembered state. No upstream file changes.
+- **Why:** the list fills the chat's margin and the pane strip's Activity column, and the only control filtered teammates. Hidden, the list renders only its toggle at the same spot, so the same click brings it back, and it stops reading the agents board. The chat margin falls back to the turn minimap it replaced. Per browser and client only, like the Teammates switch. Mobile has no activity list.
+- **On conflict:** none expected. If upstream renames `TimelineMinimap` or `useLocalStorage`, follow it.
+- **Check:** `vp test run src/components/chat/TimelineMomentCards.browser.test.tsx` (from `apps/web`) passes.

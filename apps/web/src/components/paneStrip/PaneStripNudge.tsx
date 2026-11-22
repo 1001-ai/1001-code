@@ -8,6 +8,7 @@ import { createPortal } from "react-dom";
 
 import { useProjectMoments } from "../../state/projectMoments";
 import { environmentThreadShells } from "../../state/threads";
+import { useActivityListShown } from "../chat/ActivityListToggle";
 import { PANE_STRIP_ATTRIBUTE } from "./paneStrip.logic";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { revealColumn } from "./PaneStripMoves";
@@ -93,6 +94,7 @@ export function PaneStripNudge(props: {
 }) {
   const { host, environmentId, projectId, openThreadId, inboxThreadId, paneOnScreen } = props;
   const moments = useProjectMoments(environmentId, projectId);
+  const [activityShown] = useActivityListShown();
   const inbox = useAtomValue(
     inboxThreadId === null
       ? NO_INBOX_ATOM
@@ -110,8 +112,12 @@ export function PaneStripNudge(props: {
   });
   if (step.watch !== watch) {
     setWatch(step.watch);
-    if (step.arrivals.length > 0) {
-      setShown(addPaneStripArrivals(shown, step.arrivals));
+    // A hidden activity list sends no cards to the nudge; Inbox replies still nudge.
+    const arrivals = activityShown
+      ? step.arrivals
+      : step.arrivals.filter((arrival) => arrival.kind !== "moment");
+    if (arrivals.length > 0) {
+      setShown(addPaneStripArrivals(shown, arrivals));
       setFull(true);
     }
   }

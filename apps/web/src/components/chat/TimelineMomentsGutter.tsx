@@ -6,6 +6,7 @@ import { observeResize } from "~/lib/observeResize";
 import { useQuietThreadShell } from "~/state/entities";
 import { useProjectMoments } from "~/state/projectMoments";
 import { PaneStripContext } from "../paneStrip/paneStripMode";
+import { useActivityListShown } from "./ActivityListToggle";
 import type { MessagesTimelineRow } from "./MessagesTimeline.logic";
 import type { TimelineMinimap } from "./TimelineMinimap";
 import { TimelineMomentCards } from "./TimelineMomentCards";
@@ -59,6 +60,7 @@ export function TimelineMomentsGutter({
 
   const projectId = useQuietThreadShell(threadRef)?.projectId ?? null;
   const moments = useProjectMoments(threadRef?.environmentId ?? null, projectId);
+  const [activityShown] = useActivityListShown();
 
   // Until the server answers, and on servers without moments, the minimap keeps the gutter.
   const anchor = <span ref={observeViewport} hidden />;
@@ -75,6 +77,8 @@ export function TimelineMomentsGutter({
   return (
     <>
       {anchor}
+      {/* With the list hidden, its toggle sits over upstream's minimap. */}
+      {activityShown ? null : children}
       {/* Another project's stack starts fresh: its scroll, open card and arrivals are its own. */}
       <TimelineMomentCards
         key={`${threadRef.environmentId}:${projectId}`}
