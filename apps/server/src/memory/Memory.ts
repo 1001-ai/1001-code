@@ -631,13 +631,28 @@ const make = Effect.gen(function* () {
     return onWire(decided);
   }, writeLock.withPermits(1));
 
-  /** Accept for me or for the team: the line joins the end of that file. */
+  /** Accept for me or for the team (this project or all projects): the line joins the end of that file. */
   const appendedLine = Effect.fn("Memory.appendedLine")(function* (
-    input: MemoryDecideInput,
+    projectId: ProjectId,
+    choice: "me" | "me-all" | "team" | "team-all",
     line: string,
   ) {
-    const { view, project } = yield* readWithProject(input.projectId);
-    const scope: MemoryScope = input.choice === "me" ? "personal-project" : "project";
+    const { view, project } = yield* readWithProject(projectId);
+    const { scope, titlePrefix } = ((): {
+      readonly scope: MemoryScope;
+      readonly titlePrefix: string;
+    } => {
+      switch (choice) {
+        case "me":
+          return { scope: "personal-project", titlePrefix: "Remember for me" };
+        case "me-all":
+          return { scope: "personal", titlePrefix: "Remember for me across all projects" };
+        case "team":
+          return { scope: "project", titlePrefix: "Remember for the team" };
+        case "team-all":
+          return { scope: "team", titlePrefix: "Remember for the team across all projects" };
+      }
+    })();
     const target = yield* writableDocument(view, project, scope);
     if (view.revision === null || target === undefined) {
       return yield* new TeamCatalogError({ detail: NO_CATALOG });
@@ -651,22 +666,20 @@ const make = Effect.gen(function* () {
       baseRevision: view.revision,
       file: target.file,
       text: appendMemoryLine(target.text, line),
-      title: `${input.choice === "me" ? "Remember for me" : "Remember for the team"}: ${line}`,
+      title: `${titlePrefix}: ${line}`,
       body: [`Adds to \`${target.file}\`:`, `> ${line}`],
-      branchStem: `memory/${scope}-${target.file
-        .slice(target.file.lastIndexOf("/") + 1)
-        .replace(/\.md$/, "")}`,
+      branchStem: scope === "team" ? "memory/team" : `memory/${scope}-${fileName(target.file)}`,
     };
   });
 
   /** A voice agent memory goes to the live login's own file, in place of the one it replaces. */
   const supersededVoiceAgentMemory = Effect.fn("Memory.supersededVoiceAgentMemory")(function* (
-    input: MemoryDecideInput,
+    choice: "me" | "me-all" | "team" | "team-all",
     proposal: MemoryProposal,
     line: string,
     today: string,
   ) {
-    if (input.choice === "team") {
+    if (choice !== "me") {
       return yield* new TeamCatalogError({
         detail: "A voice agent memory is yours alone: accept it for yourself or reject it.",
       });
@@ -816,9 +829,14 @@ const make = Effect.gen(function* () {
     ];
     const change = edit
       ? yield* editedLine(proposal, line)
-      : proposal.category === undefined
-        ? yield* appendedLine(input, line)
-        : yield* supersededVoiceAgentMemory(input, proposal, line, decidedAt.slice(0, 10));
+      : input.choice === "accept"
+        ? yield* new TeamCatalogError({
+            detail:
+              "Choose who this memory is for: accept it for yourself or the team, or reject it.",
+          })
+        : proposal.category === undefined
+          ? yield* appendedLine(input.projectId, input.choice, line)
+          : yield* supersededVoiceAgentMemory(input.choice, proposal, line, decidedAt.slice(0, 10));
     const pullRequest = yield* proposeAndMerge(change, origin);
     return yield* record(
       proposal.id,

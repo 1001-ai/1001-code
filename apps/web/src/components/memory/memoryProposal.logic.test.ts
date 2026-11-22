@@ -1,7 +1,12 @@
 import { type MemoryProposal, VOICE_AGENT_MEMORY_CATEGORY } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { memoryProposalInput, proposalForCall, proposalTarget } from "./memoryProposal.logic";
+import {
+  memoryAcceptedLabel,
+  memoryProposalInput,
+  proposalForCall,
+  proposalTarget,
+} from "./memoryProposal.logic";
 
 const proposal = (id: string, createdAt: string, text = "Use tabs."): MemoryProposal =>
   ({
@@ -114,5 +119,24 @@ describe("memoryProposalInput", () => {
       kind: null,
       scope: null,
     });
+  });
+});
+
+describe("memoryAcceptedLabel", () => {
+  it("describes project-scoped and all-projects choices, edits and voice agent accepts", () => {
+    expect(memoryAcceptedLabel({}, "me", "Web app")).toBe("Accepted for you in Web app");
+    expect(memoryAcceptedLabel({}, "me", null)).toBe("Accepted for you");
+    expect(memoryAcceptedLabel({}, "me-all", "Web app")).toBe(
+      "Accepted for you across all projects",
+    );
+    expect(memoryAcceptedLabel({}, "team", "Web app")).toBe("Accepted for the team in Web app");
+    expect(memoryAcceptedLabel({}, "team-all", "Web app")).toBe(
+      "Accepted for the team across all projects",
+    );
+    expect(memoryAcceptedLabel({ kind: "change" }, "accept", "Web app")).toBe("Change accepted");
+    expect(memoryAcceptedLabel({ kind: "remove" }, "accept", "Web app")).toBe("Removal accepted");
+    expect(memoryAcceptedLabel({ category: VOICE_AGENT_MEMORY_CATEGORY }, "me", "Web app")).toBe(
+      "Accepted for the voice agent",
+    );
   });
 });
