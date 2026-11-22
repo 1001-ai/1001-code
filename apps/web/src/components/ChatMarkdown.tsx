@@ -1176,20 +1176,20 @@ const CHAT_MARKDOWN_COMPONENTS = {
       </p>
     );
   },
-  blockquote: function MarkdownBlockquote({ node, children, ...props }) {
+  blockquote: function MarkdownBlockquote({ node: _node, children, ...props }) {
     const { threadRef, isStreaming } = use(ChatMarkdownRendererContext);
-    const text = use(ChatMarkdownTextContext);
     const m = useMessages();
-    const alertKind = String((props as Record<string, unknown>)["data-alert"] ?? "");
+    const { "data-question-source": questionSource, ...quoteProps } = props as typeof props & {
+      "data-question-source"?: string;
+    };
+    const alertKind = String((quoteProps as Record<string, unknown>)["data-alert"] ?? "");
     const alert = GITHUB_ALERT_PRESENTATIONS[alertKind];
     if (!alert) {
-      const quote = <blockquote {...props}>{children}</blockquote>;
-      const start = node?.position?.start.offset;
-      const end = node?.position?.end.offset;
-      if (!threadRef || start === undefined || end === undefined) return quote;
+      const quote = <blockquote {...quoteProps}>{children}</blockquote>;
+      if (!threadRef || typeof questionSource !== "string") return quote;
       return (
         <MarkdownQuestionQuote
-          source={text.slice(start, end)}
+          source={questionSource}
           threadRef={threadRef}
           streaming={isStreaming}
         >
@@ -1985,7 +1985,10 @@ function markdownIslandOptions(state: ChatMarkdownComponentState): MarkdownIslan
         case "table":
           return true;
         case "blockquote":
-          return GITHUB_ALERT_PRESENTATIONS[String(node.properties.dataAlert ?? "")] !== undefined;
+          return (
+            GITHUB_ALERT_PRESENTATIONS[String(node.properties.dataAlert ?? "")] !== undefined ||
+            typeof node.properties.dataQuestionSource === "string"
+          );
         case "div":
           return artifactTemplateFromHastProperties(node.properties) !== null;
         case "input":

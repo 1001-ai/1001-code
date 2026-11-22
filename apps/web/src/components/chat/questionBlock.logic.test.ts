@@ -1,13 +1,14 @@
 import { QUESTION_SKIPPED_ANSWER } from "@t3tools/shared/questionCards";
-import { fromMarkdown } from "mdast-util-from-markdown";
+import type { Element } from "hast";
 import { describe, expect, it } from "vite-plus/test";
 
+import { wordsHast } from "~/markdown/wordsHast";
 import {
   findQuestionAnswer,
   findQuestionRefs,
+  hastQuestionRefs,
   isQuestionWithdrawn,
   latestQuestionCards,
-  remarkQuestionRefs,
   selectedMultiOptions,
   toggleMultiOption,
   writeAnswerLine,
@@ -192,14 +193,25 @@ describe("latestQuestionCards", () => {
   });
 });
 
-describe("remarkQuestionRefs", () => {
+describe("hastQuestionRefs", () => {
   const linkedIds = (markdown: string) => {
-    const tree = fromMarkdown(markdown);
-    remarkQuestionRefs()(tree);
+    const tree = wordsHast(markdown, {
+      math: false,
+      breaks: false,
+      escapeHtml: false,
+      insights: false,
+      extensions: { hastTransforms: [hastQuestionRefs] },
+    });
     const ids: string[] = [];
-    const visit = (node: { type: string; url?: string; children?: unknown[] }) => {
-      if (node.type === "link" && node.url?.startsWith("t3-context://v1/question/")) {
-        ids.push(node.url.slice("t3-context://v1/question/".length));
+    const visit = (node: {
+      type: string;
+      tagName?: string;
+      properties?: Record<string, unknown>;
+      children?: unknown[];
+    }) => {
+      const href = typeof node.properties?.href === "string" ? node.properties.href : undefined;
+      if (node.tagName === "a" && href?.startsWith("t3-context://v1/question/")) {
+        ids.push(href.slice("t3-context://v1/question/".length));
       }
       for (const child of node.children ?? []) visit(child as typeof node);
     };
@@ -215,5 +227,43 @@ describe("remarkQuestionRefs", () => {
     ["bold that only mentions an id", "**Q40 is still open**", ["Q40"]],
   ])("links ids in %s", (_name, markdown, ids) => {
     expect(linkedIds(markdown)).toEqual(ids);
+  });
+});
+
+describe("attachQuestionQuoteSources", () => {
+  const questionSources = (markdown: string) => {
+    const tree = wordsHast(markdown, {
+      math: false,
+      breaks: false,
+      escapeHtml: false,
+      insights: false,
+      extensions: {},
+    });
+    return tree.children
+      .filter(
+        (child): child is Element =>
+          child.type === "element" &&
+          child.tagName === "blockquote" &&
+          typeof child.properties.dataQuestionSource === "string",
+      )
+      .map((child) => child.properties.dataQuestionSource);
+  };
+
+  it("tags choice and free-text question blockquotes with their markdown source and leaves ordinary quotes untouched", () => {
+    const markdown = [
+      "> An ordinary quote",
+      "",
+      "> **Q1 · Which config?**",
+      ">",
+      "> - app.config.json _(recommended)_",
+      "> - settings.json",
+      "",
+      "> **Q2 · Default name?**",
+      "> _Reply with Q2: the name._",
+    ].join("\n");
+    expect(questionSources(markdown)).toEqual([
+      "> **Q1 · Which config?**\n>\n> - app.config.json _(recommended)_\n> - settings.json",
+      "> **Q2 · Default name?**\n> _Reply with Q2: the name._",
+    ]);
   });
 });

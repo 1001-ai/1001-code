@@ -21,6 +21,7 @@ import {
 import { rehypeChipPunctuation } from "../components/chat/markdownChipPunctuation";
 import { rehypeHeadingIds } from "../components/chat/markdownFragments";
 import { rehypeTextDirection } from "../components/chat/markdownTextDirection";
+import { attachQuestionQuoteSources } from "../components/chat/questionBlock.logic";
 
 /** What a kind of message adds to chat Markdown. Pass a stable object: renderers cache by it. */
 export interface MarkdownExtensions {
@@ -42,6 +43,8 @@ export interface MarkdownExtensions {
   };
   /** Expand GitHub `:alias:` emoji shortcodes in prose outside code. */
   readonly githubEmoji?: boolean;
+  /** Fork: HAST transforms run on the sanitized tree (question, back-reference, and board issue links). */
+  readonly hastTransforms?: ReadonlyArray<(tree: Root) => void> | undefined;
 }
 
 export interface WordsHastOptions {
@@ -1138,6 +1141,10 @@ export function wordsHast(text: string, options: WordsHastOptions): Root {
   if (insights) restorePositions(hast, insights.toOriginal);
   if (extensions.inert) makeInert(hast);
   if (extensions.preview) return flattenPreview(hast, extensions.preview);
+  if (!extensions.inert) attachQuestionQuoteSources(hast, text);
+  if (extensions.hastTransforms) {
+    for (const runTransform of extensions.hastTransforms) runTransform(hast);
+  }
   addHeadingIds(hast);
   addTextDirection(hast as never);
   groupChipPunctuation(hast as never);

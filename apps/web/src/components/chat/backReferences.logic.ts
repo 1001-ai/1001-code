@@ -15,7 +15,7 @@ import {
 } from "@t3tools/shared/backReferences";
 import { formatComposerContextHref } from "@t3tools/shared/composerContextReferences";
 import { splitReLines } from "@t3tools/shared/replyMarkers";
-import type { PhrasingContent, Root, RootContent } from "mdast";
+import type { Element, ElementContent, Root } from "hast";
 
 import { resolveUserMessageContext } from "~/lib/composerContextRecords";
 import type { ChatAttachment } from "../../types";
@@ -177,36 +177,47 @@ const BACK_REFERENCE_HREF = formatComposerContextHref(
 
 /**
  * Turns each `(↑ "words")` marker in prose into a `t3-context` link whose text is the marker, so
- * `renderContextReference` reads the words back from the label. Code and links keep theirs.
+ * `renderContextReference` reads the words back from the label. Code, links and math SVG keep theirs.
  */
-export function remarkBackReferences() {
-  return (tree: Root) => {
-    const visit = (node: Root | RootContent) => {
-      if (!("children" in node) || node.type === "link" || node.type === "linkReference") return;
-      node.children = node.children.flatMap((child): typeof node.children => {
-        if (child.type !== "text") {
-          visit(child);
-          return [child];
-        }
-        const references = findBackReferences(child.value);
-        if (references.length === 0) return [child];
-        const parts: PhrasingContent[] = [];
-        let offset = 0;
-        for (const { text, start, end } of references) {
-          if (start > offset) parts.push({ type: "text", value: child.value.slice(offset, start) });
-          parts.push({
-            type: "link",
-            url: BACK_REFERENCE_HREF,
-            children: [{ type: "text", value: text }],
-          });
-          offset = end;
-        }
-        if (offset < child.value.length) {
-          parts.push({ type: "text", value: child.value.slice(offset) });
-        }
-        return parts;
-      });
-    };
-    visit(tree);
+export function hastBackReferences(tree: Root): void {
+  const visit = (node: Root | Element) => {
+    if (
+      node.type === "element" &&
+      (node.tagName === "a" ||
+        node.tagName === "code" ||
+        node.tagName === "pre" ||
+        node.tagName === "svg")
+    ) {
+      return;
+    }
+    const children = node.children as ElementContent[];
+    for (let index = 0; index < children.length; index++) {
+      const child = children[index]!;
+      if (child.type === "element") {
+        visit(child);
+        continue;
+      }
+      if (child.type !== "text") continue;
+      const references = findBackReferences(child.value);
+      if (references.length === 0) continue;
+      const parts: ElementContent[] = [];
+      let offset = 0;
+      for (const { text, start, end } of references) {
+        if (start > offset) parts.push({ type: "text", value: child.value.slice(offset, start) });
+        parts.push({
+          type: "element",
+          tagName: "a",
+          properties: { href: BACK_REFERENCE_HREF },
+          children: [{ type: "text", value: text }],
+        });
+        offset = end;
+      }
+      if (offset < child.value.length) {
+        parts.push({ type: "text", value: child.value.slice(offset) });
+      }
+      children.splice(index, 1, ...parts);
+      index += parts.length - 1;
+    }
   };
+  visit(tree);
 }

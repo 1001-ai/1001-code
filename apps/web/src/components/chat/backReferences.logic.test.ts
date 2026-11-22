@@ -1,10 +1,11 @@
 import { ComposerContextId, GuestMessageId } from "@t3tools/contracts";
+import type { Element, Root } from "hast";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
   backReferenceSources,
   findBackReferenceTarget,
-  remarkBackReferences,
+  hastBackReferences,
   sameBackReferenceSources,
   searchBackReferenceHistory,
   type BackReferenceSource,
@@ -257,30 +258,39 @@ describe("backReferenceSources", () => {
   });
 });
 
-describe("remarkBackReferences", () => {
+describe("hastBackReferences", () => {
   it("links complete markers in prose and leaves code and links alone", () => {
-    const tree = {
-      type: "root" as const,
+    const paragraph: Element = {
+      type: "element",
+      tagName: "p",
+      properties: {},
       children: [
+        { type: "text", value: 'As listed (↑ "the token expires") and (↑ "half' },
         {
-          type: "paragraph" as const,
-          children: [
-            { type: "text" as const, value: 'As listed (↑ "the token expires") and (↑ "half' },
-            { type: "inlineCode" as const, value: '(↑ "in code")' },
-          ],
+          type: "element",
+          tagName: "code",
+          properties: {},
+          children: [{ type: "text", value: '(↑ "in code")' }],
         },
       ],
     };
-    remarkBackReferences()(tree);
-    expect(tree.children[0]!.children).toEqual([
+    const tree: Root = { type: "root", children: [paragraph] };
+    hastBackReferences(tree);
+    expect(paragraph.children).toEqual([
       { type: "text", value: "As listed " },
       {
-        type: "link",
-        url: "t3-context://v1/back-reference/ref",
+        type: "element",
+        tagName: "a",
+        properties: { href: "t3-context://v1/back-reference/ref" },
         children: [{ type: "text", value: '(↑ "the token expires")' }],
       },
       { type: "text", value: ' and (↑ "half' },
-      { type: "inlineCode", value: '(↑ "in code")' },
+      {
+        type: "element",
+        tagName: "code",
+        properties: {},
+        children: [{ type: "text", value: '(↑ "in code")' }],
+      },
     ]);
   });
 });

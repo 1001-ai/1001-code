@@ -1,7 +1,7 @@
 import type { BoardColumn, BoardIssue, TeamCatalogEntry } from "@t3tools/contracts";
-import { fromMarkdown } from "mdast-util-from-markdown";
 import { describe, expect, it } from "vite-plus/test";
 
+import { wordsHast } from "~/markdown/wordsHast";
 import {
   boardIssueOpenTarget,
   boardLinearIssueUrl,
@@ -9,8 +9,8 @@ import {
   boardTeamKey,
   findBoardIssue,
   findIssueRefs,
+  hastBoardIssueRefs,
   parseLinearIssueUrl,
-  remarkBoardIssueRefs,
 } from "./boardIssueRefs.logic";
 
 const issue = (id: string, identifier: string): BoardIssue => ({
@@ -192,14 +192,25 @@ describe("boardOpenIssueView", () => {
   });
 });
 
-describe("remarkBoardIssueRefs", () => {
+describe("hastBoardIssueRefs", () => {
   const linkedIds = (markdown: string) => {
-    const tree = fromMarkdown(markdown);
-    remarkBoardIssueRefs()(tree);
+    const tree = wordsHast(markdown, {
+      math: false,
+      breaks: false,
+      escapeHtml: false,
+      insights: false,
+      extensions: { hastTransforms: [hastBoardIssueRefs] },
+    });
     const ids: string[] = [];
-    const visit = (node: { type: string; url?: string; children?: unknown[] }) => {
-      if (node.type === "link" && node.url?.startsWith("t3-context://v1/linear-issue/")) {
-        ids.push(node.url.slice("t3-context://v1/linear-issue/".length));
+    const visit = (node: {
+      type: string;
+      tagName?: string;
+      properties?: Record<string, unknown>;
+      children?: unknown[];
+    }) => {
+      const href = typeof node.properties?.href === "string" ? node.properties.href : undefined;
+      if (node.tagName === "a" && href?.startsWith("t3-context://v1/linear-issue/")) {
+        ids.push(href.slice("t3-context://v1/linear-issue/".length));
       }
       for (const child of node.children ?? []) visit(child as typeof node);
     };

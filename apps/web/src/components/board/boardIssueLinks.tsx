@@ -3,8 +3,8 @@ import { parseScopedThreadKey, scopedThreadKey } from "@t3tools/client-runtime/e
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { createContext, type MouseEvent, type ReactNode, use } from "react";
-import type { PluggableList } from "unified";
 
+import type { MarkdownExtensions } from "~/markdown/wordsHast";
 import { useRightPanelStore } from "~/rightPanelStore";
 import { boardConnectionAtom } from "~/state/board";
 import { environmentProjects } from "~/state/projects";
@@ -17,8 +17,8 @@ import {
   boardIssueOpenTarget,
   boardTeamKey,
   findIssueRefs,
+  hastBoardIssueRefs,
   issueTeamKey,
-  remarkBoardIssueRefs,
 } from "./boardIssueRefs.logic";
 import { useBoardOpenIssueStore } from "./boardOpenIssueStore";
 
@@ -107,9 +107,9 @@ export const BoardIssueRefScope = createContext<{
   readonly teamKey: string;
 } | null>(null);
 
-// Module constants: the plugin list keys ChatMarkdown's shared parse cache.
-const ISSUE_REF_REMARK_PLUGINS: PluggableList = [remarkBoardIssueRefs];
-const issueRefPluginsAfter = new WeakMap<PluggableList, PluggableList>();
+// Module constants: the extensions object keys ChatMarkdown's shared parse cache.
+const ISSUE_REF_EXTENSIONS: MarkdownExtensions = { hastTransforms: [hastBoardIssueRefs] };
+const issueRefExtensionsAfter = new WeakMap<MarkdownExtensions, MarkdownExtensions>();
 type RenderContextReference = (reference: ChatMarkdownContextReference) => ReactNode;
 const issueRefRendererAfter = new WeakMap<RenderContextReference, RenderContextReference>();
 
@@ -132,7 +132,7 @@ const renderIssueRef = renderIssueRefOr(undefined);
  */
 export function useBoardIssueRefs<
   Props extends {
-    readonly extraRemarkPlugins?: PluggableList;
+    readonly extensions?: MarkdownExtensions;
     readonly renderContextReference?: RenderContextReference;
   },
 >({
@@ -153,11 +153,18 @@ export function useBoardIssueRefs<
     !streaming &&
     findIssueRefs(text).some((ref) => issueTeamKey(ref.identifier) === teamKey);
   if (!active) return { scope: null, markdownProps };
-  const { extraRemarkPlugins: plugins, renderContextReference: render } = markdownProps;
-  let extraRemarkPlugins = ISSUE_REF_REMARK_PLUGINS;
-  if (plugins !== undefined && plugins.length > 0) {
-    extraRemarkPlugins = issueRefPluginsAfter.get(plugins) ?? [...plugins, remarkBoardIssueRefs];
-    issueRefPluginsAfter.set(plugins, extraRemarkPlugins);
+  const { extensions: baseExtensions, renderContextReference: render } = markdownProps;
+  let extensions = ISSUE_REF_EXTENSIONS;
+  if (baseExtensions !== undefined) {
+    let composed = issueRefExtensionsAfter.get(baseExtensions);
+    if (composed === undefined) {
+      composed = {
+        ...baseExtensions,
+        hastTransforms: [...(baseExtensions.hastTransforms ?? []), hastBoardIssueRefs],
+      };
+      issueRefExtensionsAfter.set(baseExtensions, composed);
+    }
+    extensions = composed;
   }
   let renderContextReference = renderIssueRef;
   if (render !== undefined) {
@@ -166,7 +173,7 @@ export function useBoardIssueRefs<
   }
   return {
     scope: { threadRef, teamKey },
-    markdownProps: { ...markdownProps, extraRemarkPlugins, renderContextReference },
+    markdownProps: { ...markdownProps, extensions, renderContextReference },
   };
 }
 
