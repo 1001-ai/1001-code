@@ -93,6 +93,9 @@ const NESTED_BLOCK_START =
 // Either emphasis marker, since markdown formatters rewrite `*x*` as `_x_`.
 const RECOMMENDED_SUFFIX = / (?:\*\(recommended\)\*|_\(recommended\)_)$/;
 const REPLY_HINT = /^(?:_Reply with .+_|\*Reply with .+\*)$/;
+// Instructions ask for options at most 120 characters, but models often overrun slightly;
+// keep headroom so wordy options still render as cards while staying under the 4,000-char quote cap.
+const MAX_OPTION_LENGTH = 300;
 
 /**
  * A blockquote's markdown source as a question, or null when it is an ordinary quote:
@@ -133,7 +136,7 @@ export function parseQuestionQuote(source: string): QuestionBlock | null {
       option = option.slice(0, marker.index);
       recommended = option;
     }
-    if (!isVisibleText(option, 120) || options.includes(option)) return null;
+    if (!isVisibleText(option, MAX_OPTION_LENGTH) || options.includes(option)) return null;
     options.push(option);
   }
   if (options.length < 2 || options.length > 8) return null;
