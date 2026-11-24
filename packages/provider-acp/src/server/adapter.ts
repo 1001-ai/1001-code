@@ -1650,6 +1650,7 @@ function selectAutoApprovedPermissionOption(
 interface ActiveTextSegment {
   readonly nativeItemId: string;
   readonly startedAt: DateTime.Utc;
+  readonly promptSequence?: number;
   sourceMessageId: string | null;
   text: string;
   // The running node and first text have been emitted.
@@ -3185,6 +3186,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           kind: "user" | "assistant" | "reasoning",
           completed: boolean,
           flushOf?: ActiveTextSegment,
+          phase?: "final_answer",
         ) {
           const stream = textStreamFor(context, kind);
           const segment = stream.current;
@@ -3297,6 +3299,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                       completedAt: completed ? now : null,
                       updatedAt: now,
                       type: "assistant_message",
+                      ...(phase === undefined ? {} : { phase }),
                       messageId,
                       text,
                       streaming: !completed,
@@ -3355,11 +3358,12 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
         const closeTextStream = Effect.fnUntraced(function* (
           context: ActiveAcpTurn,
           kind: "user" | "assistant" | "reasoning",
+          phase?: "final_answer",
         ) {
           const stream = textStreamFor(context, kind);
           const segment = stream.current;
           if (segment === null) return;
-          yield* emitTextSegment(context, kind, true);
+          yield* emitTextSegment(context, kind, true, undefined, phase);
           if (segment.sourceMessageId !== null) {
             stream.closedNamedSegments.set(segment.sourceMessageId, segment);
           }
@@ -3389,6 +3393,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                       ? `${context.nativeTurnId}:${kind}:${stream.nextSegment}`
                       : `${context.nativeTurnId}:${kind}:message:${sourceMessageId}`,
                   startedAt: yield* DateTime.now,
+                  promptSequence: context.promptSequence,
                   sourceMessageId,
                   text: "",
                   emitted: false,
@@ -5804,6 +5809,13 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               if (update.sessionUpdate === "usage_update") {
                 context.replyOpen = false;
                 if (context.promptSettled) yield* idleReportedSubagents(context);
+                if (
+                  context.promptSettled ||
+                  (context.assistant.current?.promptSequence !== undefined &&
+                    context.assistant.current.promptSequence < context.promptSequence)
+                ) {
+                  yield* closeTextStream(context, "assistant", "final_answer");
+                }
                 yield* rearmDeferredFinalize(context);
               } else if (acpRootSessionUpdateIngestsOutput(notification)) {
                 context.replyOpen = true;
@@ -9258,7 +9270,17 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                       return updated;
                     });
                   }
-                  if (context.finalized || followsAgentWorkState || superseded()) return;
+                  if (context.finalized || followsAgentWorkState) return;
+                  if (superseded()) {
+                    if (
+                      result.stopReason === "end_turn" &&
+                      !context.interrupted &&
+                      context.assistant.current?.promptSequence === sequence
+                    ) {
+                      yield* closeTextStream(context, "assistant", "final_answer");
+                    }
+                    return;
+                  }
                   // ACP v2 reports a failed prompt through its idle stop reason, not an RPC error.
                   const hiddenFailure =
                     settle.checkPromptOutcome === undefined ||
@@ -9356,7 +9378,13 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                       : false;
                   if (context.finalized) return;
                   if (deferredBackgroundWork || pendingReply) {
-                    yield* closeTextStreams(context);
+                    yield* closeTextStream(context, "user");
+                    yield* closeTextStream(context, "reasoning");
+                    yield* closeTextStream(
+                      context,
+                      "assistant",
+                      status === "completed" ? "final_answer" : undefined,
+                    );
                     yield* schedulePostSettleHoldExpiry(context);
                     if (pendingReply) {
                       context.replyOpen = true;
