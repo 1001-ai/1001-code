@@ -1651,6 +1651,7 @@ interface ActiveTextSegment {
   readonly nativeItemId: string;
   readonly startedAt: DateTime.Utc;
   readonly promptSequence?: number;
+  lastPromptSequence?: number;
   sourceMessageId: string | null;
   text: string;
   // The running node and first text have been emitted.
@@ -3394,12 +3395,19 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                       : `${context.nativeTurnId}:${kind}:message:${sourceMessageId}`,
                   startedAt: yield* DateTime.now,
                   promptSequence: context.promptSequence,
+                  lastPromptSequence: context.promptSequence,
                   sourceMessageId,
                   text: "",
                   emitted: false,
                   dirty: false,
                 }
-              : { ...closed, emitted: false, dirty: false };
+              : {
+                  ...closed,
+                  promptSequence: context.promptSequence,
+                  lastPromptSequence: context.promptSequence,
+                  emitted: false,
+                  dirty: false,
+                };
           if (closed === undefined) stream.nextSegment += 1;
           stream.current = segment;
           return segment;
@@ -3432,6 +3440,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             // Agents may omit the first messageId; retain projected identity until the first later id.
             segment.sourceMessageId = sourceMessageId;
           }
+          segment.lastPromptSequence = context.promptSequence;
           segment.text += text;
           yield* publishTextSegment(context, kind);
         });
@@ -9275,7 +9284,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                     if (
                       result.stopReason === "end_turn" &&
                       !context.interrupted &&
-                      context.assistant.current?.promptSequence === sequence
+                      context.assistant.current?.lastPromptSequence === sequence
                     ) {
                       yield* closeTextStream(context, "assistant", "final_answer");
                     }

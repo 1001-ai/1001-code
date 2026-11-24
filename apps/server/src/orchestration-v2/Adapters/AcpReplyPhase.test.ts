@@ -488,4 +488,89 @@ describe("ACP adapter assistant_message final_answer phase", () => {
         assert.isDefined(replies.get("Image build finished."));
       }).pipe(Effect.provide(layerSession)),
   );
+
+  it.effect(
+    "does not split or tag early chunks from a steering prompt when the old prompt returns end_turn late",
+    () =>
+      Effect.gen(function* () {
+        const prompt1Streamed = yield* Deferred.make<void>();
+        const prompt2Started = yield* Deferred.make<void>();
+        const releasePrompt1 = yield* Deferred.make<void>();
+        const releasePrompt2Tail = yield* Deferred.make<void>();
+
+        const {
+          session,
+          providerThread,
+          threadId,
+          runId,
+          events,
+          startTurn,
+          collectUntilTerminal,
+        } = yield* setupHarness({
+          steersWithPrompt: true,
+          onPrompt: ({ index, send: emit }) =>
+            Effect.gen(function* () {
+              if (index === 1) {
+                yield* emit({
+                  sessionUpdate: "agent_message_chunk",
+                  content: { type: "text", text: "First " },
+                });
+                yield* Deferred.succeed(prompt1Streamed, undefined);
+                yield* Deferred.await(releasePrompt1);
+                return { stopReason: "end_turn" as const };
+              }
+              yield* emit({
+                sessionUpdate: "agent_message_chunk",
+                content: { type: "text", text: "second-head " },
+              });
+              yield* Deferred.succeed(prompt2Started, undefined);
+              yield* Deferred.await(releasePrompt2Tail);
+              yield* emit({
+                sessionUpdate: "agent_message_chunk",
+                content: { type: "text", text: "second-tail." },
+              });
+              return { stopReason: "end_turn" as const };
+            }),
+        });
+
+        yield* startTurn();
+        yield* Deferred.await(prompt1Streamed);
+
+        const seen: Array<ProviderAdapter.ProviderAdapterV2Event> = [];
+        let providerTurnId:
+          | ProviderAdapter.ProviderAdapterV2SteerInput["providerTurnId"]
+          | undefined;
+        while (providerTurnId === undefined) {
+          const event = yield* Queue.take(events);
+          seen.push(event);
+          if (event.type === "provider_turn.updated") {
+            providerTurnId = event.providerTurn.id;
+          }
+        }
+
+        yield* session.steerTurn!({
+          threadId,
+          runId,
+          providerThread,
+          providerTurnId,
+          message: {
+            createdBy: "user",
+            creationSource: "web",
+            messageId: MessageId.make("steer-race"),
+            text: "Continue",
+            attachments: [],
+          },
+        });
+        yield* Deferred.await(prompt2Started);
+        yield* Deferred.succeed(releasePrompt1, undefined);
+        yield* TestClock.adjust("50 millis");
+        yield* Deferred.succeed(releasePrompt2Tail, undefined);
+
+        seen.push(...(yield* collectUntilTerminal));
+        const replies = finalAssistantItemsByText(seen);
+
+        assert.equal(replies.size, 1);
+        assert.isDefined(replies.get("First second-head second-tail."));
+      }).pipe(Effect.provide(layerSession)),
+  );
 });
