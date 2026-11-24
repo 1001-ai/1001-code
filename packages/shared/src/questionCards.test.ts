@@ -93,6 +93,11 @@ describe("parseQuestionQuote", () => {
       "   > **Q8 · Ship it?**\r\n>\r\n>- Now  \r\n> - Later",
       { id: "Q8", prompt: "Ship it?", kind: "choice", options: ["Now", "Later"] },
     ],
+    [
+      "wordy option within the parser headroom",
+      quote("**Q13 · Pick one**", `- ${"a".repeat(300)}`, "- Short"),
+      { id: "Q13", prompt: "Pick one", kind: "choice", options: ["a".repeat(300), "Short"] },
+    ],
   ])("accepts a %s question", (_label, source, expected) => {
     expect(parseQuestionQuote(source)).toEqual(expected);
   });
@@ -137,7 +142,7 @@ describe("parseQuestionQuote", () => {
     ["pick any as the whole prompt", quote("**Q1 ·  (pick any)**", "- A", "- B")],
     ["a reply hint that is not italic", quote("**Q1 · Name it**", "Reply with Q1: the name.")],
     ["a prompt over 500 characters", quote(`**Q1 · ${"a".repeat(501)}**`, "- A", "- B")],
-    ["an option over 120 characters", quote("**Q1 · Pick one**", `- ${"a".repeat(121)}`, "- B")],
+    ["an option over 300 characters", quote("**Q1 · Pick one**", `- ${"a".repeat(301)}`, "- B")],
     ["a bidi override in an option", quote("**Q1 · Pick one**", "- A\u202Eevil", "- B")],
     ["a zero-width character in the prompt", quote("**Q1 · Pick\u200B one**", "- A", "- B")],
     [

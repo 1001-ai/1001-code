@@ -670,6 +670,13 @@ One entry for each place this fork changes a file upstream owns, or replaces som
 - **On conflict:** none expected. If upstream renames `TimelineMinimap` or `useLocalStorage`, follow it.
 - **Check:** `vp test run src/components/chat/TimelineMomentCards.browser.test.tsx` (from `apps/web`) passes.
 
+### Multi-iframe browser history tests get a 30s timeout on GitHub runners
+
+- **Where:** `apps/web/src/browserHistoryStore.browser.test.ts`, `{ timeout: 30_000 }` on the four `openHistoryDocument` multi-iframe tests.
+- **Why:** each `srcdoc` iframe imports the module graph fresh from the Vite dev server; on this fork's `ubuntu-24.04` GitHub runners (slower than upstream's Blacksmith runners), the three-iframe test regularly hovers around 12–16s and hits Vitest's default 15s timeout, cascading into the next test.
+- **On conflict:** take upstream's test file and restore `{ timeout: 30_000 }` on multi-iframe tests if `Test Web` hits 15s timeouts again; drop this entry if upstream raises the timeout or stops reloading the full module graph per iframe.
+- **Check:** `vp test run src/browserHistoryStore.browser.test.ts` (from `apps/web`) passes.
+
 ### Finished assistant replies stay visible across steers and background wakes
 
 - **Where:** fork-only files hold the web retention logic and tests: `apps/web/src/components/chat/retainedAssistantReplies.logic.ts` (`addForkRetainedAssistantReplyEntryIds`), `apps/web/src/components/chat/retainedAssistantReplies.logic.test.ts`, and `apps/server/src/orchestration-v2/Adapters/AcpReplyPhase.test.ts`. Upstream files carry two small seams:

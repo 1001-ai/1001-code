@@ -203,7 +203,8 @@ async function resetHistoryFixture() {
   resetBrowserHistoryForTests();
 }
 
-it("moves the legacy snapshot into the shared database", async () => {
+// oxlint-disable-next-line t3code/no-test-timeout-or-unreasoned-skip -- Each srcdoc iframe loads the module graph from Vite, exceeding 15s on slower CI runners.
+it("moves the legacy snapshot into the shared database", { timeout: 30_000 }, async () => {
   await resetHistoryFixture();
   localStorage.setItem(
     storageKey,
@@ -226,31 +227,37 @@ it("moves the legacy snapshot into the shared database", async () => {
   }
 });
 
-it("persists new visits from an open document after its history database is deleted", async () => {
-  await resetHistoryFixture();
-  localStorage.setItem(
-    storageKey,
-    JSON.stringify({ state: { byProjectKey: { a: [page] } }, version: 1 }),
-  );
-  try {
-    using documents = new DisposableStack();
-    const first = await openHistoryDocument(documents);
-    await vi.waitFor(() => expect(first.getState().byProjectKey).toEqual({ a: [page] }));
-    first.getState().removeUrl("a", page.url);
-    await vi.waitFor(() => expect(first.getState().byProjectKey).toEqual({}));
-
-    await deleteHistoryDatabase();
-    first.getState().recordVisit("b", otherEntry.url, otherEntry.lastVisitedAt);
-    await vi.waitFor(() => expect(first.getState().byProjectKey.b).toEqual([otherEntry]));
-
-    const reopened = await openHistoryDocument(documents);
-    await vi.waitFor(() => expect(reopened.getState().byProjectKey).toEqual({ b: [otherEntry] }));
-  } finally {
+// oxlint-disable-next-line t3code/no-test-timeout-or-unreasoned-skip -- Each srcdoc iframe loads the module graph from Vite, exceeding 15s on slower CI runners.
+it(
+  "persists new visits from an open document after its history database is deleted",
+  { timeout: 30_000 },
+  async () => {
     await resetHistoryFixture();
-  }
-});
+    localStorage.setItem(
+      storageKey,
+      JSON.stringify({ state: { byProjectKey: { a: [page] } }, version: 1 }),
+    );
+    try {
+      using documents = new DisposableStack();
+      const first = await openHistoryDocument(documents);
+      await vi.waitFor(() => expect(first.getState().byProjectKey).toEqual({ a: [page] }));
+      first.getState().removeUrl("a", page.url);
+      await vi.waitFor(() => expect(first.getState().byProjectKey).toEqual({}));
 
-it("keeps overlapping visits from independent documents", async () => {
+      await deleteHistoryDatabase();
+      first.getState().recordVisit("b", otherEntry.url, otherEntry.lastVisitedAt);
+      await vi.waitFor(() => expect(first.getState().byProjectKey.b).toEqual([otherEntry]));
+
+      const reopened = await openHistoryDocument(documents);
+      await vi.waitFor(() => expect(reopened.getState().byProjectKey).toEqual({ b: [otherEntry] }));
+    } finally {
+      await resetHistoryFixture();
+    }
+  },
+);
+
+// oxlint-disable-next-line t3code/no-test-timeout-or-unreasoned-skip -- Three srcdoc iframes each load the module graph from Vite, exceeding 15s on slower CI runners.
+it("keeps overlapping visits from independent documents", { timeout: 30_000 }, async () => {
   await resetHistoryFixture();
   localStorage.setItem(
     storageKey,
@@ -279,7 +286,8 @@ it("keeps overlapping visits from independent documents", async () => {
   }
 });
 
-it("keeps visits saved while IndexedDB could not open", async () => {
+// oxlint-disable-next-line t3code/no-test-timeout-or-unreasoned-skip -- Each srcdoc iframe loads the module graph from Vite, exceeding 15s on slower CI runners.
+it("keeps visits saved while IndexedDB could not open", { timeout: 30_000 }, async () => {
   await resetHistoryFixture();
   try {
     using documents = new DisposableStack();
