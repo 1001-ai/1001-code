@@ -3459,6 +3459,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             yield* closeTextStream(context, kind);
             segment = yield* openTextSegment(context, kind, messageId);
           }
+          segment.lastPromptSequence = context.promptSequence;
           segment.text = text;
           yield* publishTextSegment(context, kind);
         });
