@@ -15,6 +15,7 @@ import {
 } from "@t3tools/client-runtime/user-message";
 import type { HandoffTimelineRun } from "@t3tools/client-runtime/handoff";
 import type { LampTranscriptRow } from "../lamp/lampTranscript.logic";
+import { addForkRetainedAssistantReplyEntryIds } from "./retainedAssistantReplies.logic";
 import { renderCodexDirectivesForCopy } from "~/markdown/markdownText";
 import {
   commandDisplayText,
@@ -844,6 +845,7 @@ function retainedAssistantReplyEntryIds(
       replyEntryIds.add(entry.id);
     }
   }
+  addForkRetainedAssistantReplyEntryIds(timelineEntries, replyEntryIds);
   return replyEntryIds;
 }
 

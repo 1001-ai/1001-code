@@ -1,8 +1,15 @@
+import { MessageId, NodeId, RunAttemptId, RunId } from "@t3tools/contracts";
 import { QUESTION_SKIPPED_ANSWER } from "@t3tools/shared/questionCards";
+import * as DateTime from "effect/DateTime";
 import type { Element } from "hast";
 import { describe, expect, it } from "vite-plus/test";
 
 import { wordsHast } from "~/markdown/wordsHast";
+import type { TimelineEntry } from "../../session-logic";
+import {
+  deriveMessagesTimelineRows,
+  timelineTurnFoldRunIdsByEntryId,
+} from "./MessagesTimeline.logic";
 import {
   findQuestionAnswer,
   findQuestionRefs,
@@ -265,5 +272,173 @@ describe("attachQuestionQuoteSources", () => {
       "> **Q1 · Which config?**\n>\n> - app.config.json _(recommended)_\n> - settings.json",
       "> **Q2 · Default name?**\n> _Reply with Q2: the name._",
     ]);
+  });
+});
+
+describe("question card messages in the timeline", () => {
+  const at = (second: number) => `2026-01-01T00:00:${String(second).padStart(2, "0")}Z`;
+  const runId = RunId.make("run-questions");
+  const questionCard = (id: string) => `> **${id} · Ship it?**\n>\n> - Yes _(recommended)_\n> - No`;
+  const messageEntry = (
+    id: string,
+    role: "user" | "assistant",
+    text: string,
+    second: number,
+    options?: {
+      readonly inputIntent?: "turn_start" | "steer";
+      readonly streaming?: boolean;
+      readonly attempt?: TimelineEntry["attempt"];
+    },
+  ): TimelineEntry => ({
+    kind: "message",
+    id,
+    createdAt: at(second),
+    ...(options?.attempt ? { attempt: options.attempt } : {}),
+    message: {
+      id: MessageId.make(id),
+      role,
+      text,
+      runId,
+      ...(options?.inputIntent ? { inputIntent: options.inputIntent } : {}),
+      createdAt: at(second),
+      updatedAt: at(second),
+      streaming: options?.streaming ?? false,
+    },
+  });
+  const workEntry = (
+    id: string,
+    second: number,
+    attempt?: TimelineEntry["attempt"],
+  ): TimelineEntry => ({
+    kind: "work",
+    id,
+    createdAt: at(second),
+    ...(attempt ? { attempt } : {}),
+    entry: { id, createdAt: at(second), runId, label: "Ran check", tone: "tool" },
+  });
+
+  it("keeps a finished assistant message with question cards visible when a later message arrives in the same run", () => {
+    const timelineEntries: ReadonlyArray<TimelineEntry> = [
+      messageEntry("prompt", "user", "Check status", 0, { inputIntent: "turn_start" }),
+      workEntry("work-before", 2),
+      messageEntry(
+        "asks-questions",
+        "assistant",
+        `${questionCard("Q1")}\n\n${questionCard("Q2")}`,
+        5,
+      ),
+      messageEntry("answer-q1", "user", "Q1: Yes", 10, { inputIntent: "steer" }),
+      messageEntry("commentary", "assistant", "Checking one more thing", 12),
+      workEntry("work-after", 13),
+      messageEntry("final-update", "assistant", "Noted on Q1.", 15),
+    ];
+
+    const settledInput = {
+      timelineEntries,
+      latestRun: { runId, status: "completed" as const, startedAt: at(0), completedAt: at(15) },
+      isWorking: false,
+      turnDiffSummaries: [],
+      supportsConversationRollback: false,
+    };
+
+    const rows = deriveMessagesTimelineRows(settledInput);
+    expect(rows.map((row) => row.id)).toEqual([
+      "prompt",
+      `turn-fold:${runId}`,
+      "asks-questions",
+      "answer-q1",
+      `turn-fold:${runId}:steer:answer-q1`,
+      "final-update",
+    ]);
+    expect(timelineTurnFoldRunIdsByEntryId(settledInput).has("asks-questions")).toBe(false);
+    expect(timelineTurnFoldRunIdsByEntryId(settledInput).has("commentary")).toBe(true);
+
+    const zenRows = deriveMessagesTimelineRows({ ...settledInput, toolCallVisibility: "zen" });
+    expect(zenRows.map((row) => row.id)).toEqual([
+      "prompt",
+      "asks-questions",
+      "answer-q1",
+      "final-update",
+    ]);
+  });
+
+  it("keeps finished question cards visible in zen mode while the run is still active, but not while streaming", () => {
+    const timelineEntries: ReadonlyArray<TimelineEntry> = [
+      messageEntry("prompt", "user", "Start", 0, { inputIntent: "turn_start" }),
+      messageEntry("finished-questions", "assistant", questionCard("Q1"), 5, { streaming: false }),
+      workEntry("work-next", 6),
+      messageEntry("streaming-questions", "assistant", questionCard("Q2"), 8, { streaming: true }),
+    ];
+
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries,
+      latestRun: { runId, status: "running", startedAt: at(0), completedAt: null },
+      isWorking: true,
+      turnDiffSummaries: [],
+      supportsConversationRollback: false,
+      toolCallVisibility: "zen",
+    });
+    expect(rows.map((row) => row.id)).toContain("finished-questions");
+    expect(rows.map((row) => row.id)).not.toContain("streaming-questions");
+  });
+
+  it("does not collapse a finished question-card message inside a superseded attempt", () => {
+    const supersededAttempt = {
+      id: RunAttemptId.make("attempt-1"),
+      runId,
+      attemptOrdinal: 1,
+      rootNodeId: NodeId.make("node-1"),
+      status: "superseded" as const,
+      completedAt: DateTime.makeUnsafe(at(10)),
+    };
+    const nextAttempt = {
+      id: RunAttemptId.make("attempt-2"),
+      runId,
+      attemptOrdinal: 2,
+      rootNodeId: NodeId.make("node-2"),
+      status: "running" as const,
+      completedAt: null,
+    };
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: [
+        messageEntry("prompt", "user", "Start", 0, {
+          inputIntent: "turn_start",
+          attempt: supersededAttempt,
+        }),
+        messageEntry("asks-questions", "assistant", questionCard("Q1"), 4, {
+          attempt: supersededAttempt,
+        }),
+        workEntry("old-work", 6, supersededAttempt),
+        messageEntry("steer", "user", "Q1: Yes", 10, {
+          inputIntent: "steer",
+          attempt: nextAttempt,
+        }),
+        messageEntry("next-reply", "assistant", "Working on it", 12, {
+          streaming: true,
+          attempt: nextAttempt,
+        }),
+      ],
+      latestRun: { runId, status: "running", startedAt: at(0), completedAt: null },
+      isWorking: true,
+      turnDiffSummaries: [],
+      supportsConversationRollback: false,
+    });
+    expect(rows.map((row) => row.id)).toContain("asks-questions");
+  });
+
+  it("still folds an earlier assistant message whose question syntax is only inside a code fence", () => {
+    const fenced = "```md\n> **Q1 · Example?**\n>\n> - Yes\n> - No\n```";
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: [
+        messageEntry("prompt", "user", "Show format", 0, { inputIntent: "turn_start" }),
+        messageEntry("example-only", "assistant", fenced, 2),
+        messageEntry("final", "assistant", "Here you go.", 5),
+      ],
+      latestRun: { runId, status: "completed", startedAt: at(0), completedAt: at(5) },
+      isWorking: false,
+      turnDiffSummaries: [],
+      supportsConversationRollback: false,
+    });
+    expect(rows.map((row) => row.id)).toEqual(["prompt", `turn-fold:${runId}`, "final"]);
   });
 });

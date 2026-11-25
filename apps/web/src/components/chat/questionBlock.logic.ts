@@ -119,6 +119,26 @@ function cardsOfItem(item: object, text: string): ReadonlyArray<QuestionBlock> {
   return cards;
 }
 
+const hasQuestionCardsByMessage = new WeakMap<object, boolean>();
+
+/**
+ * Whether a finished assistant message asks question cards, so timeline folding and Zen mode
+ * keep the message visible when later messages arrive in the same run.
+ */
+export function messageHasQuestionCards(message: {
+  readonly role: string;
+  readonly text: string;
+  readonly streaming: boolean;
+}): boolean {
+  if (message.role !== "assistant" || message.streaming) return false;
+  let has = hasQuestionCardsByMessage.get(message);
+  if (has === undefined) {
+    has = questionCardsInMarkdown(message.text).length > 0;
+    hasQuestionCardsByMessage.set(message, has);
+  }
+  return has;
+}
+
 /**
  * Whether the agent withdrew `questionId` with a `<id>: no longer needed` line in a finished
  * assistant message after the item that asked it, while that item still held its latest cards,
