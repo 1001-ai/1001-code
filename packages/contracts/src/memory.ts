@@ -244,6 +244,8 @@ export const MemoryDecideInput = Schema.Struct({
   choice: MemoryChoice,
   /** The proposal as the person edited it; ignored for a rejection or a removal. */
   text: MemoryProposalText,
+  /** Target scope for additions: personal/personal-project with "me", team/project with "team". */
+  scope: Schema.optional(MemoryScope),
 });
 export type MemoryDecideInput = typeof MemoryDecideInput.Type;
 
@@ -261,6 +263,32 @@ function cutToBytes(text: string, budget: number): string {
   const whole = cut.endsWith("�") ? cut.slice(0, -1) : cut;
   const lineEnd = whole.lastIndexOf("\n");
   return lineEnd > 0 ? whole.slice(0, lineEnd) : whole;
+}
+
+/** Keeps the most specific sections (at the end) whole and trims earlier ones to fit `budget`. */
+function trimSectionsKeepingLatest(sections: ReadonlyArray<string>, budget: number): string {
+  const kept: Array<string> = [];
+  let remaining = budget;
+  for (let index = sections.length - 1; index >= 0; index -= 1) {
+    const section = sections[index]!;
+    const separator = kept.length === 0 ? 0 : 2;
+    const needed = byteLength(section) + separator;
+    if (needed <= remaining) {
+      kept.unshift(section);
+      remaining -= needed;
+      continue;
+    }
+    const sliceBudget = remaining - separator;
+    if (sliceBudget > 0) {
+      const trimmed = cutToBytes(section, sliceBudget);
+      // Drop a section when only its "From ...:" header fits and more-specific sections already fit.
+      if (trimmed !== "" && (kept.length === 0 || trimmed.includes("\n"))) {
+        kept.unshift(trimmed);
+      }
+    }
+    break;
+  }
+  return kept.join("\n\n");
 }
 
 function scopeHeading(document: Pick<MemoryDocument, "scope" | "label">): string {
@@ -303,17 +331,21 @@ export function buildMemoryBlock(input: {
   ].join("\n");
   const footer = [
     input.proposable
-      ? `When the user states a preference, corrects you on the same thing twice, or you learn a fact about this project that later threads will need, call ${MEMORY_PROPOSE_TOOL_NAME} with one short line in plain words and why. The user accepts it for themselves or the team from a card in the chat. Keep working; do not wait for or ask about the answer. To change or remove a saved line, call ${MEMORY_PROPOSE_TOOL_NAME} with replaces set to its exact text, and text for the new line or no text to remove it.`
+      ? `When the user states a preference, corrects you on the same thing twice, or you learn a fact about this project that later threads will need, call ${MEMORY_PROPOSE_TOOL_NAME} with one short line in plain words and why. Write it neutrally (no "me" or the user's name), since the user may accept it for the team. The user accepts it for themselves or the team from a card in the chat. Keep working; do not wait for or ask about the answer. To change or remove a saved line, call ${MEMORY_PROPOSE_TOOL_NAME} with replaces set to its exact text, and text for the new line or no text to remove it.`
       : `To add or change a memory, open a pull request that edits these files under ${MEMORY_DIRECTORY}/${input.repository === null ? " in the team repository" : ` in ${input.repository}`}, or ask the user to change it in the Memory panel.`,
     closing,
   ].join("\n");
   const body = sections.length === 0 ? "Nothing is saved yet." : sections.join("\n\n");
   const whole = `${header}\n\n${body}\n\n${footer}`;
   if (byteLength(whole) <= MEMORY_MAX_BYTES) return { text: whole, truncated: false };
-  const notice = "(The rest was left out: this memory is over the size limit.)";
-  const budget = MEMORY_MAX_BYTES - byteLength(`${header}\n\n\n${notice}\n\n${footer}`);
+  const notice = "(Earlier memory was trimmed: this memory is over the size limit.)";
+  const budget = MEMORY_MAX_BYTES - byteLength(`${header}\n\n${notice}\n\n\n\n${footer}`);
+  const trimmed = trimSectionsKeepingLatest(sections, Math.max(0, budget));
   return {
-    text: `${header}\n\n${cutToBytes(body, budget)}\n${notice}\n\n${footer}`,
+    text:
+      trimmed === ""
+        ? `${header}\n\n${notice}\n\n${footer}`
+        : `${header}\n\n${notice}\n\n${trimmed}\n\n${footer}`,
     truncated: true,
   };
 }

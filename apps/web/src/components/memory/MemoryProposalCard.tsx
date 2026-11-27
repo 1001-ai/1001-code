@@ -29,11 +29,14 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Textarea } from "../ui/textarea";
+import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import {
+  isAllProjectsMemoryFile,
   memoryProposalInput,
   memoryScopeLabel,
   proposalForCall,
   proposalTarget,
+  proposalTargetScope,
 } from "./memoryProposal.logic";
 
 const failureMessage = (
@@ -50,13 +53,24 @@ export function useMemoryDecision(environmentId: EnvironmentId, projectId: Proje
   const canDecide = useEnvironmentScope(environmentId, AuthSourceControlWriteScope);
   const [busy, setBusy] = useState<MemoryChoice | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const submit = async (proposal: MemoryProposal, choice: MemoryChoice, text: string) => {
+  const submit = async (
+    proposal: MemoryProposal,
+    choice: MemoryChoice,
+    text: string,
+    scope?: MemoryScope,
+  ) => {
     if (projectId === null) return;
     setBusy(choice);
     setError(null);
     const result = await decide({
       environmentId,
-      input: { projectId, proposalId: proposal.id, choice, text: text.trim() || proposal.text },
+      input: {
+        projectId,
+        proposalId: proposal.id,
+        choice,
+        text: text.trim() || proposal.text,
+        ...(scope === undefined ? {} : { scope }),
+      },
     });
     setBusy(null);
     if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
@@ -75,20 +89,44 @@ export function MemoryDecisionButtons(props: {
   readonly personalOnly?: boolean;
   /** A change or removal already has its file, so it has one accept. */
   readonly kind?: MemoryProposalKind | null;
-  readonly onChoose: (choice: MemoryChoice) => void;
+  readonly onChoose: (choice: MemoryChoice, scope?: MemoryScope) => void;
 }) {
+  const [allProjects, setAllProjects] = useState(false);
   const disabled = props.busy !== null || !props.canDecide;
   const acceptDisabled = disabled || props.acceptDisabled === true;
   const kind = props.kind ?? null;
+  const showScopeToggle = kind === null && !props.personalOnly;
   return (
     <>
       {kind === null ? (
         <>
+          {showScopeToggle ? (
+            <ToggleGroup
+              aria-label="Memory scope"
+              value={[allProjects ? "all" : "project"]}
+              onValueChange={(next) => {
+                const value = next[0];
+                if (value === "project" || value === "all") setAllProjects(value === "all");
+              }}
+            >
+              <Toggle value="project" disabled={disabled}>
+                This project
+              </Toggle>
+              <Toggle value="all" disabled={disabled}>
+                All projects
+              </Toggle>
+            </ToggleGroup>
+          ) : null}
           <Button
             size="xs"
             variant="outline"
             disabled={acceptDisabled}
-            onClick={() => props.onChoose("me")}
+            onClick={() =>
+              props.onChoose(
+                "me",
+                props.personalOnly ? undefined : proposalTargetScope("me", allProjects),
+              )
+            }
           >
             {props.busy === "me" ? "Saving…" : props.personalOnly ? "Accept" : "Accept for me"}
           </Button>
@@ -97,7 +135,7 @@ export function MemoryDecisionButtons(props: {
               size="xs"
               variant="outline"
               disabled={acceptDisabled}
-              onClick={() => props.onChoose("team")}
+              onClick={() => props.onChoose("team", proposalTargetScope("team", allProjects))}
             >
               {props.busy === "team" ? "Saving…" : "Accept for team"}
             </Button>
@@ -223,7 +261,11 @@ function MemoryOutcome(props: {
         {label}
       </button>
     );
-  const where = props.projectName === null ? "" : ` in ${props.projectName}`;
+  const where = isAllProjectsMemoryFile(decision.file)
+    ? " across all projects"
+    : props.projectName === null
+      ? ""
+      : ` in ${props.projectName}`;
   const accepted =
     proposal.category !== undefined
       ? "Accepted for the voice agent"
@@ -391,7 +433,9 @@ export function MemoryProposalCard(props: {
               acceptDisabled={edit === null && (draft ?? proposal.text).trim() === ""}
               personalOnly={target.voiceAgent}
               kind={target.kind}
-              onChoose={(next) => void decision.submit(proposal, next, draft ?? proposal.text)}
+              onChoose={(next, scope) =>
+                void decision.submit(proposal, next, draft ?? proposal.text, scope)
+              }
             />
             <span className="min-w-0 flex-1" />
             <span className="text-xs text-muted-foreground">

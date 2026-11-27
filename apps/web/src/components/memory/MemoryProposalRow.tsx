@@ -84,7 +84,7 @@ export function MemoryProposalRow(props: {
           canDecide={decision.canDecide}
           personalOnly={proposal.category !== undefined}
           kind={proposal.kind ?? null}
-          onChoose={(choice) => void decision.submit(proposal, choice, proposal.text)}
+          onChoose={(choice, scope) => void decision.submit(proposal, choice, proposal.text, scope)}
         />
       </div>
     </div>

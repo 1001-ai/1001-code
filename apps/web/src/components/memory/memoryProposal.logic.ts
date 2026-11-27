@@ -35,7 +35,10 @@ export function memoryProposalInput(input: unknown): MemoryProposalInput | null 
   const reason = nonEmpty(fields.reason) ?? "";
   if (voiceAgent) return text === null ? null : { text, reason, voiceAgent, replaces, kind: null };
   if (replaces === null) {
-    return text === null ? null : { text, reason, voiceAgent, replaces: null, kind: null };
+    const normalized = text === null ? "" : lineText(text);
+    return normalized === ""
+      ? null
+      : { text: normalized, reason, voiceAgent, replaces: null, kind: null };
   }
   const old = lineText(replaces);
   return text === null
@@ -82,6 +85,15 @@ export function memoryScopeLabel(scope: MemoryScope): string {
     case "personal-project":
       return "Your project memory";
   }
+}
+
+export function proposalTargetScope(choice: "me" | "team", allProjects: boolean): MemoryScope {
+  if (choice === "me") return allProjects ? "personal" : "personal-project";
+  return allProjects ? "team" : "project";
+}
+
+export function isAllProjectsMemoryFile(file: string | null): boolean {
+  return file === "memory/team.md" || (file !== null && /^memory\/people\/[^/]+\.md$/.test(file));
 }
 
 /** A `memory_propose` call that recorded a proposal; a failed one stays an ordinary tool row. */

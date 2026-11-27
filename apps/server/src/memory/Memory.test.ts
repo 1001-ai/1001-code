@@ -430,6 +430,19 @@ it.effect(
         decision: null,
       });
       expect((yield* memory.proposeFromAgent(agentProposal("Use tabs."))).id).toBe(first.id);
+      expect((yield* memory.proposeFromAgent(agentProposal("- Use tabs."))).id).toBe(first.id);
+      expect(
+        (yield* Effect.flip(
+          memory.proposeFromAgent(agentProposal("Use tabs.", ThreadId.make("thread-2"))),
+        )).detail,
+      ).toBe(
+        "Another thread in this project already proposed this memory and it is waiting for review.",
+      );
+      expect(
+        (yield* Effect.flip(
+          memory.proposeFromAgent(agentProposal("- Prefer small pull requests.")),
+        )).detail,
+      ).toBe("This memory is already saved in memory/team.md.");
       expect((yield* memory.read(PROJECT_ID)).proposals).toEqual([first]);
       expect(fixture.store.saved).toEqual([
         { ...first, projectId: PROJECT_ID, decidedBySession: null },
@@ -478,6 +491,62 @@ it.effect("accepting adds the edited line to the chosen file and merges at once"
       { projectId: PROJECT_ID, proposalId: team.id, choice: "team", text: "Tests need Node 24." },
       "session-1",
     );
+    const crossPersonal = yield* memory.proposeFromAgent(agentProposal("Prefer Opus 5.5."));
+    expect(
+      (yield* Effect.flip(
+        memory.decide(
+          {
+            projectId: PROJECT_ID,
+            proposalId: crossPersonal.id,
+            choice: "me",
+            scope: "team",
+            text: "Prefer Opus 5.5.",
+          },
+          "session-1",
+        ),
+      )).detail,
+    ).toBe("Accept for me can save only to your personal or personal-project memory.");
+    expect(
+      (yield* Effect.flip(
+        memory.decide(
+          {
+            projectId: PROJECT_ID,
+            proposalId: crossPersonal.id,
+            choice: "me",
+            scope: "personal",
+            text: "Keep replies short.",
+          },
+          "session-1",
+        ),
+      )).detail,
+    ).toBe("Nothing to save: this memory is already in memory/people/alice.md.");
+    expect(
+      (yield* memory.decide(
+        {
+          projectId: PROJECT_ID,
+          proposalId: crossPersonal.id,
+          choice: "me",
+          scope: "personal",
+          text: "Prefer Opus 5.5.",
+        },
+        "session-1",
+      )).decision,
+    ).toMatchObject({ choice: "me", file: "memory/people/alice.md", merged: true });
+
+    const crossTeam = yield* memory.proposeFromAgent(agentProposal("Never use git stash."));
+    expect(
+      (yield* memory.decide(
+        {
+          projectId: PROJECT_ID,
+          proposalId: crossTeam.id,
+          choice: "team",
+          scope: "team",
+          text: "Never use git stash.",
+        },
+        "session-1",
+      )).decision,
+    ).toMatchObject({ choice: "team", file: "memory/team.md", merged: true });
+
     const rejected = yield* memory.proposeFromAgent(agentProposal("Always use drafts."));
     const decision = yield* memory.decide(
       { projectId: PROJECT_ID, proposalId: rejected.id, choice: "reject", text: "Ignored." },
@@ -493,8 +562,20 @@ it.effect("accepting adds the edited line to the chosen file and merges at once"
           text: "- Run the web tests before pushing.\n- Tests need Node 24.\n",
         },
       ],
+      [
+        {
+          file: "memory/people/alice.md",
+          text: "- Keep replies short.\n- Prefer Opus 5.5.\n",
+        },
+      ],
+      [
+        {
+          file: "memory/team.md",
+          text: "- Prefer small pull requests.\n- Never use git stash.\n",
+        },
+      ],
     ]);
-    expect(fixture.merged).toHaveLength(2);
+    expect(fixture.merged).toHaveLength(4);
   }).pipe(Effect.scoped),
 );
 
@@ -525,6 +606,7 @@ it.effect("lists every project's unanswered proposals, newest first, without rea
     const tabs = yield* memory.proposeFromAgent(agentProposal("Use tabs."));
     yield* TestClock.adjust("1 minute");
     yield* memory.proposeFromAgent(agentProposal("Prefer pnpm."));
+    fixture.reads.length = 0;
     expect(yield* pending).toEqual([
       [PROJECT_ID, "Prefer pnpm."],
       [PROJECT_ID, "Use tabs."],
@@ -577,11 +659,17 @@ it.effect("a proposal made during a slow save is not lost when that save lands",
     const first = yield* Effect.forkChild(memory.proposeFromAgent(agentProposal("Use tabs.")));
     yield* Deferred.await(slowFirstSave.started);
     const second = yield* Effect.forkChild(memory.proposeFromAgent(agentProposal("Prefer pnpm.")));
-    // Lets the second call run as far as it can before the first save lands.
+    const duplicate = yield* Effect.forkChild(
+      Effect.flip(memory.proposeFromAgent(agentProposal("Use tabs.", ThreadId.make("thread-2")))),
+    );
+    // Lets the concurrent calls run as far as they can before the first save lands.
     yield* Effect.yieldNow;
     yield* Deferred.succeed(slowFirstSave.release, undefined);
     yield* Fiber.join(first);
     yield* Fiber.join(second);
+    expect((yield* Fiber.join(duplicate)).detail).toBe(
+      "Another thread in this project already proposed this memory and it is waiting for review.",
+    );
     expect(fixture.store.saved.map((saved) => saved.text)).toEqual(["Use tabs.", "Prefer pnpm."]);
   }).pipe(Effect.scoped),
 );
@@ -821,10 +909,10 @@ it.effect("proposes a change or removal of a saved line only where exactly one f
     expect(
       (yield* memory.proposeFromAgent(editProposal({ replaces: "Keep replies short." }))).id,
     ).toBe(removal.id);
-    // Adding the same line is another proposal.
-    const added = yield* memory.proposeFromAgent(agentProposal("Keep replies short."));
-    expect(added.id).not.toBe(removal.id);
-    expect(added.kind).toBeUndefined();
+    // Adding a line that is already saved is refused.
+    expect(
+      (yield* Effect.flip(memory.proposeFromAgent(agentProposal("Keep replies short.")))).detail,
+    ).toBe("This memory is already saved in memory/people/alice.md.");
 
     // After a GitHub CLI account switch, the line is looked up in the signed-in person's file.
     const bob = yield* makeMemory({ catalog: catalog(), liveLogin: "Bob" }).build;
