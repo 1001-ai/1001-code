@@ -249,6 +249,7 @@ import { isProjectPinShortcut, ProjectPinButton } from "./ProjectPinButton";
 import {
   Combobox,
   ComboboxEmpty,
+  ComboboxItem,
   ComboboxSearchInput,
   ComboboxPopup,
   ComboboxTrigger,
