@@ -1,5 +1,6 @@
 import {
   isMemoryProposeToolName,
+  type MemoryDecisionChoice,
   type MemoryProposal,
   type MemoryProposalKind,
   type MemoryScope,
@@ -81,6 +82,29 @@ export function memoryScopeLabel(scope: MemoryScope): string {
       return "Your memory";
     case "personal-project":
       return "Your project memory";
+  }
+}
+
+export function memoryAcceptedLabel(
+  proposal: Pick<MemoryProposal, "category" | "kind">,
+  choice: Exclude<MemoryDecisionChoice, "reject" | "withdrawn">,
+  projectName: string | null,
+): string {
+  if (proposal.category !== undefined) return "Accepted for the voice agent";
+  if (proposal.kind === "change") return "Change accepted";
+  if (proposal.kind === "remove") return "Removal accepted";
+  const where = projectName === null ? "" : ` in ${projectName}`;
+  switch (choice) {
+    case "me":
+      return `Accepted for you${where}`;
+    case "me-all":
+      return "Accepted for you across all projects";
+    case "team":
+      return `Accepted for the team${where}`;
+    case "team-all":
+      return "Accepted for the team across all projects";
+    case "accept":
+      return "Accepted";
   }
 }
 

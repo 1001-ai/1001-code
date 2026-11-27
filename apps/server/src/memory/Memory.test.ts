@@ -478,6 +478,38 @@ it.effect("accepting adds the edited line to the chosen file and merges at once"
       { projectId: PROJECT_ID, proposalId: team.id, choice: "team", text: "Tests need Node 24." },
       "session-1",
     );
+    const mineAll = yield* memory.proposeFromAgent(agentProposal("Keep diffs small."));
+    const acceptedMineAll = yield* memory.decide(
+      {
+        projectId: PROJECT_ID,
+        proposalId: mineAll.id,
+        choice: "me-all",
+        text: "Keep diffs small.",
+      },
+      "session-1",
+    );
+    expect(acceptedMineAll.decision).toMatchObject({
+      choice: "me-all",
+      text: "Keep diffs small.",
+      file: "memory/people/alice.md",
+      merged: true,
+    });
+    const teamAll = yield* memory.proposeFromAgent(agentProposal("Write plain commit titles."));
+    const acceptedTeamAll = yield* memory.decide(
+      {
+        projectId: PROJECT_ID,
+        proposalId: teamAll.id,
+        choice: "team-all",
+        text: "Write plain commit titles.",
+      },
+      "session-1",
+    );
+    expect(acceptedTeamAll.decision).toMatchObject({
+      choice: "team-all",
+      text: "Write plain commit titles.",
+      file: "memory/team.md",
+      merged: true,
+    });
     const rejected = yield* memory.proposeFromAgent(agentProposal("Always use drafts."));
     const decision = yield* memory.decide(
       { projectId: PROJECT_ID, proposalId: rejected.id, choice: "reject", text: "Ignored." },
@@ -493,8 +525,40 @@ it.effect("accepting adds the edited line to the chosen file and merges at once"
           text: "- Run the web tests before pushing.\n- Tests need Node 24.\n",
         },
       ],
+      [
+        {
+          file: "memory/people/alice.md",
+          text: "- Keep replies short.\n- Keep diffs small.\n",
+        },
+      ],
+      [
+        {
+          file: "memory/team.md",
+          text: "- Prefer small pull requests.\n- Write plain commit titles.\n",
+        },
+      ],
     ]);
-    expect(fixture.merged).toHaveLength(2);
+    expect(fixture.proposals[2]).toMatchObject({
+      title: "Remember for me across all projects: Keep diffs small.",
+      branchStem: "memory/personal-alice",
+    });
+    expect(fixture.proposals[3]).toMatchObject({
+      title: "Remember for the team across all projects: Write plain commit titles.",
+      branchStem: "memory/team",
+    });
+    expect(fixture.merged).toHaveLength(4);
+
+    // After a GitHub CLI account switch, me-all goes to the signed-in person's file.
+    const switched = makeMemory({ catalog: catalog(), liveLogin: "Bob" });
+    const bob = yield* switched.build;
+    const bobProposal = yield* bob.proposeFromAgent(agentProposal("Skip emojis."));
+    yield* bob.decide(
+      { projectId: PROJECT_ID, proposalId: bobProposal.id, choice: "me-all", text: "Skip emojis." },
+      "session-1",
+    );
+    expect(switched.proposals.map((proposal) => proposal.files)).toEqual([
+      [{ file: "memory/people/bob.md", text: "- Bob's own rule.\n- Skip emojis.\n" }],
+    ]);
   }).pipe(Effect.scoped),
 );
 
@@ -683,14 +747,16 @@ it.effect("accepting a voice agent memory puts it in place of the one it replace
       replaces: "Keep updates to one sentence per agent.",
       decision: null,
     });
-    const decide = (choice: "me" | "team", proposalId = proposal.id) =>
+    const decide = (choice: "me" | "me-all" | "team" | "team-all", proposalId = proposal.id) =>
       memory.decide(
         { projectId: PROJECT_ID, proposalId, choice, text: "Give two sentences per agent." },
         "session-1",
       );
-    expect((yield* Effect.flip(decide("team"))).detail).toBe(
-      "A voice agent memory is yours alone: accept it for yourself or reject it.",
-    );
+    for (const disallowed of ["team", "team-all", "me-all"] as const) {
+      expect((yield* Effect.flip(decide(disallowed))).detail).toBe(
+        "A voice agent memory is yours alone: accept it for yourself or reject it.",
+      );
+    }
     expect((yield* decide("me")).decision).toMatchObject({
       choice: "me",
       text: "Give two sentences per agent.",
@@ -942,7 +1008,10 @@ it.effect("undo reverts an accepted addition, change or removal in the file it e
     const files: Record<string, string> = { ...FILES };
     const fixture = makeMemory({ catalog: catalog(), files });
     const memory = yield* fixture.build;
-    const accept = (proposal: MemoryProposal, choice: "me" | "team" | "accept" | "reject") =>
+    const accept = (
+      proposal: MemoryProposal,
+      choice: "me" | "me-all" | "team" | "team-all" | "accept" | "reject",
+    ) =>
       memory.decide(
         { projectId: PROJECT_ID, proposalId: proposal.id, choice, text: proposal.text },
         "session-1",
@@ -967,6 +1036,22 @@ it.effect("undo reverts an accepted addition, change or removal in the file it e
     });
     expect(fixture.store.saved[0]?.decidedBySession).toBe("session-1");
     expect((yield* Effect.flip(undo(added))).detail).toBe("This memory was already undone.");
+
+    const addedMineAll = yield* memory.proposeFromAgent(agentProposal("Keep diffs small."));
+    yield* accept(addedMineAll, "me-all");
+    expect(files["memory/people/alice.md"]).toBe("- Keep replies short.\n- Keep diffs small.\n");
+    yield* undo(addedMineAll);
+    expect(files["memory/people/alice.md"]).toBe("- Keep replies short.\n");
+
+    const addedTeamAll = yield* memory.proposeFromAgent(
+      agentProposal("Write plain commit titles."),
+    );
+    yield* accept(addedTeamAll, "team-all");
+    expect(files["memory/team.md"]).toBe(
+      "- Prefer small pull requests.\n- Write plain commit titles.\n",
+    );
+    yield* undo(addedTeamAll);
+    expect(files["memory/team.md"]).toBe("- Prefer small pull requests.\n");
 
     const changed = yield* memory.proposeFromAgent(
       editProposal({ text: "Keep replies to one line.", replaces: "Keep replies short." }),

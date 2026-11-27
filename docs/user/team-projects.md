@@ -219,9 +219,11 @@ approves it, including for personal files.
 While they work, agents propose memories on their own: a preference you stated, something you
 corrected twice, or a fact about the project that later threads will need. Each proposal appears
 as a card in the chat. Edit the wording if you like, then choose **Accept for me** (your agents in
-this project), **Accept for team** (everyone's agents in this project) or **Reject**. Accepting
-adds the line to that file and merges the pull request at once, so the repository's rules must
-allow merging without a review; if they refuse, the card says so and the pull request stays open.
+this project), **Accept for team** (everyone's agents in this project) or **Reject**. Each accept
+button's menu also offers saving across all projects (your own `memory/people/<github-login>.md`
+or the team's `memory/team.md`). Accepting adds the line to that file and merges the pull request
+at once, so the repository's rules must allow merging without a review; if they refuse, the card
+says so and the pull request stays open.
 The agent keeps working while the card waits, and deciding never starts a turn: an accepted
 memory applies from the next one. Unanswered proposals also wait under **Proposals** in the
 Memory panel and on the [Questions page](./questions.md). Only the web and desktop apps show the cards.

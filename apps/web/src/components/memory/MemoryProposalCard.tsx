@@ -17,7 +17,7 @@ import {
   type ScopedThreadRef,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
-import { CheckIcon } from "lucide-react";
+import { CheckIcon, ChevronDownIcon } from "lucide-react";
 import { useState } from "react";
 
 import { useOpenLink } from "~/browser/useOpenLink";
@@ -28,8 +28,11 @@ import { useEnvironmentScope } from "~/state/session";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
+import { Group, GroupSeparator } from "../ui/group";
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Textarea } from "../ui/textarea";
 import {
+  memoryAcceptedLabel,
   memoryProposalInput,
   memoryScopeLabel,
   proposalForCall,
@@ -66,6 +69,56 @@ export function useMemoryDecision(environmentId: EnvironmentId, projectId: Proje
   return { canDecide, busy, error, submit };
 }
 
+function MemoryAcceptSplitButton(props: {
+  readonly label: string;
+  readonly menuLabel: string;
+  readonly projectChoice: "me" | "team";
+  readonly allProjectsChoice: "me-all" | "team-all";
+  readonly projectItemLabel: string;
+  readonly allProjectsItemLabel: string;
+  readonly busy: MemoryChoice | null;
+  readonly disabled: boolean;
+  readonly onChoose: (choice: MemoryChoice) => void;
+}) {
+  const saving = props.busy === props.projectChoice || props.busy === props.allProjectsChoice;
+  return (
+    <Group>
+      <Button
+        size="xs"
+        variant="outline"
+        disabled={props.disabled}
+        onClick={() => props.onChoose(props.projectChoice)}
+      >
+        {saving ? "Saving…" : props.label}
+      </Button>
+      <GroupSeparator />
+      <Menu>
+        <MenuTrigger
+          disabled={props.disabled}
+          render={
+            <Button
+              size="icon-xs"
+              variant="outline"
+              aria-label={props.menuLabel}
+              disabled={props.disabled}
+            />
+          }
+        >
+          <ChevronDownIcon aria-hidden />
+        </MenuTrigger>
+        <MenuPopup align="start" width="content">
+          <MenuItem onClick={() => props.onChoose(props.projectChoice)}>
+            {props.projectItemLabel}
+          </MenuItem>
+          <MenuItem onClick={() => props.onChoose(props.allProjectsChoice)}>
+            {props.allProjectsItemLabel}
+          </MenuItem>
+        </MenuPopup>
+      </Menu>
+    </Group>
+  );
+}
+
 export function MemoryDecisionButtons(props: {
   readonly busy: MemoryChoice | null;
   readonly canDecide: boolean;
@@ -83,26 +136,41 @@ export function MemoryDecisionButtons(props: {
   return (
     <>
       {kind === null ? (
-        <>
+        props.personalOnly ? (
           <Button
             size="xs"
             variant="outline"
             disabled={acceptDisabled}
             onClick={() => props.onChoose("me")}
           >
-            {props.busy === "me" ? "Saving…" : props.personalOnly ? "Accept" : "Accept for me"}
+            {props.busy === "me" ? "Saving…" : "Accept"}
           </Button>
-          {props.personalOnly ? null : (
-            <Button
-              size="xs"
-              variant="outline"
+        ) : (
+          <>
+            <MemoryAcceptSplitButton
+              label="Accept for me"
+              menuLabel="More options for Accept for me"
+              projectChoice="me"
+              allProjectsChoice="me-all"
+              projectItemLabel="For me (this project)"
+              allProjectsItemLabel="For me (all projects)"
+              busy={props.busy}
               disabled={acceptDisabled}
-              onClick={() => props.onChoose("team")}
-            >
-              {props.busy === "team" ? "Saving…" : "Accept for team"}
-            </Button>
-          )}
-        </>
+              onChoose={props.onChoose}
+            />
+            <MemoryAcceptSplitButton
+              label="Accept for team"
+              menuLabel="More options for Accept for team"
+              projectChoice="team"
+              allProjectsChoice="team-all"
+              projectItemLabel="For team (this project)"
+              allProjectsItemLabel="For team (all projects)"
+              busy={props.busy}
+              disabled={acceptDisabled}
+              onChoose={props.onChoose}
+            />
+          </>
+        )
       ) : (
         <Button
           size="xs"
@@ -223,15 +291,7 @@ function MemoryOutcome(props: {
         {label}
       </button>
     );
-  const where = props.projectName === null ? "" : ` in ${props.projectName}`;
-  const accepted =
-    proposal.category !== undefined
-      ? "Accepted for the voice agent"
-      : proposal.kind === "change"
-        ? "Change accepted"
-        : proposal.kind === "remove"
-          ? "Removal accepted"
-          : `Accepted ${decision.choice === "me" ? "for you" : "for the team"}${where}`;
+  const accepted = memoryAcceptedLabel(proposal, decision.choice, props.projectName);
   const undone = decision.undo;
   const undoable =
     proposal.category === undefined && decision.merged && undone === undefined && canUndo;

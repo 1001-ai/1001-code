@@ -68,16 +68,26 @@ export const MemoryProposalText = TrimmedNonEmptyString.check(
 );
 
 /**
- * Accept for me (this person in this project), accept for the team (this project), or reject. A
- * change or removal of an existing memory already has its file, so it is accepted or rejected.
+ * Accept for me (this project or all projects), accept for the team (this project or all
+ * projects), or reject. A change or removal of an existing memory already has its file, so it is
+ * accepted or rejected.
  */
-export const MemoryChoice = Schema.Literals(["me", "team", "reject", "accept"]);
+export const MemoryChoice = Schema.Literals([
+  "me",
+  "me-all",
+  "team",
+  "team-all",
+  "reject",
+  "accept",
+]);
 export type MemoryChoice = typeof MemoryChoice.Type;
 
 /** A person's choice, or the agent taking its proposal back, which no person can send. */
 export const MemoryDecisionChoice = Schema.Literals([
   "me",
+  "me-all",
   "team",
+  "team-all",
   "reject",
   "accept",
   "withdrawn",
