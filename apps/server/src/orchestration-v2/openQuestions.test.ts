@@ -300,10 +300,12 @@ describe("question dismissals and the latest user message", () => {
             ThreadId.make(`thread:open-questions:${key}`),
           );
         const want = at(dismissal ? 1 : 2);
-        for (const shell of [stored, inMemory, settlement]) {
+        for (const shell of [stored, inMemory]) {
           assert.deepEqual(shell?.latestUserMessageAt, want);
           assert.deepEqual(shell?.latestUserAuthoredMessageAt, want);
         }
+        assert.deepEqual(settlement?.latestUserMessageAt, want);
+        assert.deepEqual(settlement?.latestResumingMessageAt, want);
       }),
     );
   });
