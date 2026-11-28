@@ -15,7 +15,7 @@ export function isInboxThread(threadId: ThreadId): boolean {
   return threadIds.has(threadId);
 }
 
-/** Whether `threadId` is a project's current Inbox or one replaced during this process. */
+/** Whether `threadId` is a project's current Inbox or a previously replaced one. */
 export function isKnownInboxThread(threadId: ThreadId): boolean {
   return threadIds.has(threadId) || retiredThreadIds.has(threadId);
 }
@@ -38,15 +38,25 @@ export function recordInboxThread(projectId: ProjectId, threadId: ThreadId): voi
   threadIds.add(threadId);
 }
 
-export function replaceInboxThreads(entries: ReadonlyMap<ProjectId, ThreadId>): void {
+export function replaceInboxThreads(
+  entries: ReadonlyMap<ProjectId, ThreadId>,
+  retired: ReadonlyArray<ThreadId> = [],
+): void {
   byProject.clear();
   threadIds.clear();
   retiredThreadIds.clear();
   for (const [projectId, threadId] of entries) recordInboxThread(projectId, threadId);
+  for (const threadId of retired.slice(-MAX_RETIRED_INBOX_THREADS)) {
+    if (!threadIds.has(threadId)) retiredThreadIds.add(threadId);
+  }
 }
 
 export function inboxThreads(): ReadonlyMap<ProjectId, ThreadId> {
   return new Map(byProject);
+}
+
+export function retiredInboxThreads(): ReadonlyArray<ThreadId> {
+  return Array.from(retiredThreadIds);
 }
 
 /**
