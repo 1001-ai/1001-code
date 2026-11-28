@@ -10,7 +10,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import type * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
-import { isInboxThread } from "./inboxAgentThreads.ts";
+import { isInboxThread, isKnownInboxThread } from "./inboxAgentThreads.ts";
 
 export const INBOX_SEND_NOT_USER_STARTED =
   "The Inbox messages threads only in a turn the user started with their own message, or one another project's Inbox started. Tell the user what you would send instead.";
@@ -81,7 +81,7 @@ function isInboxRelayedMessage(message: TurnMessage, inboxThreadId: ThreadId): b
     message.createdBy === "agent" &&
     message.senderThreadId !== undefined &&
     message.senderThreadId !== inboxThreadId &&
-    isInboxThread(message.senderThreadId) &&
+    isKnownInboxThread(message.senderThreadId) &&
     message.linkedSender === undefined &&
     message.scheduledTaskId === undefined &&
     message.context?.guest === undefined

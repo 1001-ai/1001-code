@@ -28,7 +28,7 @@ import {
   inboxLaunchRefusal,
   inboxSendRefusal,
 } from "./inboxAgentSend.ts";
-import { replaceInboxThreads } from "./inboxAgentThreads.ts";
+import { recordInboxThread, replaceInboxThreads } from "./inboxAgentThreads.ts";
 import { INBOX_WAKE_CREATED_BY, INBOX_WAKE_CREATION_SOURCE } from "./inboxAgentWake.ts";
 
 const HERE = EnvironmentId.make("environment-here");
@@ -351,5 +351,29 @@ const CASES: ReadonlyArray<{
 it.effect.each(CASES)("$name", ({ tool, setup, args, refused }) =>
   Effect.gen(function* () {
     expect(yield* refusal(threadsWith(setup ?? {}), tool ?? "t3_thread_send", args)).toBe(refused);
+  }),
+);
+
+it.effect("keeps an in-flight relayed run working after the sending Inbox is reset", () =>
+  Effect.gen(function* () {
+    const replacement = ThreadId.make("thread-other-inbox-replacement");
+    const threads = threadsWith(relayedBy(OTHER_INBOX));
+    recordInboxThread(ProjectId.make("project-other"), replacement);
+    expect(yield* refusal(threads, "t3_thread_send", { threadId: SAME_PROJECT })).toBeNull();
+    expect(yield* refusal(threads, "t3_thread_launch", { workspaceStrategy: WORKTREE })).toBeNull();
+    expect(
+      yield* refusal(threads, "t3_thread_send", { threadId: THIRD_INBOX, mode: "queue" }),
+    ).toBe(INBOX_SEND_RELAYED);
+  }),
+);
+
+it.effect("refuses sending to a retired Inbox after it was reset", () =>
+  Effect.gen(function* () {
+    const replacement = ThreadId.make("thread-other-inbox-replacement");
+    const threads = threadsWith({});
+    recordInboxThread(ProjectId.make("project-other"), replacement);
+    expect(
+      yield* refusal(threads, "t3_thread_send", { threadId: OTHER_INBOX, mode: "queue" }),
+    ).toBe(INBOX_SEND_OTHER_PROJECT);
   }),
 );
