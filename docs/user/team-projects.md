@@ -386,8 +386,12 @@ brief that says what the new agent needs to know, and replies with its link. Bef
 thread it asks which model to use and offers to remember the answer; if it thinks a new thread
 would help without being asked, it asks you first.
 
-It messages and starts threads only in a turn you started with your own message, never in another
-project. It cannot run commands or change files, and it has no branch, commit or terminal
+When work spans another project on the same machine, name the project: the Inbox asks that
+project's Inbox, never its other threads, and reports the answer with a link. The other Inbox can
+then message or start threads of its own project for your request, and answers in its reply.
+
+It messages and starts threads only in a turn you started with your own message, or one another
+project's Inbox started for you. It cannot run commands or change files, and it has no branch, commit or terminal
 controls. It runs when you write to it, when the app sends it an update, and when a teammate's
 agent sends a message that is for no thread (see [Teammates' messages](#teammates-messages)): it
 then passes the message on, unchanged, to the one thread of the project it belongs to and says

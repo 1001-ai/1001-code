@@ -19,19 +19,26 @@ import {
   INBOX_LAUNCH_NOT_USER_STARTED,
   INBOX_LAUNCH_OTHER_PROJECT,
   INBOX_LAUNCH_UNREADABLE,
+  INBOX_SEND_NEEDS_QUEUE,
   INBOX_SEND_NOT_USER_STARTED,
   INBOX_SEND_OTHER_PROJECT,
+  INBOX_SEND_RELAYED,
   INBOX_SEND_SELF,
   INBOX_SEND_UNREADABLE,
   inboxLaunchRefusal,
   inboxSendRefusal,
 } from "./inboxAgentSend.ts";
+import { recordInboxThread, replaceInboxThreads } from "./inboxAgentThreads.ts";
 import { INBOX_WAKE_CREATED_BY, INBOX_WAKE_CREATION_SOURCE } from "./inboxAgentWake.ts";
 
 const HERE = EnvironmentId.make("environment-here");
 const INBOX = ThreadId.make("thread-inbox");
 const SAME_PROJECT = ThreadId.make("thread-same");
 const OTHER_PROJECT = ThreadId.make("thread-other");
+const OTHER_INBOX = ThreadId.make("thread-other-inbox");
+const THIRD_INBOX = ThreadId.make("thread-third-inbox");
+/** A user's thread in another project that is only named "Inbox". */
+const LOOKALIKE_INBOX = ThreadId.make("thread-other-lookalike");
 const RUN = RunId.make("run-inbox");
 const USER_MESSAGE = MessageId.make("message-user");
 
@@ -39,6 +46,18 @@ const shell = (id: ThreadId, projectId: string, activeRunId: RunId | null = null
   ...liveThreadShell(id, { activeRunId }),
   projectId: ProjectId.make(projectId),
 });
+
+const inboxShell = (id: ThreadId, projectId: string, activeRunId: RunId | null = null) => ({
+  ...shell(id, projectId, activeRunId),
+  title: "Inbox",
+  createdBy: "system" as const,
+  creationSource: "server" as const,
+});
+
+const relayedBy = (senderThreadId: ThreadId) =>
+  ({
+    message: { createdBy: "agent", creationSource: "mcp", senderThreadId },
+  }) as const;
 
 const typedByUser = {
   id: USER_MESSAGE,
@@ -52,10 +71,20 @@ const threadsWith = (options: {
   readonly activeRunId?: RunId | null;
   readonly unreadable?: boolean;
 }) => {
+  replaceInboxThreads(
+    new Map([
+      [ProjectId.make("project-acme"), INBOX],
+      [ProjectId.make("project-other"), OTHER_INBOX],
+      [ProjectId.make("project-third"), THIRD_INBOX],
+    ]),
+  );
   const shells = new Map<ThreadId, OrchestrationV2ThreadShell>([
-    [INBOX, shell(INBOX, "project-acme", options.activeRunId === undefined ? RUN : null)],
+    [INBOX, inboxShell(INBOX, "project-acme", options.activeRunId === undefined ? RUN : null)],
     [SAME_PROJECT, shell(SAME_PROJECT, "project-acme")],
     [OTHER_PROJECT, shell(OTHER_PROJECT, "project-other")],
+    [OTHER_INBOX, inboxShell(OTHER_INBOX, "project-other")],
+    [THIRD_INBOX, inboxShell(THIRD_INBOX, "project-third")],
+    [LOOKALIKE_INBOX, { ...shell(LOOKALIKE_INBOX, "project-other"), title: "Inbox" }],
   ]);
   return {
     getThreadShell: (threadId: ThreadId) => Effect.succeed(shells.get(threadId) ?? null),
@@ -149,9 +178,74 @@ const CASES: ReadonlyArray<{
     refused: INBOX_SEND_OTHER_PROJECT,
   },
   {
+    name: "allows another project's Inbox as a queued run",
+    args: { threadId: OTHER_INBOX, mode: "queue" },
+    refused: null,
+  },
+  {
+    name: "refuses another project's Inbox with the default mode, which can join its run",
+    args: { threadId: OTHER_INBOX },
+    refused: INBOX_SEND_NEEDS_QUEUE,
+  },
+  {
+    name: "refuses another project's Inbox in auto mode",
+    args: { threadId: OTHER_INBOX, mode: "auto" },
+    refused: INBOX_SEND_NEEDS_QUEUE,
+  },
+  {
+    name: "refuses steering another project's Inbox",
+    args: { threadId: OTHER_INBOX, mode: "steer" },
+    refused: INBOX_SEND_NEEDS_QUEUE,
+  },
+  {
+    name: "keeps any mode for its own project's threads",
+    args: { threadId: SAME_PROJECT, mode: "steer" },
+    refused: null,
+  },
+  {
+    name: "refuses a thread of another project only named Inbox",
+    args: { threadId: LOOKALIKE_INBOX, mode: "queue" },
+    refused: INBOX_SEND_OTHER_PROJECT,
+  },
+  {
     name: "refuses another environment",
     args: { threadId: SAME_PROJECT, environmentId: "environment-elsewhere" },
     refused: INBOX_SEND_OTHER_PROJECT,
+  },
+  {
+    name: "refuses another project's Inbox in another environment",
+    args: { threadId: OTHER_INBOX, environmentId: "environment-elsewhere", mode: "queue" },
+    refused: INBOX_SEND_OTHER_PROJECT,
+  },
+  {
+    name: "allows its own project's thread in a run another project's Inbox started",
+    setup: relayedBy(OTHER_INBOX),
+    args: { threadId: SAME_PROJECT },
+    refused: null,
+  },
+  {
+    name: "refuses the sending Inbox in a run it started",
+    setup: relayedBy(OTHER_INBOX),
+    args: { threadId: OTHER_INBOX, mode: "queue" },
+    refused: INBOX_SEND_RELAYED,
+  },
+  {
+    name: "refuses a third project's Inbox in a run another Inbox started",
+    setup: relayedBy(OTHER_INBOX),
+    args: { threadId: THIRD_INBOX, mode: "queue" },
+    refused: INBOX_SEND_RELAYED,
+  },
+  {
+    name: "refuses another project's thread in a run another Inbox started",
+    setup: relayedBy(OTHER_INBOX),
+    args: { threadId: OTHER_PROJECT },
+    refused: INBOX_SEND_RELAYED,
+  },
+  {
+    name: "refuses a run another project's ordinary thread started",
+    setup: relayedBy(OTHER_PROJECT),
+    args: { threadId: SAME_PROJECT },
+    refused: INBOX_SEND_NOT_USER_STARTED,
   },
   { name: "refuses the Inbox itself", args: { threadId: INBOX }, refused: INBOX_SEND_SELF },
   {
@@ -173,9 +267,23 @@ const CASES: ReadonlyArray<{
     refused: null,
   },
   {
+    name: "launches in a run another project's Inbox started",
+    tool: "t3_thread_launch",
+    setup: relayedBy(OTHER_INBOX),
+    args: { workspaceStrategy: WORKTREE },
+    refused: null,
+  },
+  {
     name: "refuses a launch in a run another agent's message started",
     tool: "t3_thread_launch",
     setup: { message: { createdBy: "agent", creationSource: "mcp", senderThreadId: SAME_PROJECT } },
+    args: { workspaceStrategy: WORKTREE },
+    refused: INBOX_LAUNCH_NOT_USER_STARTED,
+  },
+  {
+    name: "refuses a launch in a run a thread only named Inbox started",
+    tool: "t3_thread_launch",
+    setup: relayedBy(LOOKALIKE_INBOX),
     args: { workspaceStrategy: WORKTREE },
     refused: INBOX_LAUNCH_NOT_USER_STARTED,
   },
@@ -243,5 +351,29 @@ const CASES: ReadonlyArray<{
 it.effect.each(CASES)("$name", ({ tool, setup, args, refused }) =>
   Effect.gen(function* () {
     expect(yield* refusal(threadsWith(setup ?? {}), tool ?? "t3_thread_send", args)).toBe(refused);
+  }),
+);
+
+it.effect("keeps an in-flight relayed run working after the sending Inbox is reset", () =>
+  Effect.gen(function* () {
+    const replacement = ThreadId.make("thread-other-inbox-replacement");
+    const threads = threadsWith(relayedBy(OTHER_INBOX));
+    recordInboxThread(ProjectId.make("project-other"), replacement);
+    expect(yield* refusal(threads, "t3_thread_send", { threadId: SAME_PROJECT })).toBeNull();
+    expect(yield* refusal(threads, "t3_thread_launch", { workspaceStrategy: WORKTREE })).toBeNull();
+    expect(
+      yield* refusal(threads, "t3_thread_send", { threadId: THIRD_INBOX, mode: "queue" }),
+    ).toBe(INBOX_SEND_RELAYED);
+  }),
+);
+
+it.effect("refuses sending to a retired Inbox after it was reset", () =>
+  Effect.gen(function* () {
+    const replacement = ThreadId.make("thread-other-inbox-replacement");
+    const threads = threadsWith({});
+    recordInboxThread(ProjectId.make("project-other"), replacement);
+    expect(
+      yield* refusal(threads, "t3_thread_send", { threadId: OTHER_INBOX, mode: "queue" }),
+    ).toBe(INBOX_SEND_OTHER_PROJECT);
   }),
 );

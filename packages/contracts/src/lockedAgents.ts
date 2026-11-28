@@ -51,6 +51,7 @@ export const LOCKED_AGENT_TOOL_NAMES: Readonly<Record<LockedAgentKind, ReadonlyA
     "t3_thread_list",
     "t3_thread_read",
     "t3_thread_search",
+    "t3_project_list",
     "t3_thread_send",
     "t3_thread_wait",
     "t3_thread_launch",

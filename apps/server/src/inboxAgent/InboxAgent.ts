@@ -40,6 +40,7 @@ import {
   isInboxThread,
   recordInboxThread,
   replaceInboxThreads,
+  retiredInboxThreads,
 } from "./inboxAgentThreads.ts";
 
 /** What ensuring a project's Inbox did. */
@@ -73,6 +74,8 @@ const StateFile = Schema.fromJsonString(
     version: Schema.Literal(1),
     /** Project id to its Inbox thread id. */
     projects: Schema.Record(ProjectId, ThreadId),
+    /** Replaced Inbox thread ids kept across restarts for in-flight relayed runs. */
+    retired: Schema.optional(Schema.Array(ThreadId)),
   }),
 );
 const decodeState = Schema.decodeUnknownOption(StateFile);
@@ -131,16 +134,22 @@ const make = Effect.gen(function* () {
         ? (Object.entries(loaded.value.projects) as Array<[ProjectId, ThreadId]>)
         : [],
     ),
+    loaded?._tag === "Some" ? loaded.value.retired : undefined,
   );
   const writeState = fs.makeDirectory(path.dirname(statePath), { recursive: true }).pipe(
     Effect.andThen(
-      Effect.suspend(() =>
-        fs.writeFileString(
+      Effect.suspend(() => {
+        const retired = retiredInboxThreads();
+        return fs.writeFileString(
           statePath,
-          encodeState({ version: 1, projects: Object.fromEntries(inboxThreads()) }),
+          encodeState({
+            version: 1,
+            projects: Object.fromEntries(inboxThreads()),
+            ...(retired.length > 0 ? { retired } : {}),
+          }),
           { mode: 0o600 },
-        ),
-      ),
+        );
+      }),
     ),
     Effect.tapError((cause) => Effect.logWarning("The Inbox state file was not written.", cause)),
     Effect.ignore,

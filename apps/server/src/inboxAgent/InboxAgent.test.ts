@@ -30,7 +30,7 @@ import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as InboxAgent from "./InboxAgent.ts";
-import { isInboxThread } from "./inboxAgentThreads.ts";
+import { isInboxThread, isKnownInboxThread } from "./inboxAgentThreads.ts";
 
 const PROJECT = ProjectId.make("project-acme");
 const OTHER_PROJECT = ProjectId.make("project-other");
@@ -538,42 +538,56 @@ it.effect(
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const stateDir = yield* fs.makeTempDirectoryScoped();
-      const nextThreadId = yield* withInbox({ stateDir }, ({ service, created, deleted, shells }) =>
-        Effect.gen(function* () {
-          const first = yield* service.ensure(PROJECT);
-          const firstId = first.status === "ready" ? first.threadId : null;
-          expect(firstId).not.toBeNull();
-          // An archived duplicate Inbox thread is also cleaned up so clients never fall back to it.
-          const archivedId = ThreadId.make("inbox-archived");
-          shells.set(archivedId, {
-            ...liveThreadShell(archivedId),
-            projectId: PROJECT,
-            title: INBOX_AGENT_THREAD_TITLE,
-            createdBy: "system",
-            creationSource: "server",
-            archivedAt: DateTime.makeUnsafe(100),
-          } as Shell);
+      const { firstThreadId, nextThreadId } = yield* withInbox(
+        { stateDir },
+        ({ service, created, deleted, shells }) =>
+          Effect.gen(function* () {
+            const first = yield* service.ensure(PROJECT);
+            const firstId = first.status === "ready" ? first.threadId : null;
+            expect(firstId).not.toBeNull();
+            // An archived duplicate Inbox thread is also cleaned up so clients never fall back to it.
+            const archivedId = ThreadId.make("inbox-archived");
+            shells.set(archivedId, {
+              ...liveThreadShell(archivedId),
+              projectId: PROJECT,
+              title: INBOX_AGENT_THREAD_TITLE,
+              createdBy: "system",
+              creationSource: "server",
+              archivedAt: DateTime.makeUnsafe(100),
+            } as Shell);
 
-          const reset = yield* service.reset(PROJECT);
-          expect(reset.previousThreadId).toBe(firstId);
-          expect(reset.threadId).not.toBe(firstId);
-          expect(created).toHaveLength(2);
-          // Duplicates are deleted before the live recorded Inbox thread.
-          expect(deleted.map((entry) => entry.command.threadId)).toEqual([archivedId, firstId]);
-          // The old Inbox stays locked until its deletion commits.
-          expect(deleted[1]?.lockedAtDelete).toBe(true);
-          expect(shells.get(firstId!)?.deletedAt).not.toBeNull();
-          expect(shells.get(archivedId)?.deletedAt).not.toBeNull();
-          expect(service.isInboxThread(firstId!)).toBe(false);
-          expect(service.isInboxThread(reset.threadId)).toBe(true);
-          return reset.threadId;
-        }),
+            const reset = yield* service.reset(PROJECT);
+            expect(reset.previousThreadId).toBe(firstId);
+            expect(reset.threadId).not.toBe(firstId);
+            expect(created).toHaveLength(2);
+            // Duplicates are deleted before the live recorded Inbox thread.
+            expect(deleted.map((entry) => entry.command.threadId)).toEqual([archivedId, firstId]);
+            // The old Inbox stays locked until its deletion commits.
+            expect(deleted[1]?.lockedAtDelete).toBe(true);
+            expect(shells.get(firstId!)?.deletedAt).not.toBeNull();
+            expect(shells.get(archivedId)?.deletedAt).not.toBeNull();
+            expect(service.isInboxThread(firstId!)).toBe(false);
+            expect(service.isInboxThread(reset.threadId)).toBe(true);
+            return { firstThreadId: firstId!, nextThreadId: reset.threadId };
+          }),
       );
 
       const state = JSON.parse(
         yield* fs.readFileString(path.join(stateDir, "inbox-agent", "state.json")),
       );
-      expect(state).toEqual({ version: 1, projects: { [PROJECT]: nextThreadId } });
+      expect(state).toEqual({
+        version: 1,
+        projects: { [PROJECT]: nextThreadId },
+        retired: [firstThreadId],
+      });
+
+      yield* withInbox({ stateDir }, ({ service }) =>
+        Effect.sync(() => {
+          expect(service.isInboxThread(nextThreadId)).toBe(true);
+          expect(service.isInboxThread(firstThreadId)).toBe(false);
+          expect(isKnownInboxThread(firstThreadId)).toBe(true);
+        }),
+      );
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 
